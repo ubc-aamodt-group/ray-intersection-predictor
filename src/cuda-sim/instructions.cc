@@ -49,6 +49,7 @@ class ptx_recognizer;
 #include "../gpgpu-sim/shader.h"
 #include "cuda-math.h"
 #include "cuda_device_printf.h"
+#include "rt-sim.h"
 #include "ptx.tab.h"
 #include "ptx_loader.h"
 
@@ -2169,7 +2170,12 @@ void call_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   if (fname == "vprintf") {
     gpgpusim_cuda_vprintf(pI, thread, target_func);
     return;
+  }   
+  else if ( fname == "_Z10__traceRay3Ray3HitPK6float4f" || fname == "_Z10__traceRay3Ray3HitPK6float4") {
+    trace_ray(pI, thread, target_func);
+    return;
   }
+
 #if (CUDART_VERSION >= 5000)
   // Jin: handle device runtime apis for CDP
   else if (fname == "cudaGetParameterBufferV2") {
