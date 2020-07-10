@@ -32,19 +32,19 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
       ray_properties.dir_tmax.x, ray_properties.dir_tmax.y, ray_properties.dir_tmax.z,
       ray_properties.origin_tmin.w, ray_properties.dir_tmax.w);
 
-    // TODO: Update this to Hit pointer
     arg++;
     // Second argument: Ray Payload
     const operand_info &actual_param_op2 = pI->operand_lookup(arg + 1);    
     const symbol *formal_param2 = target_func->get_arg(arg);
     from_addr = actual_param_op2.get_symbol()->get_address();
     size=formal_param2->get_size_in_bytes();  
-    assert(size == 16);
+    assert(size == 8);
     
     // Payload
     Hit ray_payload;
-    thread->m_local_mem->read(from_addr, size, &ray_payload);
-    print_float4(ray_payload.t_triId_u_v);
+    addr_t ray_payload_addr;
+    thread->m_local_mem->read(from_addr, size, &ray_payload_addr);
+    printf("Ray payload address: 0x%x\n", ray_payload_addr);
     
     arg++;
     // Third argument: Top of BVH Tree
@@ -59,7 +59,6 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     thread->m_local_mem->read(from_addr, size, &node_start);
     printf("Node address: 0x%8x\n", node_start);
     
-    // TODO: Figure out how triangle start address can be calculated
     addr_t tri_start = node_start + 0x6e600; 
     addr_t tri_end = tri_start + 0xd6f40;
     
@@ -113,7 +112,6 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             n1lo = {n1xy.x, n1xy.z, n01z.z};
             n1hi = {n1xy.y, n1xy.w, n01z.w};
             
-            // TODO: Make this work for n number of child nodes
             float thit0, thit1;
             bool child0_hit = ray_box_test(n0lo, n0hi, ray_properties.get_direction(), ray_properties.get_origin(), ray_properties.get_tmin(), ray_properties.get_tmax(), thit0);
             bool child1_hit = ray_box_test(n1lo, n1hi, ray_properties.get_direction(), ray_properties.get_origin(), ray_properties.get_tmin(), ray_properties.get_tmax(), thit1);
@@ -148,7 +146,6 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 traversal_stack.push_back((thit0 < thit1) ? child1_addr : child0_addr);
                 print_stack(traversal_stack);
                 
-                // TODO: What happens if stack is full?
                 if (traversal_stack.size() > MAX_TRAVERSAL_STACK_SIZE) printf("Short stack full!\n");
             }
             // Single hit
@@ -169,12 +166,10 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             tri_addr = ~next_node;
             tri_addr *= 0x10;
             
-            // TODO: Add triangle for loop
             
             // Load vertices
             #ifdef MOLLER_TRUMBORE
                 
-            // TODO: Convert vertices in BVH to float3?
             float3 p0, p1, p2;
             mem->read(tri_start + tri_addr, sizeof(float3), &p0);
             mem->read(tri_start + tri_addr + sizeof(float3), sizeof(float3), &p1);
@@ -227,11 +222,13 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
         
     }  while (next_node != EMPTY_STACK);
     
-    // TODO: Store hit into ray payload
     if (thit != ray_properties.get_tmax()) {
         printf("\nResult: (t, addr, u, v)\n");
         printf("t: %f, u: %f, v: %f, triangle offset: 0x%x\n", ray_payload.t_triId_u_v.x, ray_payload.t_triId_u_v.z, ray_payload.t_triId_u_v.w, (addr_t)ray_payload.t_triId_u_v.y);
+        
+        mem->write(ray_payload_addr, sizeof(Hit), &ray_payload, NULL, NULL);
     }
+    
 }
 
 

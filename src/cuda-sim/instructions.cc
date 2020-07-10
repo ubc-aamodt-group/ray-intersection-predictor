@@ -2175,7 +2175,8 @@ void call_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   //   trace_ray(pI, thread, target_func);
   //   return;
   // }
-  else if ( fname == "_Z10__traceRay3Ray3HitPK6float4f" || fname == "_Z10__traceRay3Ray3HitPK6float4") {
+  // else if ( fname == "_Z10__traceRay3Ray3HitPK6float4f" || fname == "_Z10__traceRay3RayP3HitPK6float4") {
+  else if (fname.find("__traceRay") != std::string::npos) {
     trace_ray(pI, thread, target_func);
     return;
   }
