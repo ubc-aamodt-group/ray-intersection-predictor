@@ -32,6 +32,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
       ray_properties.dir_tmax.x, ray_properties.dir_tmax.y, ray_properties.dir_tmax.z,
       ray_properties.origin_tmin.w, ray_properties.dir_tmax.w);
 
+    // TODO: Update this to Hit pointer
     arg++;
     // Second argument: Ray Payload
     const operand_info &actual_param_op2 = pI->operand_lookup(arg + 1);    
@@ -60,6 +61,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     
     // TODO: Figure out how triangle start address can be calculated
     addr_t tri_start = node_start + 0x6e600; 
+    addr_t tri_end = tri_start + 0xd6f40;
     
     // Global memory
     memory_space *mem=NULL;
@@ -82,6 +84,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     // Set thit to max
     float thit = ray_properties.dir_tmax.w;
     bool hit = false;
+    addr_t hit_addr;
        
     do {
 
@@ -110,6 +113,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             n1lo = {n1xy.x, n1xy.z, n01z.z};
             n1hi = {n1xy.y, n1xy.w, n01z.w};
             
+            // TODO: Make this work for n number of child nodes
             float thit0, thit1;
             bool child0_hit = ray_box_test(n0lo, n0hi, ray_properties.get_direction(), ray_properties.get_origin(), ray_properties.get_tmin(), ray_properties.get_tmax(), thit0);
             bool child1_hit = ray_box_test(n1lo, n1hi, ray_properties.get_direction(), ray_properties.get_origin(), ray_properties.get_tmin(), ray_properties.get_tmax(), thit1);
@@ -169,6 +173,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             
             // Load vertices
             #ifdef MOLLER_TRUMBORE
+                
             // TODO: Convert vertices in BVH to float3?
             float3 p0, p1, p2;
             mem->read(tri_start + tri_addr, sizeof(float3), &p0);
@@ -179,13 +184,34 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             hit = mt_ray_triangle_test(p0, p1, p2, ray_properties, &thit);
             
             #else 
-            // Matches rtao Woopify triangle
-            float4 p0, p1, p2;
-            mem->read(tri_start + tri_addr, sizeof(float4), &p0);
-            mem->read(tri_start + tri_addr + sizeof(float4), sizeof(float4), &p1);
-            mem->read(tri_start + tri_addr + 2*sizeof(float4), sizeof(float4), &p2);
             
-            hit = rtao_ray_triangle_test(p0, p1, p2, ray_properties, &thit);
+            // while triangle address is within triangle primitive range
+            while (tri_addr <= (tri_end - tri_start)) {
+                
+                // Matches rtao Woopify triangle
+                float4 p0, p1, p2;
+                mem->read(tri_start + tri_addr, sizeof(float4), &p0);
+                mem->read(tri_start + tri_addr + sizeof(float4), sizeof(float4), &p1);
+                mem->read(tri_start + tri_addr + 2*sizeof(float4), sizeof(float4), &p2);
+                
+                // Check if triangle is valid (if (__float_as_int(v00.x) == 0x80000000))
+                if (*(int*)&p0.x ==  0x80000000) {
+                    printf("End of primitives in leaf node. \n");
+                    break;
+                }
+                
+                hit = rtao_ray_triangle_test(p0, p1, p2, ray_properties, &thit, ray_payload);
+                if (hit) {
+                    printf("HIT\t t: %f\n", thit);
+                    ray_payload.t_triId_u_v.y = tri_addr >> 4;
+                }
+                else
+                    printf("MISS\n");
+                    
+                // Go to next triangle
+                tri_addr += 0x30;
+            
+            }
             
             #endif
 
@@ -202,7 +228,10 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     }  while (next_node != EMPTY_STACK);
     
     // TODO: Store hit into ray payload
-        
+    if (thit != ray_properties.get_tmax()) {
+        printf("\nResult: (t, addr, u, v)\n");
+        printf("t: %f, u: %f, v: %f, triangle offset: 0x%x\n", ray_payload.t_triId_u_v.x, ray_payload.t_triId_u_v.z, ray_payload.t_triId_u_v.w, (addr_t)ray_payload.t_triId_u_v.y);
+    }
 }
 
 
@@ -252,7 +281,7 @@ bool mt_ray_triangle_test(float3 p0, float3 p1, float3 p2, Ray ray_properties, f
     return true;
 }
 
-bool rtao_ray_triangle_test(float4 v00, float4 v11, float4 v22, Ray ray_properties, float* thit)
+bool rtao_ray_triangle_test(float4 v00, float4 v11, float4 v22, Ray ray_properties, float* thit, Hit &ray_payload)
 {
     
 	float Oz = v00.w - ray_properties.get_origin().x * v00.x - ray_properties.get_origin().y * v00.y - ray_properties.get_origin().z * v00.z;
@@ -274,6 +303,7 @@ bool rtao_ray_triangle_test(float4 v00, float4 v11, float4 v22, Ray ray_properti
 				// triangleuv.y = v;
 
 				*thit = t;
+                ray_payload.t_triId_u_v = {t, 0x0, u, v};
                 return true;
 			}
 		}

@@ -47,7 +47,7 @@ struct Hit
 
 bool ray_box_test(float3 low, float3 high, float3 inv_dir, float3 origin, float tmin, float tmax, float& thit);
 bool mt_ray_triangle_test(float3 p0, float3 p1, float3 p2, Ray ray_properties, float* thit);
-bool rtao_ray_triangle_test(float4 v00, float4 v11, float4 v22, Ray ray_properties, float* thit);
+bool rtao_ray_triangle_test(float4 v00, float4 v11, float4 v22, Ray ray_properties, float* thit, Hit& ray_payload);
 
 
 
