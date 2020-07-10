@@ -1,4 +1,5 @@
 #include "ptx_ir.h"
+#include "vector-math.h"
 #include "rt-sim.h"
 
 void decode_space( memory_space_t &space, ptx_thread_info *thread, const operand_info &op, memory_space *&mem, addr_t &addr);
@@ -58,7 +59,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     printf("Node address: 0x%8x\n", node_start);
     
     // TODO: Figure out how triangle start address can be calculated
-    addr_t tri_start = node_start + 0x6e5c0; 
+    addr_t tri_start = node_start + 0x6e600; 
     
     // Global memory
     memory_space *mem=NULL;
@@ -66,10 +67,12 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     
     
     // Traversal stack
-    const int STACK_SIZE = 32;
-    addr_t traversal_stack[STACK_SIZE];
-    traversal_stack[0] = EMPTY_STACK;
-    addr_t* stack_ptr = &traversal_stack[0];
+    // const int STACK_SIZE = 32;
+    // addr_t traversal_stack[STACK_SIZE];
+    // traversal_stack[0] = EMPTY_STACK;
+    // addr_t* stack_ptr = &traversal_stack[0];
+    
+    std::list<addr_t> traversal_stack;
     
     // Initialize
     addr_t child0_addr = 0;
@@ -80,11 +83,12 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     float thit = ray_properties.dir_tmax.w;
     bool hit = false;
        
-    while (next_node != EMPTY_STACK) {
+    do {
 
         // Check not a leaf node and not empty traversal stack (Leaf nodes start with 0xf...)
-        while ((int)next_node >= 0 && next_node != EMPTY_STACK)
+        while ((int)next_node >= 0)
         {
+            if (next_node != 0) next_node *= 0x10;
             // Get top node data
             // const float4 n0xy = __ldg(localBVHTreeNodes + nodeAddr + 0); // (c0.lo.x, c0.hi.x, c0.lo.y, c0.hi.y)
             // const float4 n1xy = __ldg(localBVHTreeNodes + nodeAddr + 1); // (c1.lo.x, c1.hi.x, c1.lo.y, c1.hi.y)
@@ -114,9 +118,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             printf("Child 1 hit: %d \n", child1_hit);
             
             mem->read(node_start + next_node + 3*sizeof(float4), sizeof(addr_t), &child0_addr);
-            child0_addr *= 0x10;
             mem->read(node_start + next_node + 3*sizeof(float4) + sizeof(addr_t), sizeof(addr_t), &child1_addr);
-            child1_addr *= 0x10;
             
             printf("Child 0 offset: 0x%x \t", child0_addr);
             printf("Child 1 offset: 0x%x \n", child1_addr);
@@ -124,21 +126,26 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             
             // Miss
             if (!child0_hit && !child1_hit) {
+                if (traversal_stack.empty()) {
+                    next_node = EMPTY_STACK;
+                    break;
+                }
                 
                 // Pop next node from stack
-                next_node = *stack_ptr;
-                stack_ptr--;
-                print_stack(stack_ptr, traversal_stack);
-                
+                next_node = traversal_stack.back();
+                traversal_stack.pop_back();
+                print_stack(traversal_stack);
             }
             // Both hit
             else if (child0_hit && child1_hit) {
                 next_node = (thit0 < thit1) ? child0_addr : child1_addr;
                 
                 // Push extra node to stack
-                stack_ptr++;
-                *stack_ptr = (thit0 < thit1) ? child1_addr : child0_addr;
-                print_stack(stack_ptr, traversal_stack);
+                traversal_stack.push_back((thit0 < thit1) ? child1_addr : child0_addr);
+                print_stack(traversal_stack);
+                
+                // TODO: What happens if stack is full?
+                if (traversal_stack.size() > MAX_TRAVERSAL_STACK_SIZE) printf("Short stack full!\n");
             }
             // Single hit
             else {
@@ -156,8 +163,12 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             
             // Convert to triangle offset
             tri_addr = ~next_node;
+            tri_addr *= 0x10;
+            
+            // TODO: Add triangle for loop
             
             // Load vertices
+            #ifdef MOLLER_TRUMBORE
             // TODO: Convert vertices in BVH to float3?
             float3 p0, p1, p2;
             mem->read(tri_start + tri_addr, sizeof(float3), &p0);
@@ -165,13 +176,30 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             mem->read(tri_start + tri_addr + 2*sizeof(float3), sizeof(float3), &p2);
 
             // Triangle intersection algorithm
-            hit = ray_triangle_test(p0, p1, p2, ray_properties, &thit);
+            hit = mt_ray_triangle_test(p0, p1, p2, ray_properties, &thit);
+            
+            #else 
+            // Matches rtao Woopify triangle
+            float4 p0, p1, p2;
+            mem->read(tri_start + tri_addr, sizeof(float4), &p0);
+            mem->read(tri_start + tri_addr + sizeof(float4), sizeof(float4), &p1);
+            mem->read(tri_start + tri_addr + 2*sizeof(float4), sizeof(float4), &p2);
+            
+            hit = rtao_ray_triangle_test(p0, p1, p2, ray_properties, &thit);
+            
+            #endif
 
+            if (traversal_stack.empty()) {
+                next_node = EMPTY_STACK;
+                break;
+            }
             // Pop next node off stack
-            next_node = *stack_ptr;
-            stack_ptr--;
+            next_node = traversal_stack.back();
+            traversal_stack.pop_back();
+            print_stack(traversal_stack);
         }
-    }
+        
+    }  while (next_node != EMPTY_STACK);
     
     // TODO: Store hit into ray payload
         
@@ -185,7 +213,9 @@ bool ray_box_test(float3 low, float3 high, float3 direction, float3 origin, floa
     float3 lo = get_t_bound(low, origin, direction);
     float3 hi = get_t_bound(high, origin, direction);
     
-    // TODO: max value does not match rtao benchmark
+    // QUESTION: max value does not match rtao benchmark, rtao benchmark converts float to int with __float_as_int
+    // i.e. __float_as_int: -110.704826 => -1025677090, -24.690834 => -1044019502
+    
 	// const float slabMin = tMinFermi(lo.x, hi.x, lo.y, hi.y, lo.z, hi.z, TMin);
 	// const float slabMax = tMaxFermi(lo.x, hi.x, lo.y, hi.y, lo.z, hi.z, TMax);
     float min = magic_max7(lo.x, hi.x, lo.y, hi.y, lo.z, hi.z, tmin);
@@ -196,6 +226,60 @@ bool ray_box_test(float3 low, float3 high, float3 direction, float3 origin, floa
 
 	// return slabMin <= slabMax;
     return (min <= max);
+}
+
+bool mt_ray_triangle_test(float3 p0, float3 p1, float3 p2, Ray ray_properties, float* thit)
+{
+    // Moller Trumbore algorithm (from scratchapixel.com)
+    float3 v0v1 = p1 - p0;
+    float3 v0v2 = p2 - p0;
+    float3 pvec = cross(ray_properties.get_direction(), v0v2);
+    float det = dot(v0v1, pvec);
+    
+    float idet = 1 / det;
+    
+    float3 tvec = ray_properties.get_origin() - p0;
+    float u = dot(tvec, pvec) * idet;
+    
+    if (u < 0 || u > 1) return false;
+    
+    float3 qvec = cross(tvec, v0v1);
+    float v = dot(ray_properties.get_direction(), qvec) * idet;
+    
+    if (v < 0 || (u + v) > 1) return false;
+    
+    *thit = dot(v0v2, qvec) * idet;
+    return true;
+}
+
+bool rtao_ray_triangle_test(float4 v00, float4 v11, float4 v22, Ray ray_properties, float* thit)
+{
+    
+	float Oz = v00.w - ray_properties.get_origin().x * v00.x - ray_properties.get_origin().y * v00.y - ray_properties.get_origin().z * v00.z;
+	float invDz = 1.0f / (ray_properties.get_direction().x*v00.x + ray_properties.get_direction().y*v00.y + ray_properties.get_direction().z*v00.z);
+	float t = Oz * invDz;
+
+	if (t > ray_properties.get_tmin() && t < *thit) {
+		float Ox = v11.w + ray_properties.get_origin().x * v11.x + ray_properties.get_origin().y * v11.y + ray_properties.get_origin().z * v11.z;
+		float Dx = ray_properties.get_direction().x * v11.x + ray_properties.get_direction().y * v11.y + ray_properties.get_direction().z * v11.z;
+		float u = Ox + t * Dx;
+
+		if (u >= 0.0f && u <= 1.0f) {
+			float Oy = v22.w + ray_properties.get_origin().x * v22.x + ray_properties.get_origin().y * v22.y + ray_properties.get_origin().z * v22.z;
+			float Dy = ray_properties.get_direction().x * v22.x + ray_properties.get_direction().y * v22.y + ray_properties.get_direction().z * v22.z;
+			float v = Oy + t*Dy;
+
+			if (v >= 0.0f && u + v <= 1.0f) {
+				// triangleuv.x = u;
+				// triangleuv.y = v;
+
+				*thit = t;
+                return true;
+			}
+		}
+	}
+
+    return false;
 }
 
 float3 get_t_bound(float3 box, float3 origin, float3 direction)
@@ -235,10 +319,14 @@ float magic_min7(float a0, float a1, float b0, float b1, float c0, float c1, flo
 	return t3;
 }
 
-void print_stack(addr_t* stack_ptr, addr_t* traversal_stack) 
+void print_stack(std::list<addr_t> &traversal_stack)
 {
     printf("Traversal Stack: \n");
-    for (addr_t* i=traversal_stack; i<=stack_ptr; i++) {
-        printf("%d: 0x%x\n", (i-traversal_stack), *i);
+    
+    if (traversal_stack.empty()) printf("Empty!\n");
+    else{
+        for(std::list<addr_t>::iterator iter = traversal_stack.begin(); iter != traversal_stack.end(); iter++){
+            printf("0x%x\n", *iter);
+        }
     }
 }

@@ -2171,6 +2171,10 @@ void call_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
     gpgpusim_cuda_vprintf(pI, thread, target_func);
     return;
   }   
+  // else if ( fname == "_Z7__magicv" || fname == "_Z10__traceRayv") {
+  //   trace_ray(pI, thread, target_func);
+  //   return;
+  // }
   else if ( fname == "_Z10__traceRay3Ray3HitPK6float4f" || fname == "_Z10__traceRay3Ray3HitPK6float4") {
     trace_ray(pI, thread, target_func);
     return;

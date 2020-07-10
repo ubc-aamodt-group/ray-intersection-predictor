@@ -1,17 +1,18 @@
 #ifndef RAY_TRACE_FUNCTION_INCLUDED
 #define RAY_TRACE_FUNCTION_INCLUDED
 
+
 #define MAX(a,b) (((a)>(b))?(a):(b))
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MIN_MAX(a,b,c) MAX(MIN((a), (b)), (c))
 #define MAX_MIN(a,b,c) MIN(MAX((a), (b)), (c))
 
 #define EMPTY_STACK 0x7654321
-
+#define MAX_TRAVERSAL_STACK_SIZE 32
 
 // Debugging
 void print_float4(float4 printVal);
-void print_stack(addr_t* stack_ptr, addr_t* traversal_stack);
+void print_stack(std::list<addr_t> &traversal_stack);
 
 // Trace Ray
 void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread, const class function_info * target_func );
@@ -45,6 +46,9 @@ struct Hit
 
 
 bool ray_box_test(float3 low, float3 high, float3 inv_dir, float3 origin, float tmin, float tmax, float& thit);
-bool ray_triangle_test(float3 p0, float3 p1, float3 p2, Ray ray_properties, float* thit);
+bool mt_ray_triangle_test(float3 p0, float3 p1, float3 p2, Ray ray_properties, float* thit);
+bool rtao_ray_triangle_test(float4 v00, float4 v11, float4 v22, Ray ray_properties, float* thit);
+
+
 
 #endif
