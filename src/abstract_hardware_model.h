@@ -992,6 +992,7 @@ class warp_inst_t : public inst_t {
     m_mem_accesses_created = false;
     m_cache_hit = false;
     m_is_printf = false;
+    m_is_raytrace = false;
     m_is_cdp = 0;
   }
   virtual ~warp_inst_t() {}
@@ -1142,6 +1143,7 @@ class warp_inst_t : public inst_t {
   unsigned cycles;  // used for implementing initiation interval delay
   bool m_isatomic;
   bool m_is_printf;
+  bool m_is_raytrace;
   unsigned m_warp_id;
   unsigned m_dynamic_warp_id;
   const core_config *m_config;

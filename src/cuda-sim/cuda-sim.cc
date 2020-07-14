@@ -783,7 +783,7 @@ void ptx_instruction::set_opcode_and_latency() {
       op = MEMORY_BARRIER_OP;
       break;
     case CALL_OP: {
-      if (m_is_printf || m_is_cdp) {
+      if (m_is_printf || m_is_cdp || m_is_raytrace) {
         op = ALU_OP;
       } else
         op = CALL_OPS;

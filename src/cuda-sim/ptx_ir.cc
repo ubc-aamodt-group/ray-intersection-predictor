@@ -1446,6 +1446,7 @@ ptx_instruction::ptx_instruction(
     if (fname == "vprintf") {
       m_is_printf = true;
     }
+    if (fname.find("__traceRay") != std::string::npos) m_is_raytrace = true;
     if (fname == "cudaStreamCreateWithFlags") m_is_cdp = 1;
     if (fname == "cudaGetParameterBufferV2") m_is_cdp = 2;
     if (fname == "cudaLaunchDeviceV2") m_is_cdp = 4;

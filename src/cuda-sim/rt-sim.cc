@@ -59,8 +59,13 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     thread->m_local_mem->read(from_addr, size, &node_start);
     printf("Node address: 0x%8x\n", node_start);
     
-    addr_t tri_start = node_start + 0x6e600; 
-    addr_t tri_end = tri_start + 0xd6f40;
+    // TODO: Figure out how to calculate triangle start (Modify rtao to use set offset?)
+    // White Oak
+    addr_t tri_start = node_start + 0x11bc00; 
+    addr_t tri_end = tri_start + 0x221a10;
+    // Teapot
+    // addr_t tri_start = node_start + 0x6e600; 
+    // addr_t tri_end = tri_start + 0xd6f40;
     
     // Global memory
     memory_space *mem=NULL;
