@@ -458,6 +458,8 @@ class ptx_thread_info {
 
   // Jin: get corresponding kernel grid for CDP purpose
   kernel_info_t &get_kernel() { return m_kernel; }
+  
+  void add_raytrace_mem_access(addr_t addr) { m_raytrace_mem_accesses.push_back(addr); }
 
  public:
   addr_t m_last_effective_address;
@@ -513,6 +515,8 @@ class ptx_thread_info {
   bool m_enable_debug_trace;
 
   std::stack<class operand_info, std::vector<operand_info> > m_breakaddrs;
+  
+  std::list<addr_t> m_raytrace_mem_accesses;
 };
 
 addr_t generic_to_local(unsigned smid, unsigned hwtid, addr_t addr);

@@ -15,7 +15,7 @@ void print_float4(float4 printVal);
 void print_stack(std::list<addr_t> &traversal_stack);
 
 // Trace Ray
-void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread, const class function_info * target_func );
+void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread, const class function_info * target_func, std::list<addr_t> & memory_accesses);
 float magic_max7(float a0, float a1, float b0, float b1, float c0, float c1, float d);
 float magic_min7(float a0, float a1, float b0, float b1, float c0, float c1, float d);
 float3 get_t_bound(float3 box, float3 origin, float3 direction);

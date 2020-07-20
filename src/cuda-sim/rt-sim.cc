@@ -8,7 +8,7 @@ void print_float4(float4 printVal) {
 	printf("%f, %f, %f, %f\n", printVal.x, printVal.y, printVal.z, printVal.w);
 }
 
-void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread, const class function_info * target_func )
+void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread, const class function_info * target_func, std::list<addr_t> & memory_accesses)
 {
     unsigned n_return = target_func->has_return();
     assert(n_return == 0);
@@ -89,7 +89,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     float thit = ray_properties.dir_tmax.w;
     bool hit = false;
     addr_t hit_addr;
-       
+    
     do {
 
         // Check not a leaf node and not empty traversal stack (Leaf nodes start with 0xf...)
@@ -104,6 +104,10 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             mem->read(node_start + next_node, sizeof(float4), &n0xy);
             mem->read(node_start + next_node + sizeof(float4), sizeof(float4), &n1xy);
             mem->read(node_start + next_node + 2*sizeof(float4), sizeof(float4), &n01z);
+            
+            // TODO: Figure out if node_start + next_node + 2 also should be recorded
+            thread->add_raytrace_mem_access(node_start + next_node);
+            memory_accesses.push_back(node_start + next_node);
             
             printf("Node data: \n");
             print_float4(n0xy);
@@ -141,6 +145,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 // Pop next node from stack
                 next_node = traversal_stack.back();
                 traversal_stack.pop_back();
+                printf("Traversal Stack: \n");
                 print_stack(traversal_stack);
             }
             // Both hit
@@ -149,6 +154,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 
                 // Push extra node to stack
                 traversal_stack.push_back((thit0 < thit1) ? child1_addr : child0_addr);
+                printf("Traversal Stack: \n");
                 print_stack(traversal_stack);
                 
                 if (traversal_stack.size() > MAX_TRAVERSAL_STACK_SIZE) printf("Short stack full!\n");
@@ -179,6 +185,8 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             mem->read(tri_start + tri_addr, sizeof(float3), &p0);
             mem->read(tri_start + tri_addr + sizeof(float3), sizeof(float3), &p1);
             mem->read(tri_start + tri_addr + 2*sizeof(float3), sizeof(float3), &p2);
+            thread->add_raytrace_mem_access(tri_start + tri_addr);
+            memory_accesses.push_back(tri_start + tri_addr);
 
             // Triangle intersection algorithm
             hit = mt_ray_triangle_test(p0, p1, p2, ray_properties, &thit);
@@ -193,6 +201,8 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 mem->read(tri_start + tri_addr, sizeof(float4), &p0);
                 mem->read(tri_start + tri_addr + sizeof(float4), sizeof(float4), &p1);
                 mem->read(tri_start + tri_addr + 2*sizeof(float4), sizeof(float4), &p2);
+                thread->add_raytrace_mem_access(tri_start + tri_addr);
+                memory_accesses.push_back(tri_start + tri_addr);
                 
                 // Check if triangle is valid (if (__float_as_int(v00.x) == 0x80000000))
                 if (*(int*)&p0.x ==  0x80000000) {
@@ -222,6 +232,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             // Pop next node off stack
             next_node = traversal_stack.back();
             traversal_stack.pop_back();
+            printf("Traversal Stack: \n");
             print_stack(traversal_stack);
         }
         
@@ -232,8 +243,13 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
         printf("t: %f, u: %f, v: %f, triangle offset: 0x%x\n", ray_payload.t_triId_u_v.x, ray_payload.t_triId_u_v.z, ray_payload.t_triId_u_v.w, (addr_t)ray_payload.t_triId_u_v.y);
         
         mem->write(ray_payload_addr, sizeof(Hit), &ray_payload, NULL, NULL);
+        
+        // TODO: Keep this separate from read accesses
+        thread->add_raytrace_mem_access(ray_payload_addr);
     }
     
+    printf("Memory Accesses:\n");
+    print_stack(memory_accesses);
 }
 
 
@@ -353,12 +369,11 @@ float magic_min7(float a0, float a1, float b0, float b1, float c0, float c1, flo
 
 void print_stack(std::list<addr_t> &traversal_stack)
 {
-    printf("Traversal Stack: \n");
-    
     if (traversal_stack.empty()) printf("Empty!\n");
     else{
         for(std::list<addr_t>::iterator iter = traversal_stack.begin(); iter != traversal_stack.end(); iter++){
-            printf("0x%x\n", *iter);
+            printf("0x%x\t", *iter);
         }
+        printf("\n");
     }
 }

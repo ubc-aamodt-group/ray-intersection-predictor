@@ -1176,6 +1176,8 @@ class int_unit : public pipelined_simd_unit {
         return false;
       case TENSOR_CORE_LOAD_OP:
         return false;
+      case RT_CORE_OP:
+        return false;
       case STORE_OP:
         return false;
       case TENSOR_CORE_STORE_OP:
@@ -1206,6 +1208,8 @@ class sp_unit : public pipelined_simd_unit {
       case LOAD_OP:
         return false;
       case TENSOR_CORE_LOAD_OP:
+        return false;
+      case RT_CORE_OP:
         return false;
       case STORE_OP:
         return false;
@@ -1273,6 +1277,8 @@ class ldst_unit : public pipelined_simd_unit {
       case LOAD_OP:
         break;
       case TENSOR_CORE_LOAD_OP:
+        break;
+      case RT_CORE_OP:
         break;
       case STORE_OP:
         break;

@@ -783,8 +783,10 @@ void ptx_instruction::set_opcode_and_latency() {
       op = MEMORY_BARRIER_OP;
       break;
     case CALL_OP: {
-      if (m_is_printf || m_is_cdp || m_is_raytrace) {
+      if (m_is_printf || m_is_cdp) {
         op = ALU_OP;
+      } else if (m_is_raytrace) {
+        op = RT_CORE_OP;
       } else
         op = CALL_OPS;
       break;
@@ -1077,6 +1079,8 @@ void ptx_instruction::pre_decode() {
         cache_op = CACHE_WRITE_BACK;
       else if (m_opcode == ATOM_OP)
         cache_op = CACHE_GLOBAL;
+      else if (m_is_raytrace)
+        cache_op = CACHE_ALL;
       break;
   }
 
@@ -1854,6 +1858,14 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
           this);  // texture obtain its data granularity from the texture info
     }
 
+    if (pI->m_is_raytrace) {
+      // TODO: Per lane mem access in warp?
+      inst.m_raytrace_mem_accesses = m_raytrace_mem_accesses;
+      insn_space.set_type(global_space);
+      insn_memaddr = m_raytrace_mem_accesses.front();
+      insn_data_size = 16;
+    }
+    
     // Output register information to file and stdout
     if (config.get_ptx_inst_debug_to_file() != 0 &&
         (config.get_ptx_inst_debug_thread_uid() == 0 ||

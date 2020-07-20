@@ -94,6 +94,7 @@ enum uarch_op_t {
   LOAD_OP,
   TENSOR_CORE_LOAD_OP,
   TENSOR_CORE_STORE_OP,
+  RT_CORE_OP,
   STORE_OP,
   BRANCH_OP,
   BARRIER_OP,
@@ -924,6 +925,7 @@ class inst_t {
   }
   bool is_load() const {
     return (op == LOAD_OP || op == TENSOR_CORE_LOAD_OP ||
+            op == RT_CORE_OP ||
             memory_op == memory_load);
   }
   bool is_store() const {
@@ -1152,6 +1154,8 @@ class warp_inst_t : public inst_t {
   unsigned get_uid() const { return m_uid; }
   unsigned get_schd_id() const { return m_scheduler_id; }
   active_mask_t get_warp_active_mask() const { return m_warp_active_mask; }
+  
+  void add_raytrace_mem_access(addr_t addr) { m_raytrace_mem_accesses.push_back(addr); }
 
  protected:
   unsigned m_uid;
@@ -1162,7 +1166,7 @@ class warp_inst_t : public inst_t {
   bool m_isatomic;
   bool should_do_atomic;
   bool m_is_printf;
-  bool m_is_raytrace;
+  // bool m_is_raytrace;
   unsigned m_warp_id;
   unsigned m_dynamic_warp_id;
   const core_config *m_config;
@@ -1195,6 +1199,8 @@ class warp_inst_t : public inst_t {
   // Jin: cdp support
  public:
   int m_is_cdp;
+  bool m_is_raytrace;
+  std::list<addr_t> m_raytrace_mem_accesses;
 };
 
 void move_warp(warp_inst_t *&dst, warp_inst_t *&src);
