@@ -516,7 +516,7 @@ class ptx_thread_info {
 
   std::stack<class operand_info, std::vector<operand_info> > m_breakaddrs;
   
-  std::list<addr_t> m_raytrace_mem_accesses;
+  std::list<new_addr_type> m_raytrace_mem_accesses;
 };
 
 addr_t generic_to_local(unsigned smid, unsigned hwtid, addr_t addr);

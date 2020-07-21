@@ -1046,6 +1046,20 @@ class warp_inst_t : public inst_t {
     for (unsigned i = 0; i < num_addrs; i++)
       m_per_scalar_thread[n].memreqaddr[i] = addr[i];
   }
+  
+  void set_addr(unsigned n, std::list<new_addr_type> addr, unsigned num_addrs) {
+    if (!m_per_scalar_thread_valid) {
+      m_per_scalar_thread.resize(m_config->warp_size);
+      m_per_scalar_thread_valid = true;
+    }
+    assert(num_addrs <= MAX_ACCESSES_PER_INSN_PER_THREAD);
+    assert(addr.size() > 0);
+    for (unsigned i = 0; i < num_addrs; i++) {
+      if (addr.size() == 0) return;
+      m_per_scalar_thread[n].memreqaddr[i] = addr.front();
+      addr.pop_front();
+    }
+  }
   void print_m_accessq() {
     if (accessq_empty())
       return;
@@ -1200,7 +1214,7 @@ class warp_inst_t : public inst_t {
  public:
   int m_is_cdp;
   bool m_is_raytrace;
-  std::list<addr_t> m_raytrace_mem_accesses;
+  std::list<new_addr_type> m_raytrace_mem_accesses;
 };
 
 void move_warp(warp_inst_t *&dst, warp_inst_t *&src);

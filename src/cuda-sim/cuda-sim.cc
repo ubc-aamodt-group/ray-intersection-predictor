@@ -1862,8 +1862,12 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
       // TODO: Per lane mem access in warp?
       inst.m_raytrace_mem_accesses = m_raytrace_mem_accesses;
       insn_space.set_type(global_space);
-      insn_memaddr = m_raytrace_mem_accesses.front();
+      inst.space = insn_space;
       insn_data_size = 16;
+      inst.data_size = insn_data_size;
+      
+      // insn_memaddr = m_raytrace_mem_accesses.front();
+      inst.set_addr(lane_id, m_raytrace_mem_accesses, MAX_ACCESSES_PER_INSN_PER_THREAD);
     }
     
     // Output register information to file and stdout
@@ -1945,7 +1949,7 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
 
     // "Return values"
     if (!skip) {
-      if (!((inst_opcode == MMA_LD_OP || inst_opcode == MMA_ST_OP))) {
+      if (!((inst_opcode == MMA_LD_OP || inst_opcode == MMA_ST_OP || inst.m_is_raytrace))) {
         inst.space = insn_space;
         inst.set_addr(lane_id, insn_memaddr);
         inst.data_size = insn_data_size;  // simpleAtomicIntrinsics
