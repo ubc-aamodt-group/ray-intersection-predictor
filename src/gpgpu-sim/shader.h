@@ -80,7 +80,8 @@ enum exec_unit_type_t {
   DP = 4,
   INT = 5,
   TENSOR = 6,
-  SPECIALIZED = 7
+  SPECIALIZED = 7,
+  RT = 8
 };
 
 class thread_ctx_t {
@@ -330,6 +331,7 @@ class scheduler_unit {  // this can be copied freely, so can be used in std
                  std::vector<shd_warp_t *> *warp, register_set *sp_out,
                  register_set *dp_out, register_set *sfu_out,
                  register_set *int_out, register_set *tensor_core_out,
+                 register_set *rt_core_out,
                  std::vector<register_set *> &spec_cores_out,
                  register_set *mem_out, int id)
       : m_supervised_warps(),
@@ -343,6 +345,7 @@ class scheduler_unit {  // this can be copied freely, so can be used in std
         m_sfu_out(sfu_out),
         m_int_out(int_out),
         m_tensor_core_out(tensor_core_out),
+        m_rt_core_out(rt_core_out),
         m_spec_cores_out(spec_cores_out),
         m_mem_out(mem_out),
         m_id(id) {}
@@ -424,6 +427,7 @@ class scheduler_unit {  // this can be copied freely, so can be used in std
   register_set *m_sfu_out;
   register_set *m_int_out;
   register_set *m_tensor_core_out;
+  register_set *m_rt_core_out;
   register_set *m_mem_out;
   std::vector<register_set *> &m_spec_cores_out;
 
@@ -436,11 +440,11 @@ class lrr_scheduler : public scheduler_unit {
                 Scoreboard *scoreboard, simt_stack **simt,
                 std::vector<shd_warp_t *> *warp, register_set *sp_out,
                 register_set *dp_out, register_set *sfu_out,
-                register_set *int_out, register_set *tensor_core_out,
+                register_set *int_out, register_set *tensor_core_out, register_set *rt_core_out,
                 std::vector<register_set *> &spec_cores_out,
                 register_set *mem_out, int id)
       : scheduler_unit(stats, shader, scoreboard, simt, warp, sp_out, dp_out,
-                       sfu_out, int_out, tensor_core_out, spec_cores_out,
+                       sfu_out, int_out, tensor_core_out, rt_core_out, spec_cores_out,
                        mem_out, id) {}
   virtual ~lrr_scheduler() {}
   virtual void order_warps();
@@ -455,11 +459,11 @@ class gto_scheduler : public scheduler_unit {
                 Scoreboard *scoreboard, simt_stack **simt,
                 std::vector<shd_warp_t *> *warp, register_set *sp_out,
                 register_set *dp_out, register_set *sfu_out,
-                register_set *int_out, register_set *tensor_core_out,
+                register_set *int_out, register_set *tensor_core_out, register_set *rt_core_out,
                 std::vector<register_set *> &spec_cores_out,
                 register_set *mem_out, int id)
       : scheduler_unit(stats, shader, scoreboard, simt, warp, sp_out, dp_out,
-                       sfu_out, int_out, tensor_core_out, spec_cores_out,
+                       sfu_out, int_out, tensor_core_out, rt_core_out, spec_cores_out,
                        mem_out, id) {}
   virtual ~gto_scheduler() {}
   virtual void order_warps();
@@ -474,11 +478,11 @@ class oldest_scheduler : public scheduler_unit {
                    Scoreboard *scoreboard, simt_stack **simt,
                    std::vector<shd_warp_t *> *warp, register_set *sp_out,
                    register_set *dp_out, register_set *sfu_out,
-                   register_set *int_out, register_set *tensor_core_out,
+                   register_set *int_out, register_set *tensor_core_out, register_set *rt_core_out,
                    std::vector<register_set *> &spec_cores_out,
                    register_set *mem_out, int id)
       : scheduler_unit(stats, shader, scoreboard, simt, warp, sp_out, dp_out,
-                       sfu_out, int_out, tensor_core_out, spec_cores_out,
+                       sfu_out, int_out, tensor_core_out, rt_core_out, spec_cores_out,
                        mem_out, id) {}
   virtual ~oldest_scheduler() {}
   virtual void order_warps();
@@ -494,11 +498,11 @@ class two_level_active_scheduler : public scheduler_unit {
                              std::vector<shd_warp_t *> *warp,
                              register_set *sp_out, register_set *dp_out,
                              register_set *sfu_out, register_set *int_out,
-                             register_set *tensor_core_out,
+                             register_set *tensor_core_out, register_set *rt_core_out,
                              std::vector<register_set *> &spec_cores_out,
                              register_set *mem_out, int id, char *config_str)
       : scheduler_unit(stats, shader, scoreboard, simt, warp, sp_out, dp_out,
-                       sfu_out, int_out, tensor_core_out, spec_cores_out,
+                       sfu_out, int_out, tensor_core_out, rt_core_out, spec_cores_out,
                        mem_out, id),
         m_pending_warps() {
     unsigned inner_level_readin;
@@ -544,7 +548,7 @@ class swl_scheduler : public scheduler_unit {
                 Scoreboard *scoreboard, simt_stack **simt,
                 std::vector<shd_warp_t *> *warp, register_set *sp_out,
                 register_set *dp_out, register_set *sfu_out,
-                register_set *int_out, register_set *tensor_core_out,
+                register_set *int_out, register_set *tensor_core_out, register_set *rt_core_out,
                 std::vector<register_set *> &spec_cores_out,
                 register_set *mem_out, int id, char *config_string);
   virtual ~swl_scheduler() {}
@@ -1251,6 +1255,32 @@ class shader_memory_interface;
 class shader_core_mem_fetch_allocator;
 class cache_t;
 
+
+class rt_unit : public pipelined_simd_unit {
+    public:
+        // RT-CORE NOTE: Determine inputs
+        rt_unit(mem_fetch_interface *icnt,
+                shader_core_mem_fetch_allocator *mf_allocator,
+                shader_core_ctx *core,
+                const shader_core_config *config);
+                
+        virtual bool can_issue(const warp_inst_t &inst) const {
+          switch (inst.op) {
+            case RT_CORE_OP:
+              break;
+            default:
+              return false;
+          }
+          return pipelined_simd_unit::can_issue(inst);
+        }
+        
+        virtual void active_lanes_in_pipeline();
+        virtual void issue(register_set &source_reg);
+        virtual void cycle();
+        
+        // RT-CORE NOTE: TODO:
+};
+
 class ldst_unit : public pipelined_simd_unit {
  public:
   ldst_unit(mem_fetch_interface *icnt,
@@ -1389,14 +1419,16 @@ enum pipeline_stage_name_t {
   EX_WB,
   ID_OC_TENSOR_CORE,
   OC_EX_TENSOR_CORE,
-  N_PIPELINE_STAGES
+  ID_OC_RT,
+  OC_EX_RT,
+  N_PIPELINE_STAGES,
 };
 
 const char *const pipeline_stage_name_decode[] = {
     "ID_OC_SP",          "ID_OC_DP",         "ID_OC_INT", "ID_OC_SFU",
     "ID_OC_MEM",         "OC_EX_SP",         "OC_EX_DP",  "OC_EX_INT",
     "OC_EX_SFU",         "OC_EX_MEM",        "EX_WB",     "ID_OC_TENSOR_CORE",
-    "OC_EX_TENSOR_CORE", "N_PIPELINE_STAGES"};
+    "OC_EX_TENSOR_CORE", "ID_OC_RT", "OC_EX_RT", "N_PIPELINE_STAGES"};
 
 struct specialized_unit_params {
   unsigned latency;
@@ -1563,6 +1595,7 @@ class shader_core_config : public core_config {
   int gpgpu_num_dp_units;
   int gpgpu_num_sfu_units;
   int gpgpu_num_tensor_core_units;
+  int gpgpu_num_rt_core_units;
   int gpgpu_num_mem_units;
   int gpgpu_num_int_units;
 
@@ -1590,6 +1623,7 @@ class shader_core_config : public core_config {
   int simt_core_sim_order;
 
   unsigned smem_latency;
+  unsigned rt_core_latency;
 
   unsigned mem2device(unsigned memid) const { return memid + n_simt_clusters; }
 

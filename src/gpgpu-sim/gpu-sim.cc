@@ -262,6 +262,8 @@ void shader_core_config::reg_options(class OptionParser *opp) {
                          &m_L1D_config.l1_latency, "L1 Hit Latency", "1");
   option_parser_register(opp, "-gpgpu_smem_latency", OPT_UINT32, &smem_latency,
                          "smem Latency", "3");
+  option_parser_register(opp, "-gpgpu_rt_latency", OPT_UINT32, &rt_core_latency,
+                         "RT Core Latency", "3");
   option_parser_register(opp, "-gpgpu_cache:dl1PrefL1", OPT_CSTR,
                          &m_L1D_config.m_config_stringPrefL1,
                          "per-shader L1 data cache config "
@@ -486,8 +488,8 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       opp, "-gpgpu_pipeline_widths", OPT_CSTR, &pipeline_widths_string,
       "Pipeline widths "
       "ID_OC_SP,ID_OC_DP,ID_OC_INT,ID_OC_SFU,ID_OC_MEM,OC_EX_SP,OC_EX_DP,OC_EX_"
-      "INT,OC_EX_SFU,OC_EX_MEM,EX_WB,ID_OC_TENSOR_CORE,OC_EX_TENSOR_CORE",
-      "1,1,1,1,1,1,1,1,1,1,1,1,1");
+      "INT,OC_EX_SFU,OC_EX_MEM,EX_WB,ID_OC_TENSOR_CORE,OC_EX_TENSOR_CORE,ID_OC_RT,OC_EX_RT",
+      "1,1,1,1,1,1,1,1,1,1,1,1,1,1,1");
   option_parser_register(opp, "-gpgpu_tensor_core_avail", OPT_INT32,
                          &gpgpu_tensor_core_avail,
                          "Tensor Core Available (default=0)", "0");
@@ -506,6 +508,9 @@ void shader_core_config::reg_options(class OptionParser *opp) {
   option_parser_register(opp, "-gpgpu_num_tensor_core_units", OPT_INT32,
                          &gpgpu_num_tensor_core_units,
                          "Number of tensor_core units (default=1)", "0");
+  option_parser_register(opp, "-gpgpu_num_rt_core_units", OPT_INT32,
+                         &gpgpu_num_rt_core_units,
+                         "Number of rt core units (default=1)", "1");
   option_parser_register(
       opp, "-gpgpu_num_mem_units", OPT_INT32, &gpgpu_num_mem_units,
       "Number if ldst units (default=1) WARNING: not hooked up to anything",
