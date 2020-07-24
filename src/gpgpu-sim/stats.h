@@ -33,6 +33,8 @@ enum mem_stage_access_type {
   C_MEM,
   T_MEM,
   S_MEM,
+  RT_C_MEM,
+  RT_T_MEM,
   G_MEM_LD,
   L_MEM_LD,
   G_MEM_ST,

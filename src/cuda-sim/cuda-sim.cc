@@ -1860,7 +1860,7 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
 
     if (pI->m_is_raytrace) {
       // TODO: Per lane mem access in warp?
-      inst.m_raytrace_mem_accesses = m_raytrace_mem_accesses;
+      inst.set_rt_mem_accesses(m_raytrace_mem_accesses);
       insn_space.set_type(global_space);
       inst.space = insn_space;
       insn_data_size = 16;

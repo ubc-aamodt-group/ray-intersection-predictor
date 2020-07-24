@@ -416,7 +416,7 @@ void shader_core_ctx::create_exec_pipeline() {
   
   // RT-CORE NOTE: Update this to match ldst_unit
   for (int k = 0; k < m_config->gpgpu_num_rt_core_units; k++) {
-    m_fu.push_back(new rt_unit(m_icnt, m_mem_fetch_allocator, this, m_config));
+    m_fu.push_back(new rt_unit(m_icnt, m_mem_fetch_allocator, this, m_config, m_sid, m_tpc));
     m_dispatch_port.push_back(ID_OC_RT);
     m_issue_port.push_back(OC_EX_RT);
   }
@@ -2169,23 +2169,6 @@ void tensor_core::issue(register_set &source_reg) {
   pipelined_simd_unit::issue(source_reg);
 }
 
-rt_unit::rt_unit(mem_fetch_interface *icnt,
-                     shader_core_mem_fetch_allocator *mf_allocator,
-                     shader_core_ctx *core,
-                     const shader_core_config *config)
-    : pipelined_simd_unit(NULL, config, config->rt_core_latency, core) {
-    // Mimic ldst_unit -> no result port?
-  m_name = "RT_CORE";     
-}
-
-void rt_unit::issue(register_set &reg_set) {
-  warp_inst_t *inst = *(reg_set.get_ready());
-  // RT-CORE NOTE: MEM__OP? RT__OP?
-  inst->op_pipe = MEM__OP;
-  // RT-CORE NOTE: Add stats
-  pipelined_simd_unit::issue(reg_set);
-}
-
 unsigned pipelined_simd_unit::get_active_lanes_in_pipeline() {
   active_mask_t active_lanes;
   active_lanes.reset();
@@ -2368,9 +2351,169 @@ void pipelined_simd_unit::issue(register_set &source_reg) {
     }
 */
 
+rt_unit::rt_unit(mem_fetch_interface *icnt,
+                     shader_core_mem_fetch_allocator *mf_allocator,
+                     shader_core_ctx *core,
+                     const shader_core_config *config,
+                     unsigned sid, unsigned tpc)
+    : pipelined_simd_unit(NULL, config, config->rt_core_latency, core) {
+    // RT-CORE NOTE: Mimic ldst_unit -> no result port?
+    
+  // m_memory_config = mem_config;
+  m_icnt = icnt;
+  m_mf_allocator = mf_allocator;  
+  m_core = core;
+  // m_operand_collector = operand_collector;
+  // m_scoreboard = scoreboard;
+  // m_stats = stats;
+  m_sid = sid;
+  m_tpc = tpc;
+  
+  // RT-CORE NOTE: Make the type of cache (tex, constant, data) configurable?
+  m_L0_complet = new read_only_cache( "L0Complet", m_config->m_L0C_config, m_sid,
+                                      get_shader_constant_cache_id(), icnt, 
+                                      IN_L1C_MISS_QUEUE);
+                                      // QUESTION: It starts off in miss queue status?
+  m_L0_tri = new read_only_cache( "L0Triangle", m_config->m_L0T_config, m_sid,
+                                  get_shader_constant_cache_id(), icnt, 
+                                  IN_L1C_MISS_QUEUE);
+
+  // l0c_latency_queue.resize(m_config->m_L0C_config.)
+
+  m_mem_rc = NO_RC_FAIL;
+  
+  m_name = "RT_CORE";     
+}
+
+void rt_unit::issue(register_set &reg_set) {
+  warp_inst_t *inst = *(reg_set.get_ready());
+  // RT-CORE NOTE: MEM__OP? RT__OP?
+  inst->op_pipe = MEM__OP;
+  // RT-CORE NOTE: Add stats
+  pipelined_simd_unit::issue(reg_set);
+}
+
 void rt_unit::cycle() {
-// RT-CORE NOTE:
-  printf("")
+  
+  // RT-CORE NOTE
+  // QUESTION: m_pipeline_reg doesn't seem to be used for a global access?
+  // for (unsigned stage = 0; (stage + 1) < m_pipeline_depth; stage++)
+  //   if (m_pipeline_reg[stage]->empty() && !m_pipeline_reg[stage + 1]->empty())
+  //     move_warp(m_pipeline_reg[stage], m_pipeline_reg[stage + 1]);  
+  
+  // TODO: Deal with responses
+  
+  // RT-CORE NOTE TODO: Have to move accesses to miss queue
+  
+  // Cycle caches
+  m_L0_complet->cycle();
+  m_L0_tri->cycle();
+  
+  // if (m_config->m_L0_complet_config.l1_latency > 0) l0c_latency_queue_cycle();
+  // if (m_config->m_L0_tri_config.l1_latency > 0) l0t_latency_queue_cycle();
+  
+  // Copy ldst unit injection mechanism
+  warp_inst_t &pipe_reg = *m_dispatch_reg;
+  enum mem_stage_stall_type rc_fail = NO_RC_FAIL;
+  mem_stage_access_type type;
+  
+  bool done = true;
+  // RT-CORE NOTE: How to cycle both complet cache and triangle cache?
+  done &= memory_cycle(pipe_reg, rc_fail, type);
+  m_mem_rc = rc_fail;
+
+  if (!done) {  // log stall types and return
+    assert(rc_fail != NO_RC_FAIL);
+    // RT-CORE NOTE add stats
+    // m_stats->gpgpu_n_stall_shd_mem++;
+    // m_stats->gpu_stall_shd_mem_breakdown[type][rc_fail]++;
+    return;
+  }
+
+  // If "done" (no more mem accesses)
+  if (!pipe_reg.empty()) {
+    unsigned warp_id = pipe_reg.warp_id();
+    assert(pipe_reg.is_load());
+    assert(pipe_reg.space.get_type() == global_space);
+
+    // Skip checking for pending writes (no WAW hazard?)
+   
+    m_core->warp_inst_complete(*m_dispatch_reg);
+    // RT-CORE NOTE check if this is still needed
+    // m_scoreboard->releaseRegisters(m_dispatch_reg);
+    
+    // QUESTION: What does this do?
+    m_core->dec_inst_in_pipeline(warp_id);
+    m_dispatch_reg->clear();
+  }
+}
+
+bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem_stage_access_type &fail_type) {
+  
+  if (inst.empty()) return true;
+  if (!inst.active_count()) return true;
+  assert(inst.space.get_type() == global_space);
+  
+  // RT-CORE NOTE: Add a ready bit? To signal when first node fetch returned and ready to request next node
+  
+  mem_stage_stall_type fail;
+  fail = process_memory_access_queue(m_L0_complet, inst);
+  
+  // Stalled
+  if (fail != NO_RC_FAIL) {
+    rc_fail = fail;
+    fail_type = RT_C_MEM;
+  }
+  
+  // Done if no more rt mem accesses
+  return inst.rt_mem_accesses_empty();
+   
+}
+
+mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_inst_t &inst) {
+  mem_stage_stall_type result = NO_RC_FAIL;
+  if (inst.rt_mem_accesses_empty()) return result;
+  
+  if (!cache->data_port_free()) return DATA_PORT_STALL;
+  
+  // RT-CORE NOTE TODO: Figure out how to generate mem_access_t properly.. maybe in abstract_hardware_model.cc or maybe here
+  const mem_access_t &access = inst.accessq_back(); //(for debugging)
+  
+  mem_fetch *mf = m_mf_allocator->alloc(
+    inst, access, m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle
+  );
+  std::list<cache_event> events;
+  enum cache_request_status status = cache->access(
+    mf->get_addr(), mf,
+    m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle,
+    events
+  );
+  
+  return process_cache_access(cache, mf->get_addr(), inst, events, mf, status);
+
+}
+
+mem_stage_stall_type rt_unit::process_cache_access(
+    cache_t *cache, new_addr_type address, warp_inst_t &inst,
+    std::list<cache_event> &events, mem_fetch *mf,
+    enum cache_request_status status) {
+      
+    mem_stage_stall_type result = NO_RC_FAIL;
+    
+    // RT-CORE NOTE Assume no writes sent?
+    
+    if (status == HIT) {
+      inst.rt_mem_accesses_pop();
+    } else if (status == RESERVATION_FAIL) {
+      result = BK_CONF;
+      delete mf;
+    } else {
+      assert(status == MISS || status == HIT_RESERVED);
+      inst.rt_mem_accesses_pop();
+    }
+    
+    if (!inst.rt_mem_accesses_empty() && result == NO_RC_FAIL) result = COAL_STALL;
+    return result;
 }
 
 void ldst_unit::init(mem_fetch_interface *icnt,
@@ -2723,8 +2866,10 @@ void ldst_unit::cycle() {
         }
         if (!pending_requests) {
           m_core->warp_inst_complete(*m_dispatch_reg);
+        // RT-CORE NOTE check if this is still needed
           m_scoreboard->releaseRegisters(m_dispatch_reg);
         }
+        // QUESTION: What does this do?
         m_core->dec_inst_in_pipeline(warp_id);
         m_dispatch_reg->clear();
       }

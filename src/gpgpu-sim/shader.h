@@ -1262,7 +1262,8 @@ class rt_unit : public pipelined_simd_unit {
         rt_unit(mem_fetch_interface *icnt,
                 shader_core_mem_fetch_allocator *mf_allocator,
                 shader_core_ctx *core,
-                const shader_core_config *config);
+                const shader_core_config *config,
+                unsigned sid, unsigned tpc);
                 
         virtual bool can_issue(const warp_inst_t &inst) const {
           switch (inst.op) {
@@ -1278,7 +1279,46 @@ class rt_unit : public pipelined_simd_unit {
         virtual void issue(register_set &source_reg);
         virtual void cycle();
         
-        // RT-CORE NOTE: TODO:
+        // void fill(mem_fetch *mf);
+        // void flush();
+        // void invalidate();
+        
+        
+    protected:
+      bool memory_cycle(  warp_inst_t &inst, 
+                          mem_stage_stall_type &rc_fail,
+                          mem_stage_access_type &fail_type);
+                          
+      virtual mem_stage_stall_type process_cache_access(
+            cache_t *cache, new_addr_type address, warp_inst_t &inst,
+            std::list<cache_event> &events, mem_fetch *mf,
+            enum cache_request_status status);
+            
+      mem_stage_stall_type process_memory_access_queue(cache_t *cache, warp_inst_t &inst);
+      // mem_stage_stall_type process_memory_access_queue_l1cache(l1_cache *cache, warp_inst_t &inst);
+      
+      const memory_config *m_memory_config;
+      class mem_fetch_interface *m_icnt;
+      shader_core_mem_fetch_allocator *m_mf_allocator;
+      class shader_core_ctx *m_core;
+      
+      unsigned m_sid;
+      unsigned m_tpc;
+      
+      read_only_cache *m_L0_complet;
+      read_only_cache *m_L0_tri;
+      
+      std::map<unsigned /*warp_id*/,
+           std::map<unsigned /*regnum*/, unsigned /*count*/>>
+           m_pending_writes;
+      std::list<mem_fetch *> m_response_fifo;
+      enum mem_stage_stall_type m_mem_rc;
+      
+      // std::vector<std::deque<mem_fetch *>> l0c_latency_queue;
+      // void l0c_latency_queue_cycle();
+      // std::vector<std::deque<mem_fetch *>> l0t_latency_queue;
+      // void l0t_latency_queue_cycle();
+      
 };
 
 class ldst_unit : public pipelined_simd_unit {
@@ -1494,6 +1534,9 @@ class shader_core_config : public core_config {
     m_L1I_config.init(m_L1I_config.m_config_string, FuncCachePreferNone);
     m_L1T_config.init(m_L1T_config.m_config_string, FuncCachePreferNone);
     m_L1C_config.init(m_L1C_config.m_config_string, FuncCachePreferNone);
+    // RT-CORE NOTE: To be fixed
+    m_L0C_config.init(m_L1C_config.m_config_string, FuncCachePreferNone);
+    m_L0T_config.init(m_L1C_config.m_config_string, FuncCachePreferNone);
     m_L1D_config.init(m_L1D_config.m_config_string, FuncCachePreferNone);
     gpgpu_cache_texl1_linesize = m_L1T_config.get_line_sz();
     gpgpu_cache_constl1_linesize = m_L1C_config.get_line_sz();
@@ -1556,6 +1599,8 @@ class shader_core_config : public core_config {
   mutable cache_config m_L1I_config;
   mutable cache_config m_L1T_config;
   mutable cache_config m_L1C_config;
+  mutable cache_config m_L0C_config;
+  mutable cache_config m_L0T_config;
   mutable l1d_cache_config m_L1D_config;
 
   bool gpgpu_dwf_reg_bankconflict;

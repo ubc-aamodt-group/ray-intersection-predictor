@@ -1169,7 +1169,14 @@ class warp_inst_t : public inst_t {
   unsigned get_schd_id() const { return m_scheduler_id; }
   active_mask_t get_warp_active_mask() const { return m_warp_active_mask; }
   
-  void add_raytrace_mem_access(addr_t addr) { m_raytrace_mem_accesses.push_back(addr); }
+  // RT-CORE NOTE: Check that list assignments work like this.. or is there a better way?
+  void set_rt_mem_accesses(std::list<new_addr_type> mem_accesses) { m_raytrace_mem_accesses = mem_accesses; }
+  bool rt_mem_accesses_empty() { return m_raytrace_mem_accesses.empty(); }
+  void rt_mem_accesses_pop() { m_raytrace_mem_accesses.pop_front(); }
+  
+  // RT-CORE NOTE: May need to update this logic for special node fetching? (i.e. prefetch next node?)
+  new_addr_type get_next_rt_mem_access() { return m_raytrace_mem_accesses.front(); }
+  
 
  protected:
   unsigned m_uid;
@@ -1210,11 +1217,12 @@ class warp_inst_t : public inst_t {
 
   unsigned m_scheduler_id;  // the scheduler that issues this inst
 
+  std::list<new_addr_type> m_raytrace_mem_accesses;
+  
   // Jin: cdp support
  public:
   int m_is_cdp;
   bool m_is_raytrace;
-  std::list<new_addr_type> m_raytrace_mem_accesses;
 };
 
 void move_warp(warp_inst_t *&dst, warp_inst_t *&src);
