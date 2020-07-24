@@ -1279,7 +1279,7 @@ class rt_unit : public pipelined_simd_unit {
         virtual void issue(register_set &source_reg);
         virtual void cycle();
         
-        // void fill(mem_fetch *mf);
+        void fill(mem_fetch *mf);
         // void flush();
         // void invalidate();
         
@@ -1535,8 +1535,8 @@ class shader_core_config : public core_config {
     m_L1T_config.init(m_L1T_config.m_config_string, FuncCachePreferNone);
     m_L1C_config.init(m_L1C_config.m_config_string, FuncCachePreferNone);
     // RT-CORE NOTE: To be fixed
-    m_L0C_config.init(m_L1C_config.m_config_string, FuncCachePreferNone);
-    m_L0T_config.init(m_L1C_config.m_config_string, FuncCachePreferNone);
+    m_L0C_config.init(m_L0C_config.m_config_string, FuncCachePreferNone);
+    m_L0T_config.init(m_L0C_config.m_config_string, FuncCachePreferNone);
     m_L1D_config.init(m_L1D_config.m_config_string, FuncCachePreferNone);
     gpgpu_cache_texl1_linesize = m_L1T_config.get_line_sz();
     gpgpu_cache_constl1_linesize = m_L1C_config.get_line_sz();
@@ -2318,6 +2318,7 @@ class shader_core_ctx : public core_t {
   std::vector<simd_function_unit *>
       m_fu;  // stallable pipelines should be last in this array
   ldst_unit *m_ldst_unit;
+  rt_unit *m_rt_unit;
   static const unsigned MAX_ALU_LATENCY = 512;
   unsigned num_result_bus;
   std::vector<std::bitset<MAX_ALU_LATENCY> *> m_result_bus;

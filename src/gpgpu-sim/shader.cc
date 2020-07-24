@@ -413,13 +413,6 @@ void shader_core_ctx::create_exec_pipeline() {
     m_dispatch_port.push_back(ID_OC_TENSOR_CORE);
     m_issue_port.push_back(OC_EX_TENSOR_CORE);
   }
-  
-  // RT-CORE NOTE: Update this to match ldst_unit
-  for (int k = 0; k < m_config->gpgpu_num_rt_core_units; k++) {
-    m_fu.push_back(new rt_unit(m_icnt, m_mem_fetch_allocator, this, m_config, m_sid, m_tpc));
-    m_dispatch_port.push_back(ID_OC_RT);
-    m_issue_port.push_back(OC_EX_RT);
-  }
 
   for (int j = 0; j < m_config->m_specialized_unit.size(); j++) {
     for (unsigned k = 0; k < m_config->m_specialized_unit[j].num_units; k++) {
@@ -431,7 +424,13 @@ void shader_core_ctx::create_exec_pipeline() {
       m_issue_port.push_back(m_config->m_specialized_unit[j].OC_EX_SPEC_ID);
     }
   }
-
+  
+  
+  m_rt_unit = new rt_unit(m_icnt, m_mem_fetch_allocator, this, m_config, m_sid, m_tpc);
+  m_fu.push_back(m_rt_unit);
+  m_dispatch_port.push_back(ID_OC_RT);
+  m_issue_port.push_back(OC_EX_RT);
+  
   m_ldst_unit = new ldst_unit(m_icnt, m_mem_fetch_allocator, this,
                               &m_operand_collector, m_scoreboard, m_config,
                               m_memory_config, m_stats, m_sid, m_tpc);
@@ -2402,8 +2401,22 @@ void rt_unit::cycle() {
   //     move_warp(m_pipeline_reg[stage], m_pipeline_reg[stage + 1]);  
   
   // TODO: Deal with responses
+  if (!m_response_fifo.empty()) {
+    mem_fetch *mf = m_response_fifo.front();
+    // Figure out access type?
+    // RT-CORE NOTE: figure out how to separate node and triangle responses
+    mf->set_status(IN_SHADER_FETCHED,
+                   m_core->get_gpu()->gpu_sim_cycle +
+                   m_core->get_gpu()->gpu_tot_sim_cycle);
+                   
+    m_L0_complet->fill( mf, m_core->get_gpu()->gpu_sim_cycle +
+                        m_core->get_gpu()->gpu_tot_sim_cycle);
+                        
+    m_response_fifo.pop_front();
+    
+    // RT-CORE NOTE: Launch next memory request
+  }
   
-  // RT-CORE NOTE TODO: Have to move accesses to miss queue
   
   // Cycle caches
   m_L0_complet->cycle();
@@ -2514,6 +2527,14 @@ mem_stage_stall_type rt_unit::process_cache_access(
     
     if (!inst.rt_mem_accesses_empty() && result == NO_RC_FAIL) result = COAL_STALL;
     return result;
+}
+
+void rt_unit::fill(mem_fetch *mf) {
+  // RT-CORE NOTE: Add a new status (IN_SHADER_RT_RESPONSE_FIFO)
+  mf->set_status(
+      IN_SHADER_LDST_RESPONSE_FIFO,
+      m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle);
+  m_response_fifo.push_back(mf);
 }
 
 void ldst_unit::init(mem_fetch_interface *icnt,
@@ -3920,7 +3941,11 @@ bool shader_core_ctx::ldst_unit_response_buffer_full() const {
 }
 
 void shader_core_ctx::accept_ldst_unit_response(mem_fetch *mf) {
-  m_ldst_unit->fill(mf);
+  // Go to rt_unit
+  if (mf->israytrace()) m_rt_unit->fill(mf);
+  
+  // Go to ldst_unit
+  else m_ldst_unit->fill(mf);
 }
 
 void shader_core_ctx::store_ack(class mem_fetch *mf) {
