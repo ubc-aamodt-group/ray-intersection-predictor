@@ -2396,8 +2396,15 @@ void rt_unit::issue(register_set &reg_set) {
 
 void rt_unit::cycle() {
   
+  // Copy ldst unit injection mechanism
+  warp_inst_t &pipe_reg = *m_dispatch_reg;
+  enum mem_stage_stall_type rc_fail = NO_RC_FAIL;
+  mem_stage_access_type type;
+  
   // RT-CORE NOTE
   // Add cycling for intersection units?
+  
+  writeback();
   
   // TODO: Deal with responses
   if (!m_response_fifo.empty()) {
@@ -2414,7 +2421,7 @@ void rt_unit::cycle() {
     m_response_fifo.pop_front();
     
     // RT-CORE NOTE: Launch next memory request
-    m_memfetch_wait = false;
+    pipe_reg.clear_mem_fetch_wait();
   }
   
   
@@ -2425,18 +2432,13 @@ void rt_unit::cycle() {
   // if (m_config->m_L0_complet_config.l1_latency > 0) l0c_latency_queue_cycle();
   // if (m_config->m_L0_tri_config.l1_latency > 0) l0t_latency_queue_cycle();
   
-  // Copy ldst unit injection mechanism
-  warp_inst_t &pipe_reg = *m_dispatch_reg;
-  enum mem_stage_stall_type rc_fail = NO_RC_FAIL;
-  mem_stage_access_type type;
-  
   bool done = true;
   // RT-CORE NOTE: How to cycle both complet cache and triangle cache?
   done &= memory_cycle(pipe_reg, rc_fail, type);
   m_mem_rc = rc_fail;
 
   if (!done) {  // log stall types and return
-    assert(rc_fail != NO_RC_FAIL);
+    assert(rc_fail != NO_RC_FAIL || pipe_reg.mem_fetch_wait());
     // RT-CORE NOTE add stats
     // m_stats->gpgpu_n_stall_shd_mem++;
     // m_stats->gpu_stall_shd_mem_breakdown[type][rc_fail]++;
@@ -2444,7 +2446,7 @@ void rt_unit::cycle() {
   }
 
   // If "done" (no more mem accesses) RT-CORE NOTE: Fix this to also check for in flight mf's
-  if (!pipe_reg.empty()) {
+  if (!pipe_reg.empty() && !pipe_reg.mem_fetch_wait()) {
     unsigned warp_id = pipe_reg.warp_id();
     assert(pipe_reg.is_load());
     assert(pipe_reg.space.get_type() == global_space);
@@ -2468,7 +2470,7 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
   assert(inst.space.get_type() == global_space);
   
   // RT-CORE NOTE: Add a ready bit? To signal when first node fetch returned and ready to request next node
-  if (m_memfetch_wait) return inst.rt_mem_accesses_empty();
+  if (inst.mem_fetch_wait()) return inst.rt_mem_accesses_empty();
   
   
   mem_stage_stall_type fail;
@@ -2485,14 +2487,22 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
    
 }
 
+
+// RT-CORE NOTE: Not sure if this is necessary (in ldst_unit, this is where the completed mf is cleared from the mshr)
+void rt_unit::writeback() {
+  if (m_L0_complet->access_ready()) {
+    mem_fetch *mf = m_L0_complet->next_access();
+    // m_next_wb = mf->get_inst();
+    delete mf;
+    // serviced_client = next_client;
+  }
+}
+
 mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_inst_t &inst) {
   mem_stage_stall_type result = NO_RC_FAIL;
   if (inst.rt_mem_accesses_empty()) return result;
   
   if (!cache->data_port_free()) return DATA_PORT_STALL;
-  
-  // RT-CORE NOTE TODO: Figure out how to generate mem_access_t properly.. maybe in abstract_hardware_model.cc or maybe here
-  // const mem_access_t &access = inst.accessq_back(); //(for debugging)
   
   mem_access_t access = inst.get_next_rt_mem_access();
   
@@ -2527,7 +2537,6 @@ mem_stage_stall_type rt_unit::process_cache_access(
     } else {
       assert(status == MISS || status == HIT_RESERVED);
       // inst.rt_mem_accesses_pop(address);
-      // m_memfetch_wait = true;
     }
     
     if (!inst.rt_mem_accesses_empty() && result == NO_RC_FAIL) result = COAL_STALL;

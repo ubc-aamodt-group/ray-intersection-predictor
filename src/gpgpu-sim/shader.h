@@ -1283,6 +1283,7 @@ class rt_unit : public pipelined_simd_unit {
         void fill(mem_fetch *mf);
         // void flush();
         // void invalidate();
+        void writeback();
         
         
     protected:

@@ -775,10 +775,13 @@ mem_access_t warp_inst_t::get_next_rt_mem_access() {
   
   // Get current round of requests
   if (m_awaiting_rt_accesses.empty()) {
+    assert(!mem_fetch_wait());
     printf("Getting next set of rt mem accesses...\n");
     for (unsigned i=0; i<m_config->warp_size; i++) {
-      if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty())
+      if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty()) {
         m_awaiting_rt_accesses.insert(m_per_scalar_thread[i].raytrace_mem_accesses.front());
+        m_per_scalar_thread[i].raytrace_mem_accesses.pop_front();
+      }
     }
   }  
   assert(!m_awaiting_rt_accesses.empty());
@@ -786,15 +789,13 @@ mem_access_t warp_inst_t::get_next_rt_mem_access() {
   new_addr_type next_addr = *it;
   // RT-CORE NOTE TODO: Pop duplicates too (change list to set?)
   m_awaiting_rt_accesses.erase(next_addr);
-  rt_mem_accesses_pop(next_addr);
+  
+  // Done this round of requests, wait for response before continuing
+  if (m_awaiting_rt_accesses.empty()) m_mem_fetch_wait = true;
 
   // Generate mem_access_t
   // mem_access_t next_access;
   // RT-CORE NOTE: Coalesce requests?
-  
-  // mem_access_t(access_type, addr, size, is_write,
-  //                                  info.active, info.bytes, info.chunks,
-  //                                  m_config->gpgpu_ctx));
   mem_access_t next_access = memory_coalescing_arch_rt(next_addr);
   
   return next_access;

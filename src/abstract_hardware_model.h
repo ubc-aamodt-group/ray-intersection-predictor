@@ -1177,6 +1177,9 @@ class warp_inst_t : public inst_t {
   // RT-CORE NOTE: May need to update this logic for special node fetching? (i.e. vote on next mem access)
   mem_access_t get_next_rt_mem_access();
   mem_access_t memory_coalescing_arch_rt(new_addr_type addr);
+  
+  bool mem_fetch_wait() { return m_mem_fetch_wait; }
+  void clear_mem_fetch_wait() { m_mem_fetch_wait = false; }
 
  protected:
   unsigned m_uid;
@@ -1221,6 +1224,7 @@ class warp_inst_t : public inst_t {
   unsigned m_scheduler_id;  // the scheduler that issues this inst
 
   std::set<new_addr_type> m_awaiting_rt_accesses;
+  bool m_mem_fetch_wait;
   
   // Jin: cdp support
  public:
