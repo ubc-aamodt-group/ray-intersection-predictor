@@ -516,6 +516,7 @@ class ptx_thread_info {
 
   std::stack<class operand_info, std::vector<operand_info> > m_breakaddrs;
   
+  // RT-CORE NOTE: Might want to track parent-child relations? not sure..
   std::list<new_addr_type> m_raytrace_mem_accesses;
 };
 

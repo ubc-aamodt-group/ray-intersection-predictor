@@ -8,7 +8,7 @@ set print array-indexes
 set unwindonsignal on
 
 define dp
-        call g_the_gpu->dump_pipeline((0x40|0x4|0x1),$arg0,0)
+        call GPGPU_Context()->the_gpgpusim->g_the_gpu->dump_pipeline((0x40|0x4|0x1),$arg0,0)
 end
 
 document dp

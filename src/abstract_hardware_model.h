@@ -1170,13 +1170,13 @@ class warp_inst_t : public inst_t {
   active_mask_t get_warp_active_mask() const { return m_warp_active_mask; }
   
   // RT-CORE NOTE: Check that list assignments work like this.. or is there a better way?
-  void set_rt_mem_accesses(std::list<new_addr_type> mem_accesses) { m_raytrace_mem_accesses = mem_accesses; }
-  bool rt_mem_accesses_empty() { return m_raytrace_mem_accesses.empty(); }
-  void rt_mem_accesses_pop() { m_raytrace_mem_accesses.pop_front(); }
+  void set_rt_mem_accesses(unsigned int tid, std::list<new_addr_type> mem_accesses);
+  void rt_mem_accesses_pop(new_addr_type addr);
+  bool rt_mem_accesses_empty();
   
-  // RT-CORE NOTE: May need to update this logic for special node fetching? (i.e. prefetch next node?)
-  new_addr_type get_next_rt_mem_access() { return m_raytrace_mem_accesses.front(); }
-  
+  // RT-CORE NOTE: May need to update this logic for special node fetching? (i.e. vote on next mem access)
+  mem_access_t get_next_rt_mem_access();
+  mem_access_t memory_coalescing_arch_rt(new_addr_type addr);
 
  protected:
   unsigned m_uid;
@@ -1209,6 +1209,9 @@ class warp_inst_t : public inst_t {
                                                        // requests (to support
                                                        // 32B access in 8 chunks
                                                        // of 4B each)
+                                                       
+    // RT-CORE NOTE: Might need another variable to track depth of tree traversed?
+    std::list<new_addr_type> raytrace_mem_accesses;
   };
   bool m_per_scalar_thread_valid;
   std::vector<per_thread_info> m_per_scalar_thread;
@@ -1217,7 +1220,7 @@ class warp_inst_t : public inst_t {
 
   unsigned m_scheduler_id;  // the scheduler that issues this inst
 
-  std::list<new_addr_type> m_raytrace_mem_accesses;
+  std::set<new_addr_type> m_awaiting_rt_accesses;
   
   // Jin: cdp support
  public:

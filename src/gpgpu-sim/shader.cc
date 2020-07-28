@@ -125,7 +125,7 @@ void shader_core_ctx::create_front_pipeline() {
       assert(m_config->gpgpu_num_sched_per_core ==
              m_pipeline_reg[ID_OC_INT].get_size());
     if (m_config->gpgpu_num_rt_core_units > 0)
-      assert(m_config->gpgpu_num_rt_core_units == 
+      assert(m_config->gpgpu_num_sched_per_core == 
              m_pipeline_reg[ID_OC_RT].get_size());
   }
 
@@ -2381,6 +2381,8 @@ rt_unit::rt_unit(mem_fetch_interface *icnt,
 
   m_mem_rc = NO_RC_FAIL;
   
+  m_memfetch_wait = false;
+  
   m_name = "RT_CORE";     
 }
 
@@ -2395,10 +2397,7 @@ void rt_unit::issue(register_set &reg_set) {
 void rt_unit::cycle() {
   
   // RT-CORE NOTE
-  // QUESTION: m_pipeline_reg doesn't seem to be used for a global access?
-  // for (unsigned stage = 0; (stage + 1) < m_pipeline_depth; stage++)
-  //   if (m_pipeline_reg[stage]->empty() && !m_pipeline_reg[stage + 1]->empty())
-  //     move_warp(m_pipeline_reg[stage], m_pipeline_reg[stage + 1]);  
+  // Add cycling for intersection units?
   
   // TODO: Deal with responses
   if (!m_response_fifo.empty()) {
@@ -2415,6 +2414,7 @@ void rt_unit::cycle() {
     m_response_fifo.pop_front();
     
     // RT-CORE NOTE: Launch next memory request
+    m_memfetch_wait = false;
   }
   
   
@@ -2443,7 +2443,7 @@ void rt_unit::cycle() {
     return;
   }
 
-  // If "done" (no more mem accesses)
+  // If "done" (no more mem accesses) RT-CORE NOTE: Fix this to also check for in flight mf's
   if (!pipe_reg.empty()) {
     unsigned warp_id = pipe_reg.warp_id();
     assert(pipe_reg.is_load());
@@ -2468,6 +2468,8 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
   assert(inst.space.get_type() == global_space);
   
   // RT-CORE NOTE: Add a ready bit? To signal when first node fetch returned and ready to request next node
+  if (m_memfetch_wait) return inst.rt_mem_accesses_empty();
+  
   
   mem_stage_stall_type fail;
   fail = process_memory_access_queue(m_L0_complet, inst);
@@ -2490,7 +2492,9 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
   if (!cache->data_port_free()) return DATA_PORT_STALL;
   
   // RT-CORE NOTE TODO: Figure out how to generate mem_access_t properly.. maybe in abstract_hardware_model.cc or maybe here
-  const mem_access_t &access = inst.accessq_back(); //(for debugging)
+  // const mem_access_t &access = inst.accessq_back(); //(for debugging)
+  
+  mem_access_t access = inst.get_next_rt_mem_access();
   
   mem_fetch *mf = m_mf_allocator->alloc(
     inst, access, m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle
@@ -2516,13 +2520,14 @@ mem_stage_stall_type rt_unit::process_cache_access(
     // RT-CORE NOTE Assume no writes sent?
     
     if (status == HIT) {
-      inst.rt_mem_accesses_pop();
+      // inst.rt_mem_accesses_pop(address);
     } else if (status == RESERVATION_FAIL) {
       result = BK_CONF;
       delete mf;
     } else {
       assert(status == MISS || status == HIT_RESERVED);
-      inst.rt_mem_accesses_pop();
+      // inst.rt_mem_accesses_pop(address);
+      // m_memfetch_wait = true;
     }
     
     if (!inst.rt_mem_accesses_empty() && result == NO_RC_FAIL) result = COAL_STALL;
@@ -3322,6 +3327,18 @@ void ldst_unit::print(FILE *fout) const {
   if (!m_config->m_L1D_config.disabled()) m_L1D->display_state(fout);
   fprintf(fout, "LD/ST response FIFO (occupancy = %zu):\n",
           m_response_fifo.size());
+  for (std::list<mem_fetch *>::const_iterator i = m_response_fifo.begin();
+       i != m_response_fifo.end(); i++) {
+    const mem_fetch *mf = *i;
+    mf->print(fout);
+  }
+}
+
+void rt_unit::print(FILE *fout) const {
+  fprintf(fout, "%s dispatch= ", m_name.c_str());
+  m_dispatch_reg->print(fout);
+  m_L0_complet->display_state(fout);
+  fprintf(fout, "RT response FIFO (occupancy = %zu):\n", m_response_fifo.size());
   for (std::list<mem_fetch *>::const_iterator i = m_response_fifo.begin();
        i != m_response_fifo.end(); i++) {
     const mem_fetch *mf = *i;

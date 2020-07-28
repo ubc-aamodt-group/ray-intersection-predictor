@@ -746,6 +746,86 @@ void warp_inst_t::completed(unsigned long long cycle) const {
       pc, latency * active_count());
 }
 
+void warp_inst_t::set_rt_mem_accesses(unsigned int tid, std::list<new_addr_type> mem_accesses) { 
+  if (!m_per_scalar_thread_valid) {
+    m_per_scalar_thread.resize(m_config->warp_size);
+    m_per_scalar_thread_valid = true;
+  }
+  
+  m_per_scalar_thread[tid].raytrace_mem_accesses = mem_accesses; 
+}
+
+void warp_inst_t::rt_mem_accesses_pop(new_addr_type addr) {
+  for (unsigned i = 0; i < m_config->warp_size; i++) {
+    if (m_per_scalar_thread[i].raytrace_mem_accesses.front() == addr) 
+      m_per_scalar_thread[i].raytrace_mem_accesses.pop_front();
+  }
+}
+
+bool warp_inst_t::rt_mem_accesses_empty() { 
+  bool empty = true;
+  for (unsigned i = 0; i < m_config->warp_size; i++) {
+    empty &= m_per_scalar_thread[i].raytrace_mem_accesses.empty();
+  }
+  return empty;
+}
+
+mem_access_t warp_inst_t::get_next_rt_mem_access() {
+  // RT-CORE NOTE: first version (round robin?) this section tbd
+  
+  // Get current round of requests
+  if (m_awaiting_rt_accesses.empty()) {
+    printf("Getting next set of rt mem accesses...\n");
+    for (unsigned i=0; i<m_config->warp_size; i++) {
+      if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty())
+        m_awaiting_rt_accesses.insert(m_per_scalar_thread[i].raytrace_mem_accesses.front());
+    }
+  }  
+  assert(!m_awaiting_rt_accesses.empty());
+  auto it = m_awaiting_rt_accesses.begin();
+  new_addr_type next_addr = *it;
+  // RT-CORE NOTE TODO: Pop duplicates too (change list to set?)
+  m_awaiting_rt_accesses.erase(next_addr);
+  rt_mem_accesses_pop(next_addr);
+
+  // Generate mem_access_t
+  // mem_access_t next_access;
+  // RT-CORE NOTE: Coalesce requests?
+  
+  // mem_access_t(access_type, addr, size, is_write,
+  //                                  info.active, info.bytes, info.chunks,
+  //                                  m_config->gpgpu_ctx));
+  mem_access_t next_access = memory_coalescing_arch_rt(next_addr);
+  
+  return next_access;
+}
+
+mem_access_t warp_inst_t::memory_coalescing_arch_rt(new_addr_type addr) {
+  // RT-CORE NOTE Temporary hard coded values
+  unsigned segment_size = 32;
+  unsigned data_size = 16;
+  bool is_wr = false;
+  
+  unsigned warp_parts = m_config->mem_warp_parts;
+  unsigned subwarp_size = m_config->warp_size / warp_parts;
+  
+  unsigned block_address = line_size_based_tag_func(addr, segment_size);
+  unsigned chunk = (addr & 127) / 32;
+  
+  transaction_info info;
+  info.chunks.set(chunk);
+  unsigned idx = (addr & 127);
+  for (unsigned i=0; i<data_size; i++) {
+    if ((idx + i) < MAX_MEMORY_ACCESS_SIZE) info.bytes.set(idx + i);
+  }
+  
+  assert((block_address & (segment_size - 1)) == 0);
+  
+  return mem_access_t(  GLOBAL_ACC_R, block_address, segment_size, is_wr,
+                        info.active, info.bytes, info.chunks,
+                        m_config->gpgpu_ctx);
+}
+
 kernel_info_t::kernel_info_t(dim3 gridDim, dim3 blockDim,
                              class function_info *entry) {
   m_kernel_entry = entry;

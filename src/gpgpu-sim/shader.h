@@ -1278,6 +1278,7 @@ class rt_unit : public pipelined_simd_unit {
         virtual void active_lanes_in_pipeline();
         virtual void issue(register_set &source_reg);
         virtual void cycle();
+        void print(FILE *fout) const;
         
         void fill(mem_fetch *mf);
         // void flush();
@@ -1318,6 +1319,8 @@ class rt_unit : public pipelined_simd_unit {
       // void l0c_latency_queue_cycle();
       // std::vector<std::deque<mem_fetch *>> l0t_latency_queue;
       // void l0t_latency_queue_cycle();
+      
+      bool m_memfetch_wait;
       
 };
 
