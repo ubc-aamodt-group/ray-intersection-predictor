@@ -2041,6 +2041,7 @@ class shader_core_ctx : public core_t {
   // debug:
   void display_simt_state(FILE *fout, int mask) const;
   void display_pipeline(FILE *fout, int print_mem, int mask3bit) const;
+  void display_rt_pipeline(FILE *fout, int mask) const;
 
   void incload_stat() { m_stats->m_num_loadqueued_insn[m_sid]++; }
   void incstore_stat() { m_stats->m_num_storequeued_insn[m_sid]++; }
@@ -2419,6 +2420,7 @@ class simt_core_cluster {
   gpgpu_sim *get_gpu() { return m_gpu; }
 
   void display_pipeline(unsigned sid, FILE *fout, int print_mem, int mask);
+  void display_rt_pipeline(unsigned sid, FILE *fout, int mask);
   void print_cache_stats(FILE *fp, unsigned &dl1_accesses,
                          unsigned &dl1_misses) const;
 

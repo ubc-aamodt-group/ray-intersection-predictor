@@ -3355,6 +3355,54 @@ void rt_unit::print(FILE *fout) const {
   }
 }
 
+void shader_core_ctx::display_rt_pipeline(FILE *fout, int mask) const{
+  fprintf(fout, "=================================================\n");
+  fprintf(fout, "shader %u at cycle %Lu+%Lu (%u threads running)\n", m_sid,
+          m_gpu->gpu_tot_sim_cycle, m_gpu->gpu_sim_cycle, m_not_completed);
+  fprintf(fout, "=================================================\n");
+  
+  dump_warp_state(fout);
+  fprintf(fout, "\n");
+
+  m_L1I->display_state(fout);
+
+  fprintf(fout, "IF/ID       = ");
+  if (!m_inst_fetch_buffer.m_valid)
+    fprintf(fout, "bubble\n");
+  else {
+    fprintf(fout, "w%2u : pc = 0x%x, nbytes = %u\n",
+            m_inst_fetch_buffer.m_warp_id, m_inst_fetch_buffer.m_pc,
+            m_inst_fetch_buffer.m_nbytes);
+  }
+  fprintf(fout, "\nibuffer status:\n");
+  for (unsigned i = 0; i < m_config->max_warps_per_shader; i++) {
+    if (!m_warp[i]->ibuffer_empty()) m_warp[i]->print_ibuffer(fout);
+  }
+  fprintf(fout, "\n");
+  display_simt_state(fout, mask);
+  fprintf(fout, "-------------------------- Scoreboard\n");
+  m_scoreboard->printContents();
+  fprintf(fout, "-------------------------- OP COL\n");
+  m_operand_collector.dump(fout);
+  fprintf(fout, "-------------------------- Pipe Regs\n");   
+  
+  fprintf(fout, "--- %s ---\n", pipeline_stage_name_decode[ID_OC_RT]);
+  print_stage(ID_OC_RT, fout);
+  fprintf(fout, "\n");
+  fprintf(fout, "--- %s ---\n", pipeline_stage_name_decode[OC_EX_RT]);
+  print_stage(OC_EX_RT, fout);
+  fprintf(fout, "\n");
+  
+  fprintf(fout, "-------------------------- Fu\n");
+  for (unsigned n = 0; n < m_num_function_units; n++) {
+    std::string fu_name = m_fu[n]->get_name();
+    if (fu_name == "RT_CORE") {
+      m_fu[n]->print(fout);
+      fprintf(fout, "---------------\n");
+    }
+  }
+}
+
 void shader_core_ctx::display_pipeline(FILE *fout, int print_mem,
                                        int mask) const {
   fprintf(fout, "=================================================\n");
@@ -4617,6 +4665,10 @@ void simt_core_cluster::display_pipeline(unsigned sid, FILE *fout,
     const mem_fetch *mf = *i;
     mf->print(fout);
   }
+}
+
+void simt_core_cluster::display_rt_pipeline(unsigned sid, FILE *fout, int mask) {
+  m_core[m_config->sid_to_cid(sid)]->display_rt_pipeline(fout, mask);
 }
 
 void simt_core_cluster::print_cache_stats(FILE *fp, unsigned &dl1_accesses,
