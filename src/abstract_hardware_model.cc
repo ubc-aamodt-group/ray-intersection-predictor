@@ -767,6 +767,7 @@ bool warp_inst_t::rt_mem_accesses_empty() {
   for (unsigned i = 0; i < m_config->warp_size; i++) {
     empty &= m_per_scalar_thread[i].raytrace_mem_accesses.empty();
   }
+  empty &= m_next_rt_accesses.empty();
   return empty;
 }
 
@@ -774,29 +775,30 @@ mem_access_t warp_inst_t::get_next_rt_mem_access() {
   // RT-CORE NOTE: first version (round robin?) this section tbd
   
   // Get current round of requests
-  if (m_awaiting_rt_accesses.empty()) {
+  if (m_next_rt_accesses.empty()) {
     assert(!mem_fetch_wait());
     printf("Getting next set of rt mem accesses...\n");
     for (unsigned i=0; i<m_config->warp_size; i++) {
       if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty()) {
-        m_awaiting_rt_accesses.insert(m_per_scalar_thread[i].raytrace_mem_accesses.front());
+        m_next_rt_accesses.insert(m_per_scalar_thread[i].raytrace_mem_accesses.front());
         m_per_scalar_thread[i].raytrace_mem_accesses.pop_front();
       }
     }
   }  
-  assert(!m_awaiting_rt_accesses.empty());
-  auto it = m_awaiting_rt_accesses.begin();
+  assert(!m_next_rt_accesses.empty());
+  auto it = m_next_rt_accesses.begin();
   new_addr_type next_addr = *it;
   // RT-CORE NOTE TODO: Pop duplicates too (change list to set?)
-  m_awaiting_rt_accesses.erase(next_addr);
+  m_next_rt_accesses.erase(next_addr);
   
   // Done this round of requests, wait for response before continuing
-  if (m_awaiting_rt_accesses.empty()) m_mem_fetch_wait = true;
+  // if (m_next_rt_accesses.empty()) m_mf_awaiting_response = true;
 
   // Generate mem_access_t
   // mem_access_t next_access;
   // RT-CORE NOTE: Coalesce requests?
   mem_access_t next_access = memory_coalescing_arch_rt(next_addr);
+  m_mf_awaiting_response.insert(next_access.get_addr());
   
   return next_access;
 }

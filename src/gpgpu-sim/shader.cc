@@ -2403,6 +2403,7 @@ void rt_unit::cycle() {
   
   // RT-CORE NOTE
   // Add cycling for intersection units?
+  occupied >>=1;
   
   writeback();
   
@@ -2420,8 +2421,8 @@ void rt_unit::cycle() {
                         
     m_response_fifo.pop_front();
     
-    // RT-CORE NOTE: Launch next memory request
-    pipe_reg.clear_mem_fetch_wait();
+    // RT-CORE NOTE: Check for in flight accesses before clearing wait flag
+    pipe_reg.clear_mem_fetch_wait(mf->get_addr());
   }
   
   
@@ -2530,7 +2531,7 @@ mem_stage_stall_type rt_unit::process_cache_access(
     // RT-CORE NOTE Assume no writes sent?
     
     if (status == HIT) {
-      // inst.rt_mem_accesses_pop(address);
+      inst.clear_mem_fetch_wait(address);
     } else if (status == RESERVATION_FAIL) {
       result = BK_CONF;
       delete mf;

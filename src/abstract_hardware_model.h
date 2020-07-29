@@ -1178,8 +1178,14 @@ class warp_inst_t : public inst_t {
   mem_access_t get_next_rt_mem_access();
   mem_access_t memory_coalescing_arch_rt(new_addr_type addr);
   
-  bool mem_fetch_wait() { return m_mem_fetch_wait; }
-  void clear_mem_fetch_wait() { m_mem_fetch_wait = false; }
+  bool mem_fetch_wait() { 
+    // Wait for response if all current next accesses have been sent
+    // and waiting for response list is not empty
+    return m_next_rt_accesses.empty() && !m_mf_awaiting_response.empty(); 
+  }
+  void clear_mem_fetch_wait(new_addr_type addr) { 
+    m_mf_awaiting_response.erase(addr);
+  }
 
  protected:
   unsigned m_uid;
@@ -1223,8 +1229,8 @@ class warp_inst_t : public inst_t {
 
   unsigned m_scheduler_id;  // the scheduler that issues this inst
 
-  std::set<new_addr_type> m_awaiting_rt_accesses;
-  bool m_mem_fetch_wait;
+  std::set<new_addr_type> m_next_rt_accesses;
+  std::set<new_addr_type> m_mf_awaiting_response;
   
   // Jin: cdp support
  public:

@@ -786,6 +786,7 @@ void ptx_instruction::set_opcode_and_latency() {
       if (m_is_printf || m_is_cdp) {
         op = ALU_OP;
       } else if (m_is_raytrace) {
+        // RT-CORE NOTE: Add latency 
         op = RT_CORE_OP;
       } else
         op = CALL_OPS;
