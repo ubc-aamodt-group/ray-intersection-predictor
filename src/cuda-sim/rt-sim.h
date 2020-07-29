@@ -10,6 +10,8 @@
 #define EMPTY_STACK 0x7654321
 #define MAX_TRAVERSAL_STACK_SIZE 32
 
+// #define DEBUG_PRINT
+
 // Debugging
 void print_float4(float4 printVal);
 void print_stack(std::list<addr_t> &traversal_stack);

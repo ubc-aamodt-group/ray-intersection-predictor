@@ -2380,9 +2380,6 @@ rt_unit::rt_unit(mem_fetch_interface *icnt,
   // l0c_latency_queue.resize(m_config->m_L0C_config.)
 
   m_mem_rc = NO_RC_FAIL;
-  
-  m_memfetch_wait = false;
-  
   m_name = "RT_CORE";     
 }
 
@@ -2407,10 +2404,9 @@ void rt_unit::cycle() {
   
   writeback();
   
-  // TODO: Deal with responses
   if (!m_response_fifo.empty()) {
     mem_fetch *mf = m_response_fifo.front();
-    // Figure out access type?
+    
     // RT-CORE NOTE: figure out how to separate node and triangle responses
     mf->set_status(IN_SHADER_FETCHED,
                    m_core->get_gpu()->gpu_sim_cycle +
@@ -2421,7 +2417,7 @@ void rt_unit::cycle() {
                         
     m_response_fifo.pop_front();
     
-    // RT-CORE NOTE: Check for in flight accesses before clearing wait flag
+    // Clear response from list of in flight mem accesses
     pipe_reg.clear_mem_fetch_wait(mf->get_addr());
   }
   
@@ -2446,7 +2442,7 @@ void rt_unit::cycle() {
     return;
   }
 
-  // If "done" (no more mem accesses) RT-CORE NOTE: Fix this to also check for in flight mf's
+  // If "done" (no more mem accesses)
   if (!pipe_reg.empty() && !pipe_reg.mem_fetch_wait()) {
     unsigned warp_id = pipe_reg.warp_id();
     assert(pipe_reg.is_load());
@@ -2470,9 +2466,8 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
   if (!inst.active_count()) return true;
   assert(inst.space.get_type() == global_space);
   
-  // RT-CORE NOTE: Add a ready bit? To signal when first node fetch returned and ready to request next node
+  // If waiting for responses, don't send new requests
   if (inst.mem_fetch_wait()) return inst.rt_mem_accesses_empty();
-  
   
   mem_stage_stall_type fail;
   fail = process_memory_access_queue(m_L0_complet, inst);
@@ -2485,7 +2480,6 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
   
   // Done if no more rt mem accesses
   return inst.rt_mem_accesses_empty();
-   
 }
 
 
@@ -2504,9 +2498,11 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
   if (inst.rt_mem_accesses_empty()) return result;
   
   if (!cache->data_port_free()) return DATA_PORT_STALL;
-  
+
+  // Get next node to fetch
   mem_access_t access = inst.get_next_rt_mem_access();
   
+  // Access cache
   mem_fetch *mf = m_mf_allocator->alloc(
     inst, access, m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle
   );
@@ -2537,7 +2533,6 @@ mem_stage_stall_type rt_unit::process_cache_access(
       delete mf;
     } else {
       assert(status == MISS || status == HIT_RESERVED);
-      // inst.rt_mem_accesses_pop(address);
     }
     
     if (!inst.rt_mem_accesses_empty() && result == NO_RC_FAIL) result = COAL_STALL;

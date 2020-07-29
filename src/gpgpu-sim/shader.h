@@ -1321,8 +1321,6 @@ class rt_unit : public pipelined_simd_unit {
       // std::vector<std::deque<mem_fetch *>> l0t_latency_queue;
       // void l0t_latency_queue_cycle();
       
-      bool m_memfetch_wait;
-      
 };
 
 class ldst_unit : public pipelined_simd_unit {
