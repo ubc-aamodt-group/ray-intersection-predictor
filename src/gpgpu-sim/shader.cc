@@ -1734,6 +1734,10 @@ void ldst_unit::get_L1C_sub_stats(struct cache_sub_stats &css) const {
 void ldst_unit::get_L1T_sub_stats(struct cache_sub_stats &css) const {
   if (m_L1T) m_L1T->get_sub_stats(css);
 }
+void rt_unit::get_L0C_sub_stats(struct cache_sub_stats &css) const {
+  if (m_L0_complet) m_L0_complet->get_sub_stats(css);
+}
+
 
 void shader_core_ctx::warp_inst_complete(const warp_inst_t &inst) {
 #if 0
@@ -3115,6 +3119,34 @@ void gpgpu_sim::shader_print_cache_stats(FILE *fout) const {
     fprintf(fout, "\tL1T_total_cache_reservation_fails = %llu\n",
             total_css.res_fails);
   }
+  
+  if (!m_shader_config->m_L0C_config.disabled()) {
+    total_css.clear();
+    css.clear();
+    fprintf(fout, "L0_Complet_Cache:\n");
+    for (unsigned i = 0; i < m_shader_config->n_simt_clusters; ++i) {
+      m_cluster[i]->get_L0C_sub_stats(css);
+
+      fprintf(stdout,
+              "\tL0C_cache_core[%d]: Access = %llu, Miss = %llu, Miss_rate = "
+              "%.3lf, Pending_hits = %llu, Reservation_fails = %llu\n",
+              i, css.accesses, css.misses,
+              (double)css.misses / (double)css.accesses, css.pending_hits,
+              css.res_fails);
+
+      total_css += css;
+    }
+    fprintf(fout, "\tL0C_total_cache_accesses = %llu\n", total_css.accesses);
+    fprintf(fout, "\tL0C_total_cache_misses = %llu\n", total_css.misses);
+    if (total_css.accesses > 0) {
+      fprintf(fout, "\tL0C_total_cache_miss_rate = %.4lf\n",
+              (double)total_css.misses / (double)total_css.accesses);
+    }
+    fprintf(fout, "\tL0C_total_cache_pending_hits = %llu\n",
+            total_css.pending_hits);
+    fprintf(fout, "\tL0C_total_cache_reservation_fails = %llu\n",
+            total_css.res_fails);
+  }
 }
 
 void gpgpu_sim::shader_print_l1_miss_stat(FILE *fout) const {
@@ -4048,6 +4080,9 @@ void shader_core_ctx::get_L1C_sub_stats(struct cache_sub_stats &css) const {
 void shader_core_ctx::get_L1T_sub_stats(struct cache_sub_stats &css) const {
   m_ldst_unit->get_L1T_sub_stats(css);
 }
+void shader_core_ctx::get_L0C_sub_stats(struct cache_sub_stats &css) const {
+  m_rt_unit->get_L0C_sub_stats(css);
+}
 
 void shader_core_ctx::get_icnt_power_stats(long &n_simt_to_mem,
                                            long &n_mem_to_simt) const {
@@ -4731,6 +4766,17 @@ void simt_core_cluster::get_L1T_sub_stats(struct cache_sub_stats &css) const {
   total_css.clear();
   for (unsigned i = 0; i < m_config->n_simt_cores_per_cluster; ++i) {
     m_core[i]->get_L1T_sub_stats(temp_css);
+    total_css += temp_css;
+  }
+  css = total_css;
+}
+void simt_core_cluster::get_L0C_sub_stats(struct cache_sub_stats &css) const {
+  struct cache_sub_stats temp_css;
+  struct cache_sub_stats total_css;
+  temp_css.clear();
+  total_css.clear();
+  for (unsigned i = 0; i < m_config->n_simt_cores_per_cluster; ++i) {
+    m_core[i]->get_L0C_sub_stats(temp_css);
     total_css += temp_css;
   }
   css = total_css;
