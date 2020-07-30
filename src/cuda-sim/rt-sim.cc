@@ -105,10 +105,12 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             mem->read(node_start + next_node + sizeof(float4), sizeof(float4), &n1xy);
             mem->read(node_start + next_node + 2*sizeof(float4), sizeof(float4), &n01z);
             
+            #ifdef DEBUG_PRINT
             printf("Node data: \n");
             print_float4(n0xy);
             print_float4(n1xy);
             print_float4(n01z);
+            #endif
             
             // Reorganize
             float3 n0lo, n0hi, n1lo, n1hi;
@@ -121,15 +123,18 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             bool child0_hit = ray_box_test(n0lo, n0hi, ray_properties.get_direction(), ray_properties.get_origin(), ray_properties.get_tmin(), ray_properties.get_tmax(), thit0);
             bool child1_hit = ray_box_test(n1lo, n1hi, ray_properties.get_direction(), ray_properties.get_origin(), ray_properties.get_tmin(), ray_properties.get_tmax(), thit1);
             
+            #ifdef DEBUG_PRINT
             printf("Child 0 hit: %d \t", child0_hit);
             printf("Child 1 hit: %d \n", child1_hit);
+            #endif
             
             mem->read(node_start + next_node + 3*sizeof(float4), sizeof(addr_t), &child0_addr);
             mem->read(node_start + next_node + 3*sizeof(float4) + sizeof(addr_t), sizeof(addr_t), &child1_addr);
             
+            #ifdef DEBUG_PRINT
             printf("Child 0 offset: 0x%x \t", child0_addr);
             printf("Child 1 offset: 0x%x \n", child1_addr);
-            
+            #endif
             
             // Miss
             if (!child0_hit && !child1_hit) {
@@ -141,7 +146,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 // Pop next node from stack
                 next_node = traversal_stack.back();
                 traversal_stack.pop_back();
+                #ifdef DEBUG_PRINT
                 print_stack(traversal_stack);
+                #endif
             }
             // Both hit
             else if (child0_hit && child1_hit) {
@@ -149,9 +156,11 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 
                 // Push extra node to stack
                 traversal_stack.push_back((thit0 < thit1) ? child1_addr : child0_addr);
+                #ifdef DEBUG_PRINT
                 print_stack(traversal_stack);
                 
                 if (traversal_stack.size() > MAX_TRAVERSAL_STACK_SIZE) printf("Short stack full!\n");
+                #endif
             }
             // Single hit
             else {
@@ -160,7 +169,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             }
             
         }
+        #ifdef DEBUG_PRINT
         printf("Transition to leaf nodes.\n");
+        #endif
         
         addr_t tri_addr;
 
@@ -196,17 +207,23 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 
                 // Check if triangle is valid (if (__float_as_int(v00.x) == 0x80000000))
                 if (*(int*)&p0.x ==  0x80000000) {
+                    #ifdef DEBUG_PRINT
                     printf("End of primitives in leaf node. \n");
+                    #endif
                     break;
                 }
                 
                 hit = rtao_ray_triangle_test(p0, p1, p2, ray_properties, &thit, ray_payload);
                 if (hit) {
+                    #ifdef DEBUG_PRINT
                     printf("HIT\t t: %f\n", thit);
+                    #endif
                     ray_payload.t_triId_u_v.y = tri_addr >> 4;
                 }
+                #ifdef DEBUG_PRINT
                 else
                     printf("MISS\n");
+                #endif
                     
                 // Go to next triangle
                 tri_addr += 0x30;
@@ -222,7 +239,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             // Pop next node off stack
             next_node = traversal_stack.back();
             traversal_stack.pop_back();
+            #ifdef DEBUG_PRINT
             print_stack(traversal_stack);
+            #endif
         }
         
     }  while (next_node != EMPTY_STACK);
