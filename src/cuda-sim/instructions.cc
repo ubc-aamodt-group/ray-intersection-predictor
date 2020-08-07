@@ -2175,6 +2175,8 @@ void call_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
     // Track memory accesses for timing model
     std::list<addr_t> mem_access_list;   
     trace_ray(pI, thread, target_func, mem_access_list);
+    // trace_cwbvh(pI, thread, target_func, mem_access_list);
+    printf("Trace Complete.\n");
     return;
   }
 
