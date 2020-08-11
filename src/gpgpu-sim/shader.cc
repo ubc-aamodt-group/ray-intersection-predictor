@@ -379,7 +379,7 @@ void shader_core_ctx::create_exec_pipeline() {
       m_config->gpgpu_num_sp_units + m_config->gpgpu_num_dp_units +
       m_config->gpgpu_num_sfu_units + m_config->gpgpu_num_tensor_core_units +
       m_config->gpgpu_num_int_units + m_config->m_specialized_unit_num +
-      m_config->gpgpu_num_rt_core_units + 1;  // sp_unit, sfu, dp, tensor, int, ldst_unit
+      1 + 1;  // sp_unit, sfu, dp, tensor, int, rt_unit, ldst_unit
   // m_dispatch_port = new enum pipeline_stage_name_t[ m_num_function_units ];
   // m_issue_port = new enum pipeline_stage_name_t[ m_num_function_units ];
 
@@ -2420,9 +2420,35 @@ void rt_unit::cycle() {
                         m_core->get_gpu()->gpu_tot_sim_cycle);
                         
     m_response_fifo.pop_front();
-    
-    // Clear response from list of in flight mem accesses
-    pipe_reg.clear_mem_fetch_wait(mf->get_addr());
+
+    if (m_config->m_rt_max_warps > 0) {
+      // Check MSHR for all accessed to this address
+      std::list<mem_fetch *> response_mf = m_L0_complet->probe_mshr(mf->get_addr());
+      for (auto it=response_mf.begin(); it!=response_mf.end(); ++it) {
+        mem_fetch* response = *it;
+        if (m_current_warps.find(response->get_wid()) == m_current_warps.end()) {
+          assert(response->get_wid() == pipe_reg.warp_id());
+          pipe_reg.clear_mem_fetch_wait(response->get_addr());
+        } else {
+          m_current_warps[response->get_wid()].clear_mem_fetch_wait(response->get_addr());
+        }
+      }
+      
+      // // Match to warp instruction
+      // unsigned warp_id = mf->get_wid();
+      // // if (!pipe_reg.empty()) m_current_warps.insert(std::pair<unsigned,warp_inst_t>(pipe_reg.warp_id(), pipe_reg));
+      // if (pipe_reg.empty()) {
+      //   warp_inst_t inst = m_current_warps[warp_id];
+      //   if (!inst.mem_fetch_wait()) {
+      //     pipe_reg = inst;
+      //     m_current_warps.erase(warp_id);
+      //   }
+      // }
+    } 
+    else {
+      // Clear response from list of in flight mem accesses
+      pipe_reg.clear_mem_fetch_wait(mf->get_addr());
+    }   
   }
   
   
@@ -2437,9 +2463,18 @@ void rt_unit::cycle() {
   // RT-CORE NOTE: How to cycle both complet cache and triangle cache?
   done &= memory_cycle(pipe_reg, rc_fail, type);
   m_mem_rc = rc_fail;
+  
+  if (m_config->m_rt_max_warps > 0) {
+    if (pipe_reg.mem_fetch_wait() && !pipe_reg.empty()) {
+      unsigned warp_id = pipe_reg.warp_id();
+      m_current_warps.insert(std::pair<unsigned,warp_inst_t>(pipe_reg.warp_id(), pipe_reg));
+      assert(warp_id == m_dispatch_reg->warp_id());
+      m_dispatch_reg->clear();
+    }
+  }
 
   if (!done) {  // log stall types and return
-    assert(rc_fail != NO_RC_FAIL || pipe_reg.mem_fetch_wait());
+    assert(rc_fail != NO_RC_FAIL || pipe_reg.mem_fetch_wait() || m_L0_complet->num_mshr_entries() > 10);
     // RT-CORE NOTE add stats
     // m_stats->gpgpu_n_stall_shd_mem++;
     // m_stats->gpu_stall_shd_mem_breakdown[type][rc_fail]++;
@@ -2466,12 +2501,36 @@ void rt_unit::cycle() {
 
 bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem_stage_access_type &fail_type) {
   
-  if (inst.empty()) return true;
+  if (inst.empty()) {
+    if (m_config->m_rt_max_warps > 0) {
+      // Check awaiting warps to see if any are ready
+      if (m_current_warps.empty()) return true;
+      else {
+        for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
+          if (!((it->second).mem_fetch_wait())) { 
+            inst = it->second;
+            unsigned warp_id = it->first;
+            m_current_warps.erase(it);
+            break;
+          }
+        }
+        // Return if none are ready
+        if (inst.empty()) return true;
+      }
+    } else {
+      return true;
+    }
+  }
+  
   if (!inst.active_count()) return true;
   assert(inst.space.get_type() == global_space);
   
   // If waiting for responses, don't send new requests
   if (inst.mem_fetch_wait()) return inst.rt_mem_accesses_empty();
+  
+  // If MSHR is at the "limit" don't sent new requests
+  // RT-CORE NOTE: Add limit
+  if (m_config->m_rt_max_warps > 0 && m_L0_complet->num_mshr_entries() > 10) return inst.rt_mem_accesses_empty();
   
   mem_stage_stall_type fail;
   fail = process_memory_access_queue(m_L0_complet, inst);
@@ -2517,8 +2576,13 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     events
   );
   
+  // Stalled
+  if (status == RESERVATION_FAIL) {
+    // Remove from m_mf_awaiting_response 
+    inst.undo_rt_access(mf->get_addr());
+  }
+  
   return process_cache_access(cache, mf->get_addr(), inst, events, mf, status);
-
 }
 
 mem_stage_stall_type rt_unit::process_cache_access(
@@ -3373,7 +3437,14 @@ void ldst_unit::print(FILE *fout) const {
 
 void rt_unit::print(FILE *fout) const {
   fprintf(fout, "%s dispatch= ", m_name.c_str());
+  fprintf(fout, "%d ", m_dispatch_reg->mem_fetch_wait());
   m_dispatch_reg->print(fout);
+  fprintf(fout, "Other awaiting warps:\n");
+  for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
+    warp_inst_t inst = it->second;
+    fprintf(fout, "%d ", inst.mem_fetch_wait());
+    inst.print(fout);
+  }
   m_L0_complet->display_state(fout);
   fprintf(fout, "RT response FIFO (occupancy = %zu):\n", m_response_fifo.size());
   for (std::list<mem_fetch *>::const_iterator i = m_response_fifo.begin();

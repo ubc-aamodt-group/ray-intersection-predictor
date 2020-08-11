@@ -590,6 +590,10 @@ void mshr_table::display(FILE *fp) const {
     }
   }
 }
+
+std::list<mem_fetch*> mshr_table::get_mf_list(new_addr_type block_addr) {
+  return m_data[block_addr].m_list;
+}
 /***************************************************************** Caches
  * *****************************************************************/
 cache_stats::cache_stats() {

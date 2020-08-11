@@ -1322,6 +1322,8 @@ class rt_unit : public pipelined_simd_unit {
       // std::vector<std::deque<mem_fetch *>> l0t_latency_queue;
       // void l0t_latency_queue_cycle();
       
+      std::map<unsigned, warp_inst_t> m_current_warps;
+      
 };
 
 class ldst_unit : public pipelined_simd_unit {
@@ -1686,6 +1688,8 @@ class shader_core_config : public core_config {
   char *specialized_unit_string[SPECIALIZED_UNIT_NUM];
   mutable std::vector<specialized_unit_params> m_specialized_unit;
   unsigned m_specialized_unit_num;
+  
+  unsigned m_rt_max_warps;
 };
 
 struct shader_core_stats_pod {

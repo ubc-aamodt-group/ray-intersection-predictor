@@ -1186,6 +1186,10 @@ class warp_inst_t : public inst_t {
   void clear_mem_fetch_wait(new_addr_type addr) { 
     m_mf_awaiting_response.erase(addr);
   }
+  void undo_rt_access(new_addr_type addr) { 
+    m_mf_awaiting_response.erase(addr);
+    m_next_rt_accesses.insert(addr);
+  }
 
  protected:
   unsigned m_uid;
@@ -1206,6 +1210,8 @@ class warp_inst_t : public inst_t {
       m_warp_issued_mask;  // active mask at issue (prior to predication test)
                            // -- for instruction counting
 
+  std::set<new_addr_type> m_next_rt_accesses;
+  std::set<new_addr_type> m_mf_awaiting_response;
   struct per_thread_info {
     per_thread_info() {
       for (unsigned i = 0; i < MAX_ACCESSES_PER_INSN_PER_THREAD; i++)
@@ -1229,8 +1235,6 @@ class warp_inst_t : public inst_t {
 
   unsigned m_scheduler_id;  // the scheduler that issues this inst
 
-  std::set<new_addr_type> m_next_rt_accesses;
-  std::set<new_addr_type> m_mf_awaiting_response;
   
   // Jin: cdp support
  public:
