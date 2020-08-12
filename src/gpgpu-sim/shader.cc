@@ -426,7 +426,7 @@ void shader_core_ctx::create_exec_pipeline() {
   }
   
   
-  m_rt_unit = new rt_unit(m_icnt, m_mem_fetch_allocator, this, m_config, m_sid, m_tpc);
+  m_rt_unit = new rt_unit(m_icnt, m_mem_fetch_allocator, this, m_config, m_stats, m_sid, m_tpc);
   m_fu.push_back(m_rt_unit);
   m_dispatch_port.push_back(ID_OC_RT);
   m_issue_port.push_back(OC_EX_RT);
@@ -695,6 +695,12 @@ void shader_core_stats::print(FILE *fout) const {
   // gpu_stall_shd_mem_breakdown[L_MEM_ST][WB_ICNT_RC_FAIL]); fprintf(fout,
   // "gpgpu_stall_shd_mem[l_mem_ld][wb_rsrv_fail] = %d\n",
   // gpu_stall_shd_mem_breakdown[L_MEM_ST][WB_CACHE_RSRV_FAIL]);
+
+
+  fprintf(fout, "rt_max_warps = %d\n", rt_max_warps);
+  fprintf(fout, "rt_mshr_reservation_fail = %d\n", rt_mshr_reservation_fail);
+  fprintf(fout, "rt_max_mshr_entries = %d\n", rt_max_mshr_entries);
+
 
   fprintf(fout, "gpu_reg_bank_conflict_stalls = %d\n",
           gpu_reg_bank_conflict_stalls);
@@ -2358,6 +2364,7 @@ rt_unit::rt_unit(mem_fetch_interface *icnt,
                      shader_core_mem_fetch_allocator *mf_allocator,
                      shader_core_ctx *core,
                      const shader_core_config *config,
+                     shader_core_stats *stats,
                      unsigned sid, unsigned tpc)
     : pipelined_simd_unit(NULL, config, config->rt_core_latency, core) {
     // RT-CORE NOTE: Mimic ldst_unit -> no result port?
@@ -2368,7 +2375,7 @@ rt_unit::rt_unit(mem_fetch_interface *icnt,
   m_core = core;
   // m_operand_collector = operand_collector;
   // m_scoreboard = scoreboard;
-  // m_stats = stats;
+  m_stats = stats;
   m_sid = sid;
   m_tpc = tpc;
   
@@ -2408,6 +2415,9 @@ void rt_unit::cycle() {
   
   writeback();
   
+  if (m_current_warps.size() > m_stats->rt_max_warps) m_stats->rt_max_warps = m_current_warps.size();
+  if (m_L0_complet->num_mshr_entries() > m_stats->rt_max_mshr_entries) m_stats->rt_max_mshr_entries = m_L0_complet->num_mshr_entries();
+  
   if (!m_response_fifo.empty()) {
     mem_fetch *mf = m_response_fifo.front();
     
@@ -2424,30 +2434,26 @@ void rt_unit::cycle() {
     if (m_config->m_rt_max_warps > 0) {
       // Check MSHR for all accessed to this address
       std::list<mem_fetch *> response_mf = m_L0_complet->probe_mshr(mf->get_addr());
+      
       for (auto it=response_mf.begin(); it!=response_mf.end(); ++it) {
         mem_fetch* response = *it;
+        
+        // If response warp is not in current warps list, it must be in dispatch reg
         if (m_current_warps.find(response->get_wid()) == m_current_warps.end()) {
           assert(response->get_wid() == pipe_reg.warp_id());
           pipe_reg.clear_mem_fetch_wait(response->get_addr());
-        } else {
+          if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(response->get_addr());
+        } 
+        else {
           m_current_warps[response->get_wid()].clear_mem_fetch_wait(response->get_addr());
+          if (!m_config->m_rt_lock_threads) m_current_warps[response->get_wid()].clear_rt_awaiting_threads(response->get_addr());
         }
       }
-      
-      // // Match to warp instruction
-      // unsigned warp_id = mf->get_wid();
-      // // if (!pipe_reg.empty()) m_current_warps.insert(std::pair<unsigned,warp_inst_t>(pipe_reg.warp_id(), pipe_reg));
-      // if (pipe_reg.empty()) {
-      //   warp_inst_t inst = m_current_warps[warp_id];
-      //   if (!inst.mem_fetch_wait()) {
-      //     pipe_reg = inst;
-      //     m_current_warps.erase(warp_id);
-      //   }
-      // }
     } 
     else {
       // Clear response from list of in flight mem accesses
       pipe_reg.clear_mem_fetch_wait(mf->get_addr());
+      if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
     }   
   }
   
@@ -2464,7 +2470,7 @@ void rt_unit::cycle() {
   done &= memory_cycle(pipe_reg, rc_fail, type);
   m_mem_rc = rc_fail;
   
-  if (m_config->m_rt_max_warps > 0) {
+  if (m_config->m_rt_max_warps > 0 && m_current_warps.size() < m_config->m_rt_max_warps) {
     if (pipe_reg.mem_fetch_wait() && !pipe_reg.empty()) {
       unsigned warp_id = pipe_reg.warp_id();
       m_current_warps.insert(std::pair<unsigned,warp_inst_t>(pipe_reg.warp_id(), pipe_reg));
@@ -2474,7 +2480,7 @@ void rt_unit::cycle() {
   }
 
   if (!done) {  // log stall types and return
-    assert(rc_fail != NO_RC_FAIL || pipe_reg.mem_fetch_wait() || m_L0_complet->num_mshr_entries() > 10);
+    // assert(rc_fail != NO_RC_FAIL || rt_mem_accesses_empty? || m_L0_complet->num_mshr_entries() > 10);
     // RT-CORE NOTE add stats
     // m_stats->gpgpu_n_stall_shd_mem++;
     // m_stats->gpu_stall_shd_mem_breakdown[type][rc_fail]++;
@@ -2530,7 +2536,7 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
   
   // If MSHR is at the "limit" don't sent new requests
   // RT-CORE NOTE: Add limit
-  if (m_config->m_rt_max_warps > 0 && m_L0_complet->num_mshr_entries() > 10) return inst.rt_mem_accesses_empty();
+  if (m_config->m_rt_max_warps > 0 && m_L0_complet->num_mshr_entries() > m_config->m_rt_max_mshr_entries) return inst.rt_mem_accesses_empty();
   
   mem_stage_stall_type fail;
   fail = process_memory_access_queue(m_L0_complet, inst);
@@ -2563,7 +2569,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
   if (!cache->data_port_free()) return DATA_PORT_STALL;
 
   // Get next node to fetch
-  mem_access_t access = inst.get_next_rt_mem_access();
+  mem_access_t access = inst.get_next_rt_mem_access(m_config->m_rt_lock_threads);
   
   // Access cache
   mem_fetch *mf = m_mf_allocator->alloc(
@@ -2580,6 +2586,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
   if (status == RESERVATION_FAIL) {
     // Remove from m_mf_awaiting_response 
     inst.undo_rt_access(mf->get_addr());
+    m_stats->rt_mshr_reservation_fail++;
   }
   
   return process_cache_access(cache, mf->get_addr(), inst, events, mf, status);
@@ -2596,6 +2603,7 @@ mem_stage_stall_type rt_unit::process_cache_access(
     
     if (status == HIT) {
       inst.clear_mem_fetch_wait(address);
+      if (!m_config->m_rt_lock_threads) inst.clear_rt_awaiting_threads(address);
     } else if (status == RESERVATION_FAIL) {
       result = BK_CONF;
       delete mf;

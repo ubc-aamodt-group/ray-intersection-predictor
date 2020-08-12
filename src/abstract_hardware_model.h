@@ -1175,7 +1175,7 @@ class warp_inst_t : public inst_t {
   bool rt_mem_accesses_empty();
   
   // RT-CORE NOTE: May need to update this logic for special node fetching? (i.e. vote on next mem access)
-  mem_access_t get_next_rt_mem_access();
+  mem_access_t get_next_rt_mem_access(bool locked);
   mem_access_t memory_coalescing_arch_rt(new_addr_type addr);
   
   bool mem_fetch_wait() { 
@@ -1186,9 +1186,14 @@ class warp_inst_t : public inst_t {
   void clear_mem_fetch_wait(new_addr_type addr) { 
     m_mf_awaiting_response.erase(addr);
   }
+  void clear_rt_awaiting_threads(new_addr_type addr);
+  
   void undo_rt_access(new_addr_type addr) { 
     m_mf_awaiting_response.erase(addr);
-    m_next_rt_accesses.insert(addr);
+    if (m_next_rt_accesses_set.find(addr) == m_next_rt_accesses_set.end()) {
+      m_next_rt_accesses.push_back(addr);
+      m_next_rt_accesses_set.insert(addr);
+    }
   }
 
  protected:
@@ -1210,7 +1215,11 @@ class warp_inst_t : public inst_t {
       m_warp_issued_mask;  // active mask at issue (prior to predication test)
                            // -- for instruction counting
 
-  std::set<new_addr_type> m_next_rt_accesses;
+  // Combined list + set to track insertion order with no duplicates (duplicates coalesced)
+  std::list<new_addr_type> m_next_rt_accesses;
+  std::set<new_addr_type> m_next_rt_accesses_set;
+  
+  // List of current memory requests awaiting response
   std::set<new_addr_type> m_mf_awaiting_response;
   struct per_thread_info {
     per_thread_info() {

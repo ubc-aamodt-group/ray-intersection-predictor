@@ -249,6 +249,14 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       opp, "-gpgpu_rt_max_warps", OPT_UINT32, &m_rt_max_warps,
       "max number of warps concurrently in one rt core ",
       "0");
+  option_parser_register(
+      opp, "-gpgpu_rt_max_mshr_entries", OPT_UINT32, &m_rt_max_mshr_entries,
+      "max number of concurrent MSHR requests for the rt core ",
+      "0");
+  option_parser_register(
+      opp, "-gpgpu_rt_lock_threads", OPT_BOOL, &m_rt_lock_threads,
+      "wait for all threads in a warp to receive node information before continuing ",
+      "1");
   option_parser_register(opp, "-gpgpu_cache:il1", OPT_CSTR,
                          &m_L1I_config.m_config_string,
                          "shader L1 instruction cache config "

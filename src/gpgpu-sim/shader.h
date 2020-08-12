@@ -1263,6 +1263,7 @@ class rt_unit : public pipelined_simd_unit {
                 shader_core_mem_fetch_allocator *mf_allocator,
                 shader_core_ctx *core,
                 const shader_core_config *config,
+                shader_core_stats *stats,
                 unsigned sid, unsigned tpc);
                 
         virtual bool can_issue(const warp_inst_t &inst) const {
@@ -1307,6 +1308,8 @@ class rt_unit : public pipelined_simd_unit {
       
       unsigned m_sid;
       unsigned m_tpc;
+      
+      shader_core_stats *m_stats;
       
       read_only_cache *m_L0_complet;
       read_only_cache *m_L0_tri;
@@ -1690,6 +1693,8 @@ class shader_core_config : public core_config {
   unsigned m_specialized_unit_num;
   
   unsigned m_rt_max_warps;
+  unsigned m_rt_max_mshr_entries;
+  bool m_rt_lock_threads;
 };
 
 struct shader_core_stats_pod {
@@ -1779,6 +1784,11 @@ struct shader_core_stats_pod {
   unsigned *gpgpu_n_shmem_bank_access;
   long *n_simt_to_mem;  // Interconnect power stats
   long *n_mem_to_simt;
+  
+  unsigned rt_max_warps;
+  unsigned rt_mshr_reservation_fail;
+  unsigned rt_max_mshr_entries;
+ 
 };
 
 class shader_core_stats : public shader_core_stats_pod {
