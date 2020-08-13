@@ -767,8 +767,7 @@ bool warp_inst_t::rt_mem_accesses_empty() {
   for (unsigned i = 0; i < m_config->warp_size; i++) {
     empty &= m_per_scalar_thread[i].raytrace_mem_accesses.empty();
   }
-  empty &= m_next_rt_accesses.empty();
-  assert(m_next_rt_accesses_set.empty() == m_next_rt_accesses.empty());
+  empty &= m_next_rt_accesses_set.empty();
   return empty;
 }
 
@@ -789,24 +788,30 @@ void warp_inst_t::clear_rt_awaiting_threads(new_addr_type addr) {
   
 mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
   // RT-CORE NOTE: first version (round robin?) this section tbd
+  new_addr_type next_addr;
   
   // Memory requests in lock step
   if (locked) {
     // Get current round of requests
-    if (m_next_rt_accesses.empty()) {
+    if (m_next_rt_accesses_set.empty()) {
       assert(!mem_fetch_wait());
       assert(m_next_rt_accesses_set.empty());
       // printf("Getting next set of rt mem accesses...\n");
       for (unsigned i=0; i<m_config->warp_size; i++) {
         if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty()) {
           if (m_next_rt_accesses_set.find(m_per_scalar_thread[i].raytrace_mem_accesses.front()) == m_next_rt_accesses_set.end()) {
-            m_next_rt_accesses.push_back(m_per_scalar_thread[i].raytrace_mem_accesses.front());
+            // m_next_rt_accesses.push_back(m_per_scalar_thread[i].raytrace_mem_accesses.front());
             m_next_rt_accesses_set.insert(m_per_scalar_thread[i].raytrace_mem_accesses.front());
           }
           m_per_scalar_thread[i].raytrace_mem_accesses.pop_front();
         }
       }
     }  
+    assert(!m_next_rt_accesses_set.empty());
+    
+    auto it = m_next_rt_accesses_set.begin();
+    next_addr = *it;
+    m_next_rt_accesses_set.erase(next_addr);
   }
   
   // Not in lock step
@@ -823,15 +828,15 @@ mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
         }
       }
     }
+    assert(!m_next_rt_accesses.empty());
+    assert(!m_next_rt_accesses_set.empty());
+    
+    next_addr = m_next_rt_accesses.front();
+    m_next_rt_accesses.pop_front();
+    m_next_rt_accesses_set.erase(next_addr);
+    assert(m_next_rt_accesses_set.size() == m_next_rt_accesses.size());
   }
   
-  assert(!m_next_rt_accesses.empty());
-  assert(!m_next_rt_accesses_set.empty());
-  
-  new_addr_type next_addr = m_next_rt_accesses.front();
-  m_next_rt_accesses.pop_front();
-  m_next_rt_accesses_set.erase(next_addr);
-  assert(m_next_rt_accesses_set.size() == m_next_rt_accesses.size());
 
   // Generate mem_access_t
   // RT-CORE NOTE: Coalesce requests?

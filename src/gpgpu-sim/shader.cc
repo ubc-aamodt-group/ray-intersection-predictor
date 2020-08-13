@@ -1731,6 +1731,10 @@ void ldst_unit::get_cache_stats(cache_stats &cs) {
   if (m_L1T) cs += m_L1T->get_stats();
 }
 
+void rt_unit::get_cache_stats(cache_stats &cs) {
+  cs += m_L0_complet->get_stats();
+}
+
 void ldst_unit::get_L1D_sub_stats(struct cache_sub_stats &css) const {
   if (m_L1D) m_L1D->get_sub_stats(css);
 }
@@ -2432,21 +2436,31 @@ void rt_unit::cycle() {
     m_response_fifo.pop_front();
 
     if (m_config->m_rt_max_warps > 0) {
-      // Check MSHR for all accessed to this address
-      std::list<mem_fetch *> response_mf = m_L0_complet->probe_mshr(mf->get_addr());
+      // Clear all warps if coalesced
+      if (m_config->m_rt_coalesce_warps) {
+        pipe_reg.clear_mem_fetch_wait(mf->get_addr());
+        for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
+          (it->second).clear_mem_fetch_wait(mf->get_addr());
+        }
+      } 
       
-      for (auto it=response_mf.begin(); it!=response_mf.end(); ++it) {
-        mem_fetch* response = *it;
+      else {
+        // Check MSHR for all accessed to this address
+        std::list<mem_fetch *> response_mf = m_L0_complet->probe_mshr(mf->get_addr());
         
-        // If response warp is not in current warps list, it must be in dispatch reg
-        if (m_current_warps.find(response->get_wid()) == m_current_warps.end()) {
-          assert(response->get_wid() == pipe_reg.warp_id());
-          pipe_reg.clear_mem_fetch_wait(response->get_addr());
-          if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(response->get_addr());
-        } 
-        else {
-          m_current_warps[response->get_wid()].clear_mem_fetch_wait(response->get_addr());
-          if (!m_config->m_rt_lock_threads) m_current_warps[response->get_wid()].clear_rt_awaiting_threads(response->get_addr());
+        for (auto it=response_mf.begin(); it!=response_mf.end(); ++it) {
+          mem_fetch* response = *it;
+          
+          // If response warp is not in current warps list, it must be in dispatch reg
+          if (m_current_warps.find(response->get_wid()) == m_current_warps.end()) {
+            assert(response->get_wid() == pipe_reg.warp_id());
+            pipe_reg.clear_mem_fetch_wait(response->get_addr());
+            if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(response->get_addr());
+          }
+          else {
+            m_current_warps[response->get_wid()].clear_mem_fetch_wait(response->get_addr());
+            if (!m_config->m_rt_lock_threads) m_current_warps[response->get_wid()].clear_rt_awaiting_threads(response->get_addr());
+          }
         }
       }
     } 
@@ -2535,7 +2549,6 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
   if (inst.mem_fetch_wait()) return inst.rt_mem_accesses_empty();
   
   // If MSHR is at the "limit" don't sent new requests
-  // RT-CORE NOTE: Add limit
   if (m_config->m_rt_max_warps > 0 && m_L0_complet->num_mshr_entries() > m_config->m_rt_max_mshr_entries) return inst.rt_mem_accesses_empty();
   
   mem_stage_stall_type fail;
@@ -2562,6 +2575,25 @@ void rt_unit::writeback() {
   }
 }
 
+
+void rt_unit::coalesce_warp_requests(mem_access_t access) {
+  // Get address
+  new_addr_type addr = access.get_addr();
+  // Check all warps in rt core
+  for(auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
+    warp_inst_t inst = it->second;
+    std::set<new_addr_type> addr_set = inst.get_rt_accesses();
+    // Mark as sent if matching address found
+    if (addr_set.find(addr) != addr_set.end()) {
+      inst.clear_rt_access(addr);
+      inst.set_mem_fetch_wait(addr);
+    }
+  }
+}
+
+// RT-CORE NOTE: Add version that re-orders next accesses in a warp depending on whether of not they're in other warps
+
+
 mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_inst_t &inst) {
   mem_stage_stall_type result = NO_RC_FAIL;
   if (inst.rt_mem_accesses_empty()) return result;
@@ -2570,6 +2602,11 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
 
   // Get next node to fetch
   mem_access_t access = inst.get_next_rt_mem_access(m_config->m_rt_lock_threads);
+
+  // Attempt to coalesce memory accesses between multiple warps
+  if (m_config->m_rt_coalesce_warps && m_config->m_rt_lock_threads) {
+    coalesce_warp_requests(access);
+  }
   
   // Access cache
   mem_fetch *mf = m_mf_allocator->alloc(
@@ -2604,6 +2641,11 @@ mem_stage_stall_type rt_unit::process_cache_access(
     if (status == HIT) {
       inst.clear_mem_fetch_wait(address);
       if (!m_config->m_rt_lock_threads) inst.clear_rt_awaiting_threads(address);
+      if (m_config->m_rt_coalesce_warps) {
+        for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
+          (it->second).clear_mem_fetch_wait(address);
+        }
+      }
     } else if (status == RESERVATION_FAIL) {
       result = BK_CONF;
       delete mf;
@@ -3192,6 +3234,7 @@ void gpgpu_sim::shader_print_cache_stats(FILE *fout) const {
             total_css.res_fails);
   }
   
+  // L0C
   if (!m_shader_config->m_L0C_config.disabled()) {
     total_css.clear();
     css.clear();
@@ -4147,6 +4190,10 @@ void shader_core_ctx::get_cache_stats(cache_stats &cs) {
   m_ldst_unit->get_cache_stats(cs);  // Get L1D, L1C, L1T stats
 }
 
+void shader_core_ctx::get_rt_cache_stats(cache_stats &cs) {
+  m_rt_unit->get_cache_stats(cs);
+}
+
 void shader_core_ctx::get_L1I_sub_stats(struct cache_sub_stats &css) const {
   if (m_L1I) m_L1I->get_sub_stats(css);
 }
@@ -4802,6 +4849,12 @@ void simt_core_cluster::get_icnt_stats(long &n_simt_to_mem,
 void simt_core_cluster::get_cache_stats(cache_stats &cs) const {
   for (unsigned i = 0; i < m_config->n_simt_cores_per_cluster; ++i) {
     m_core[i]->get_cache_stats(cs);
+  }
+
+}
+void simt_core_cluster::get_rt_cache_stats(cache_stats &cs) const {
+  for (unsigned i = 0; i < m_config->n_simt_cores_per_cluster; ++i) {
+    m_core[i]->get_rt_cache_stats(cs);
   }
 }
 

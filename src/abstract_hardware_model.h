@@ -1181,12 +1181,15 @@ class warp_inst_t : public inst_t {
   bool mem_fetch_wait() { 
     // Wait for response if all current next accesses have been sent
     // and waiting for response list is not empty
-    return m_next_rt_accesses.empty() && !m_mf_awaiting_response.empty(); 
+    return m_next_rt_accesses_set.empty() && !m_mf_awaiting_response.empty(); 
   }
   void clear_mem_fetch_wait(new_addr_type addr) { 
     m_mf_awaiting_response.erase(addr);
   }
   void clear_rt_awaiting_threads(new_addr_type addr);
+  void clear_rt_access(new_addr_type addr) {
+    m_next_rt_accesses_set.erase(addr);
+  }
   
   void undo_rt_access(new_addr_type addr) { 
     m_mf_awaiting_response.erase(addr);
@@ -1195,6 +1198,12 @@ class warp_inst_t : public inst_t {
       m_next_rt_accesses_set.insert(addr);
     }
   }
+  
+  void set_mem_fetch_wait(new_addr_type addr) {
+    m_mf_awaiting_response.insert(addr);
+  }
+  
+  std::set<new_addr_type> get_rt_accesses() { return m_next_rt_accesses_set; }
 
  protected:
   unsigned m_uid;

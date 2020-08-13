@@ -257,6 +257,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       opp, "-gpgpu_rt_lock_threads", OPT_BOOL, &m_rt_lock_threads,
       "wait for all threads in a warp to receive node information before continuing ",
       "1");
+  option_parser_register(
+      opp, "-gpgpu_rt_coalesce_warps", OPT_BOOL, &m_rt_coalesce_warps,
+      "try to coalesce memory requests between warps ",
+      "0");
   option_parser_register(opp, "-gpgpu_cache:il1", OPT_CSTR,
                          &m_L1I_config.m_config_string,
                          "shader L1 instruction cache config "
@@ -1328,6 +1332,17 @@ void gpgpu_sim::gpu_print_stat() {
   shader_print_cache_stats(stdout);
 
   cache_stats core_cache_stats;
+  core_cache_stats.clear();
+  for (unsigned i=0; i<m_config.num_cluster(); i++) {
+    m_cluster[i]->get_rt_cache_stats(core_cache_stats);
+  }
+  printf("\nTotal_rt_cache_stats:\n");
+  core_cache_stats.print_stats(stdout, "Total_rt_cache_stats_breakdown");
+  printf("\nTotal_rt_cache_fail_stats:\n");
+  core_cache_stats.print_fail_stats(stdout,
+                                    "Total_rt_cache_fail_stats_breakdown");
+  
+  
   core_cache_stats.clear();
   for (unsigned i = 0; i < m_config.num_cluster(); i++) {
     m_cluster[i]->get_cache_stats(core_cache_stats);

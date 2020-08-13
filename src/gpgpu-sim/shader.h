@@ -1287,6 +1287,7 @@ class rt_unit : public pipelined_simd_unit {
         void writeback();
         
         void get_L0C_sub_stats(struct cache_sub_stats &css) const;
+        void get_cache_stats(cache_stats &cs);
         
     protected:
       bool memory_cycle(  warp_inst_t &inst, 
@@ -1300,6 +1301,8 @@ class rt_unit : public pipelined_simd_unit {
             
       mem_stage_stall_type process_memory_access_queue(cache_t *cache, warp_inst_t &inst);
       // mem_stage_stall_type process_memory_access_queue_l1cache(l1_cache *cache, warp_inst_t &inst);
+      
+      void coalesce_warp_requests(mem_access_t access);
       
       const memory_config *m_memory_config;
       class mem_fetch_interface *m_icnt;
@@ -1695,6 +1698,7 @@ class shader_core_config : public core_config {
   unsigned m_rt_max_warps;
   unsigned m_rt_max_mshr_entries;
   bool m_rt_lock_threads;
+  bool m_rt_coalesce_warps;
 };
 
 struct shader_core_stats_pod {
@@ -2044,6 +2048,7 @@ class shader_core_ctx : public core_t {
                          unsigned &dl1_misses);
 
   void get_cache_stats(cache_stats &cs);
+  void get_rt_cache_stats(cache_stats &cs);
   void get_L1I_sub_stats(struct cache_sub_stats &css) const;
   void get_L1D_sub_stats(struct cache_sub_stats &css) const;
   void get_L1C_sub_stats(struct cache_sub_stats &css) const;
@@ -2439,6 +2444,7 @@ class simt_core_cluster {
                          unsigned &dl1_misses) const;
 
   void get_cache_stats(cache_stats &cs) const;
+  void get_rt_cache_stats(cache_stats &cs) const;
   void get_L1I_sub_stats(struct cache_sub_stats &css) const;
   void get_L1D_sub_stats(struct cache_sub_stats &css) const;
   void get_L1C_sub_stats(struct cache_sub_stats &css) const;

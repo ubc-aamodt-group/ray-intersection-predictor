@@ -48,8 +48,8 @@ const char *cache_request_status_str(enum cache_request_status status) {
 
 const char *cache_fail_status_str(enum cache_reservation_fail_reason status) {
   static const char *static_cache_reservation_fail_reason_str[] = {
-      "LINE_ALLOC_FAIL", "MISS_QUEUE_FULL", "MSHR_ENRTY_FAIL",
-      "MSHR_MERGE_ENRTY_FAIL", "MSHR_RW_PENDING"};
+      "LINE_ALLOC_FAIL", "MISS_QUEUE_FULL", "MSHR_ENTRY_FAIL",
+      "MSHR_MERGE_ENTRY_FAIL", "MSHR_RW_PENDING"};
 
   assert(sizeof(static_cache_reservation_fail_reason_str) /
              sizeof(const char *) ==
@@ -1150,9 +1150,9 @@ void baseline_cache::send_read_request(new_addr_type addr,
 
     do_miss = true;
   } else if (mshr_hit && !mshr_avail)
-    m_stats.inc_fail_stats(mf->get_access_type(), MSHR_MERGE_ENRTY_FAIL);
+    m_stats.inc_fail_stats(mf->get_access_type(), MSHR_MERGE_ENTRY_FAIL);
   else if (!mshr_hit && !mshr_avail)
-    m_stats.inc_fail_stats(mf->get_access_type(), MSHR_ENRTY_FAIL);
+    m_stats.inc_fail_stats(mf->get_access_type(), MSHR_ENTRY_FAIL);
   else
     assert(0);
 }
@@ -1263,9 +1263,9 @@ enum cache_request_status data_cache::wr_miss_wa_naive(
     if (miss_queue_full(2))
       m_stats.inc_fail_stats(mf->get_access_type(), MISS_QUEUE_FULL);
     else if (mshr_hit && !mshr_avail)
-      m_stats.inc_fail_stats(mf->get_access_type(), MSHR_MERGE_ENRTY_FAIL);
+      m_stats.inc_fail_stats(mf->get_access_type(), MSHR_MERGE_ENTRY_FAIL);
     else if (!mshr_hit && !mshr_avail)
-      m_stats.inc_fail_stats(mf->get_access_type(), MSHR_ENRTY_FAIL);
+      m_stats.inc_fail_stats(mf->get_access_type(), MSHR_ENTRY_FAIL);
     else
       assert(0);
 
@@ -1376,9 +1376,9 @@ enum cache_request_status data_cache::wr_miss_wa_fetch_on_write(
       if (miss_queue_full(1))
         m_stats.inc_fail_stats(mf->get_access_type(), MISS_QUEUE_FULL);
       else if (mshr_hit && !mshr_avail)
-        m_stats.inc_fail_stats(mf->get_access_type(), MSHR_MERGE_ENRTY_FAIL);
+        m_stats.inc_fail_stats(mf->get_access_type(), MSHR_MERGE_ENTRY_FAIL);
       else if (!mshr_hit && !mshr_avail)
-        m_stats.inc_fail_stats(mf->get_access_type(), MSHR_ENRTY_FAIL);
+        m_stats.inc_fail_stats(mf->get_access_type(), MSHR_ENTRY_FAIL);
       else
         assert(0);
 
