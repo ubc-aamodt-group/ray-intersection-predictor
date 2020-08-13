@@ -283,10 +283,12 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     // Ray
     Ray ray_properties;
     thread->m_local_mem->read(from_addr, size, &ray_properties);
+    #ifdef DEBUG_PRINT
     printf("Origin: (%f, %f, %f), Direction: (%f, %f, %f), tmin: %f, tmax: %f\n", 
       ray_properties.origin_tmin.x, ray_properties.origin_tmin.y, ray_properties.origin_tmin.z,
       ray_properties.dir_tmax.x, ray_properties.dir_tmax.y, ray_properties.dir_tmax.z,
       ray_properties.origin_tmin.w, ray_properties.dir_tmax.w);
+    #endif
 
     arg++;
     // Second argument: Ray Payload
@@ -300,7 +302,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     Hit ray_payload;
     addr_t ray_payload_addr;
     thread->m_local_mem->read(from_addr, size, &ray_payload_addr);
+    #ifdef DEBUG_PRINT
     printf("Ray payload address: 0x%x\n", ray_payload_addr);
+    #endif
     
     arg++;
     // Third argument: Top of BVH Tree
@@ -313,7 +317,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     // Top node
     addr_t node_start;
     thread->m_local_mem->read(from_addr, size, &node_start);
+    #ifdef DEBUG_PRINT
     printf("Node address: 0x%8x\n", node_start);
+    #endif
     
     // TODO: Figure out how to calculate triangle start (Modify rtao to use set offset?)
     // White Oak
@@ -517,8 +523,10 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     }  while (next_node != EMPTY_STACK);
     
     if (thit != ray_properties.get_tmax()) {
+        #ifdef DEBUG_PRINT
         printf("\nResult: (t, addr, u, v)\n");
         printf("t: %f, u: %f, v: %f, triangle offset: 0x%x\n", ray_payload.t_triId_u_v.x, ray_payload.t_triId_u_v.z, ray_payload.t_triId_u_v.w, (addr_t)ray_payload.t_triId_u_v.y);
+        #endif
         
         mem->write(ray_payload_addr, sizeof(Hit), &ray_payload, NULL, NULL);
         
@@ -526,8 +534,10 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
         thread->add_raytrace_mem_access(ray_payload_addr);
     }
     
+    #ifdef DEBUG_PRINT
     printf("Memory Accesses:\n");
     print_stack(memory_accesses);
+    #endif
 }
 
 bool ray_box_test_cwbvh(float3 low, float3 high, float3 idir, float3 origin, float tmin, float tmax, float& thit) 
