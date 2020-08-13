@@ -789,6 +789,7 @@ void warp_inst_t::clear_rt_awaiting_threads(new_addr_type addr) {
 mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
   // RT-CORE NOTE: first version (round robin?) this section tbd
   new_addr_type next_addr;
+  m_coalesce_count = 0;
   
   // Memory requests in lock step
   if (locked) {
@@ -800,9 +801,9 @@ mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
       for (unsigned i=0; i<m_config->warp_size; i++) {
         if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty()) {
           if (m_next_rt_accesses_set.find(m_per_scalar_thread[i].raytrace_mem_accesses.front()) == m_next_rt_accesses_set.end()) {
-            // m_next_rt_accesses.push_back(m_per_scalar_thread[i].raytrace_mem_accesses.front());
-            m_next_rt_accesses_set.insert(m_per_scalar_thread[i].raytrace_mem_accesses.front());
+            m_coalesce_count++;
           }
+          m_next_rt_accesses_set.insert(m_per_scalar_thread[i].raytrace_mem_accesses.front());
           m_per_scalar_thread[i].raytrace_mem_accesses.pop_front();
         }
       }
@@ -825,6 +826,8 @@ mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
         {
           m_next_rt_accesses.push_back(addr);
           m_next_rt_accesses_set.insert(addr);
+          // Track total unique accesses
+          m_coalesce_count++;
         }
       }
     }

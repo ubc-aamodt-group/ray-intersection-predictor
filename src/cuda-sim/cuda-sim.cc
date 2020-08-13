@@ -1867,6 +1867,8 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
       insn_data_size = 16;
       inst.data_size = insn_data_size;
       
+      m_gpu->gpgpu_ctx->func_sim->g_total_raytrace_mem_accesses += m_raytrace_mem_accesses.size();
+      
       // insn_memaddr = m_raytrace_mem_accesses.front();
       inst.set_addr(lane_id, m_raytrace_mem_accesses, MAX_ACCESSES_PER_INSN_PER_THREAD);
     }

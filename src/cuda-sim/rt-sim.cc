@@ -269,7 +269,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     unsigned n_return = target_func->has_return();
     assert(n_return == 0);
     unsigned n_args = target_func->num_args();
-    assert(n_args == 3);
+    assert(n_args == 4);
     // printf("Function has %d args.\n", n_args);
     
     int arg = 0;
@@ -326,8 +326,18 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     // addr_t tri_start = node_start + 0x11bc00; 
     // addr_t tri_end = tri_start + 0x221a10;
     // Teapot
-    addr_t tri_start = node_start + 0x6e600; 
-    addr_t tri_end = tri_start + 0xd6f40;
+    // addr_t tri_start = node_start + 0x6e600; 
+    // addr_t tri_end = tri_start + 0xd6f40;
+    arg++;
+    // Fourth argument: Start of triangle data
+    const operand_info &actual_param_op4 = pI->operand_lookup(arg + 1);    
+    const symbol *formal_param4 = target_func->get_arg(arg);
+    from_addr = actual_param_op4.get_symbol()->get_address();
+    size=formal_param4->get_size_in_bytes();
+    
+    assert(size == 8);
+    addr_t tri_start;
+    thread->m_local_mem->read(from_addr, size, &tri_start);
     
     // Global memory
     memory_space *mem=NULL;
@@ -469,7 +479,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             #else 
             
             // while triangle address is within triangle primitive range
-            while (tri_addr <= (tri_end - tri_start)) {
+            while (1) {
                 
                 // Matches rtao Woopify triangle
                 float4 p0, p1, p2;

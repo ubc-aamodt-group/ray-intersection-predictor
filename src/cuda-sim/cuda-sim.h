@@ -119,6 +119,7 @@ class cuda_sim {
  public:
   cuda_sim(gpgpu_context *ctx) {
     g_ptx_sim_num_insn = 0;
+    g_total_raytrace_mem_accesses = 0;
     g_ptx_kernel_count =
         -1;  // used for classification stat collection purposes
     gpgpu_param_num_shaders = 0;
@@ -149,6 +150,7 @@ class cuda_sim {
   int cp_cta_resume;
   int g_ptxinfo_error_detected;
   unsigned g_ptx_sim_num_insn;
+  unsigned g_total_raytrace_mem_accesses;
   char *cdp_latency_str;
   int g_ptx_kernel_count;  // used for classification stat collection purposes
   std::map<const void *, std::string>

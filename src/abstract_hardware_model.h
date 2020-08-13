@@ -1204,6 +1204,9 @@ class warp_inst_t : public inst_t {
   }
   
   std::set<new_addr_type> get_rt_accesses() { return m_next_rt_accesses_set; }
+  
+  unsigned get_coalesce_count() { return m_coalesce_count; }
+
 
  protected:
   unsigned m_uid;
@@ -1223,6 +1226,8 @@ class warp_inst_t : public inst_t {
   active_mask_t
       m_warp_issued_mask;  // active mask at issue (prior to predication test)
                            // -- for instruction counting
+
+   unsigned m_coalesce_count;
 
   // Combined list + set to track insertion order with no duplicates (duplicates coalesced)
   std::list<new_addr_type> m_next_rt_accesses;

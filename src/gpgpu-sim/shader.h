@@ -1790,8 +1790,9 @@ struct shader_core_stats_pod {
   long *n_mem_to_simt;
   
   unsigned rt_max_warps;
-  unsigned rt_mshr_reservation_fail;
   unsigned rt_max_mshr_entries;
+  unsigned rt_thread_coalesced_count;
+  unsigned rt_warp_coalesced_count;
  
 };
 

@@ -698,8 +698,9 @@ void shader_core_stats::print(FILE *fout) const {
 
 
   fprintf(fout, "rt_max_warps = %d\n", rt_max_warps);
-  fprintf(fout, "rt_mshr_reservation_fail = %d\n", rt_mshr_reservation_fail);
   fprintf(fout, "rt_max_mshr_entries = %d\n", rt_max_mshr_entries);
+  fprintf(fout, "rt_thread_coalesced_count = %d\n", rt_thread_coalesced_count);
+  fprintf(fout, "rt_warp_coalesced_count = %d\n", rt_warp_coalesced_count);
 
 
   fprintf(fout, "gpu_reg_bank_conflict_stalls = %d\n",
@@ -2585,6 +2586,7 @@ void rt_unit::coalesce_warp_requests(mem_access_t access) {
     std::set<new_addr_type> addr_set = inst.get_rt_accesses();
     // Mark as sent if matching address found
     if (addr_set.find(addr) != addr_set.end()) {
+      m_stats->rt_warp_coalesced_count++;
       inst.clear_rt_access(addr);
       inst.set_mem_fetch_wait(addr);
     }
@@ -2602,6 +2604,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
 
   // Get next node to fetch
   mem_access_t access = inst.get_next_rt_mem_access(m_config->m_rt_lock_threads);
+  m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
 
   // Attempt to coalesce memory accesses between multiple warps
   if (m_config->m_rt_coalesce_warps && m_config->m_rt_lock_threads) {
@@ -2623,7 +2626,6 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
   if (status == RESERVATION_FAIL) {
     // Remove from m_mf_awaiting_response 
     inst.undo_rt_access(mf->get_addr());
-    m_stats->rt_mshr_reservation_fail++;
   }
   
   return process_cache_access(cache, mf->get_addr(), inst, events, mf, status);
