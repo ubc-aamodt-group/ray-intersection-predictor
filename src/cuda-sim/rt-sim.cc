@@ -541,7 +541,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
         mem->write(ray_payload_addr, sizeof(Hit), &ray_payload, NULL, NULL);
         
         // TODO: Keep this separate from read accesses
-        thread->add_raytrace_mem_access(ray_payload_addr);
+        // thread->add_raytrace_mem_access(ray_payload_addr);
     }
     
     #ifdef DEBUG_PRINT

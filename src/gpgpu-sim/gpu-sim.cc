@@ -261,6 +261,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       opp, "-gpgpu_rt_coalesce_warps", OPT_BOOL, &m_rt_coalesce_warps,
       "try to coalesce memory requests between warps ",
       "0");
+  // option_parser_register(
+  //     opp, "-gpgpu_rt_warp_cycle", OPT_UINT32, &m_rt_warp_cycle,
+  //     "number of memory requests before switching warps ",
+  //     "4");
   option_parser_register(opp, "-gpgpu_cache:il1", OPT_CSTR,
                          &m_L1I_config.m_config_string,
                          "shader L1 instruction cache config "
@@ -354,6 +358,8 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "Size of shared memory per shader core (default 16kB)", "16384");
   option_parser_register(opp, "-gpgpu_adaptive_cache_config", OPT_UINT32,
                          &adaptive_cache_config, "adaptive_cache_config", "0");
+  // option_parser_register(opp, "-gpgpu_rt_warp_cycle", OPT_UINT32,
+  //                        &rt_warp_cycle, "rt_warp_cycle", "0");
   option_parser_register(
       opp, "-gpgpu_shmem_sizeDefault", OPT_UINT32, &gpgpu_shmem_sizeDefault,
       "Size of shared memory per shader core (default 16kB)", "16384");
@@ -1996,7 +2002,7 @@ void gpgpu_sim::cycle() {
       }
     }
 
-    if (!(gpu_sim_cycle % 50000)) {
+    if (!(gpu_sim_cycle % 15000)) {
       // deadlock detection
       if (m_config.gpu_deadlock_detect && gpu_sim_insn == last_gpu_sim_insn) {
         gpu_deadlock = true;

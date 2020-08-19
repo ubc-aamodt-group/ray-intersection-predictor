@@ -785,7 +785,47 @@ void warp_inst_t::clear_rt_awaiting_threads(new_addr_type addr) {
     }
   }
 }
+
+
+ bool warp_inst_t::mem_fetch_wait(bool locked) { 
+  // Wait for response if all current next accesses have been sent
+  // and waiting for response list is not empty
+  if (locked) {
+    return m_next_rt_accesses_set.empty() && !m_mf_awaiting_response.empty(); 
+  } 
   
+  // Otherwise check if any thread has new requests
+  else {
+    // If there are still waiting requests, continue
+    if (!m_next_rt_accesses_set.empty()) {
+      return false;
+    }
+    // Check if done, continue
+    else if (m_mf_awaiting_response.empty() && rt_mem_accesses_empty()){
+      return false;
+    }
+    // Check for threads with new requests 
+    else {
+      for (unsigned i=0; i<m_config->warp_size; i++) {
+        if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty()) {
+          new_addr_type addr = m_per_scalar_thread[i].raytrace_mem_accesses.front();
+          new_addr_type block_addr = line_size_based_tag_func(addr, 32);
+          // Check if it's already waiting for a response or waiting to be sent
+          if (m_mf_awaiting_response.find(block_addr) == m_mf_awaiting_response.end()
+              && m_next_rt_accesses_set.find(addr) == m_next_rt_accesses_set.end()) 
+          {
+            // If there are any new requests, don't wait
+            return false;
+          }
+        }
+      }
+      // If no new requests, no waiting requests, and not done, wait.
+      return true;
+    }
+  }
+    
+}
+
 mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
   // RT-CORE NOTE: first version (round robin?) this section tbd
   new_addr_type next_addr;
@@ -795,7 +835,7 @@ mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
   if (locked) {
     // Get current round of requests
     if (m_next_rt_accesses_set.empty()) {
-      assert(!mem_fetch_wait());
+      assert(!mem_fetch_wait(locked));
       assert(m_next_rt_accesses_set.empty());
       // printf("Getting next set of rt mem accesses...\n");
       for (unsigned i=0; i<m_config->warp_size; i++) {
@@ -820,8 +860,10 @@ mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
     for (unsigned i=0; i<m_config->warp_size; i++) {
       if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty()) {
         new_addr_type addr = m_per_scalar_thread[i].raytrace_mem_accesses.front();
+        // RT-CORE NOTE: Fix 32
+        new_addr_type block_addr = line_size_based_tag_func(addr, 32);
         // Check if it's already waiting for a response or waiting to be sent
-        if (m_mf_awaiting_response.find(addr) == m_mf_awaiting_response.end()
+        if (m_mf_awaiting_response.find(block_addr) == m_mf_awaiting_response.end()
             && m_next_rt_accesses_set.find(addr) == m_next_rt_accesses_set.end()) 
         {
           m_next_rt_accesses.push_back(addr);
@@ -844,7 +886,9 @@ mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
   // Generate mem_access_t
   // RT-CORE NOTE: Coalesce requests?
   mem_access_t next_access = memory_coalescing_arch_rt(next_addr);
+  // printf("\nAdd Warp %d: 0x%x\t", m_warp_id, next_access.get_addr());
   m_mf_awaiting_response.insert(next_access.get_addr());
+  m_current_rt_access = next_addr;
   
   return next_access;
 }

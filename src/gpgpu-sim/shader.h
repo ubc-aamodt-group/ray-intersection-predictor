@@ -1699,6 +1699,7 @@ class shader_core_config : public core_config {
   unsigned m_rt_max_mshr_entries;
   bool m_rt_lock_threads;
   bool m_rt_coalesce_warps;
+  // bool m_rt_warp_cycle;
 };
 
 struct shader_core_stats_pod {

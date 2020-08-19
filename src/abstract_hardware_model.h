@@ -388,6 +388,7 @@ class core_config {
   bool gmem_skip_L1D;  // on = global memory access always skip the L1 cache
 
   bool adaptive_cache_config;
+  // unsigned rt_warp_cycle;
 };
 
 // bounded stack that implements simt reconvergence using pdom mechanism from
@@ -1014,6 +1015,7 @@ class warp_inst_t : public inst_t {
     m_is_raytrace = false;
     m_is_cdp = 0;
     should_do_atomic = true;
+    // m_rt_warp_cycle = m_config->rt_warp_cycle;
   }
   virtual ~warp_inst_t() {}
 
@@ -1178,12 +1180,10 @@ class warp_inst_t : public inst_t {
   mem_access_t get_next_rt_mem_access(bool locked);
   mem_access_t memory_coalescing_arch_rt(new_addr_type addr);
   
-  bool mem_fetch_wait() { 
-    // Wait for response if all current next accesses have been sent
-    // and waiting for response list is not empty
-    return m_next_rt_accesses_set.empty() && !m_mf_awaiting_response.empty(); 
-  }
+  bool mem_fetch_wait(bool locked);
+  
   void clear_mem_fetch_wait(new_addr_type addr) { 
+    // printf("Clear Warp %d: 0x%x\t", m_warp_id, addr);
     m_mf_awaiting_response.erase(addr);
   }
   void clear_rt_awaiting_threads(new_addr_type addr);
@@ -1192,11 +1192,12 @@ class warp_inst_t : public inst_t {
   }
   
   void undo_rt_access(new_addr_type addr) { 
+    // printf("Undo Warp %d: 0x%x\t", m_warp_id, addr);
     m_mf_awaiting_response.erase(addr);
-    if (m_next_rt_accesses_set.find(addr) == m_next_rt_accesses_set.end()) {
-      m_next_rt_accesses.push_back(addr);
-      m_next_rt_accesses_set.insert(addr);
-    }
+    assert (m_next_rt_accesses_set.find(m_current_rt_access) == m_next_rt_accesses_set.end());
+    m_next_rt_accesses.push_front(m_current_rt_access);
+    m_next_rt_accesses_set.insert(m_current_rt_access);
+
   }
   
   void set_mem_fetch_wait(new_addr_type addr) {
@@ -1207,6 +1208,9 @@ class warp_inst_t : public inst_t {
   
   unsigned get_coalesce_count() { return m_coalesce_count; }
 
+  // void dec_rt_warp_cycle() { m_rt_warp_cycle--; }
+  // void set_rt_warp_cycle() { m_rt_warp_cycle = m_config->rt_warp_cycle; }
+  // bool check_rt_warp_cycle() { return m_rt_warp_cycle <= 0; }
 
  protected:
   unsigned m_uid;
@@ -1233,6 +1237,8 @@ class warp_inst_t : public inst_t {
   std::list<new_addr_type> m_next_rt_accesses;
   std::set<new_addr_type> m_next_rt_accesses_set;
   
+  new_addr_type m_current_rt_access;
+  
   // List of current memory requests awaiting response
   std::set<new_addr_type> m_mf_awaiting_response;
   struct per_thread_info {
@@ -1257,7 +1263,7 @@ class warp_inst_t : public inst_t {
   std::list<mem_access_t> m_accessq;
 
   unsigned m_scheduler_id;  // the scheduler that issues this inst
-
+  // unsigned m_rt_warp_cycle;
   
   // Jin: cdp support
  public:
