@@ -2440,8 +2440,10 @@ void rt_unit::cycle() {
       // Clear all warps if coalesced
       if (m_config->m_rt_coalesce_warps) {
         pipe_reg.clear_mem_fetch_wait(mf->get_addr());
+        if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
         for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
           (it->second).clear_mem_fetch_wait(mf->get_addr());
+          if (!m_config->m_rt_lock_threads) (it->second).clear_rt_awaiting_threads(mf->get_addr());
         }
       } 
       
@@ -2616,7 +2618,7 @@ void rt_unit::coalesce_warp_requests(mem_access_t access) {
   new_addr_type addr = access.get_addr();
   // Check all warps in rt core
   for(auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
-    warp_inst_t inst = it->second;
+    warp_inst_t &inst = it->second;
     std::set<new_addr_type> addr_set = inst.get_rt_accesses();
     // Mark as sent if matching address found
     if (addr_set.find(addr) != addr_set.end()) {
@@ -2641,7 +2643,8 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
   m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
 
   // Attempt to coalesce memory accesses between multiple warps
-  if (m_config->m_rt_coalesce_warps && m_config->m_rt_lock_threads) {
+  // if (m_config->m_rt_coalesce_warps && m_config->m_rt_lock_threads) {
+  if (m_config->m_rt_coalesce_warps) {
     coalesce_warp_requests(access);
   }
   
@@ -2680,6 +2683,7 @@ mem_stage_stall_type rt_unit::process_cache_access(
       if (m_config->m_rt_coalesce_warps) {
         for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
           (it->second).clear_mem_fetch_wait(address);
+          if (!m_config->m_rt_lock_threads) (it->second).clear_rt_awaiting_threads(address);
         }
       }
     } else if (status == RESERVATION_FAIL) {
@@ -4653,6 +4657,9 @@ void simt_core_cluster::print_not_completed(FILE *fp) const {
     unsigned not_completed = m_core[i]->get_not_completed();
     unsigned sid = m_config->cid_to_sid(i, m_cluster_id);
     fprintf(fp, "%u(%u) ", sid, not_completed);
+    if (not_completed > 0) {
+      display_rt_pipeline(sid, stdout, 0x40 & 0x2E);
+    }
   }
 }
 
@@ -4860,7 +4867,7 @@ void simt_core_cluster::display_pipeline(unsigned sid, FILE *fout,
   }
 }
 
-void simt_core_cluster::display_rt_pipeline(unsigned sid, FILE *fout, int mask) {
+void simt_core_cluster::display_rt_pipeline(unsigned sid, FILE *fout, int mask) const {
   m_core[m_config->sid_to_cid(sid)]->display_rt_pipeline(fout, mask);
 }
 

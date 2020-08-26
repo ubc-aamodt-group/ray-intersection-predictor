@@ -876,10 +876,13 @@ mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
     assert(!m_next_rt_accesses.empty());
     assert(!m_next_rt_accesses_set.empty());
     
-    next_addr = m_next_rt_accesses.front();
-    m_next_rt_accesses.pop_front();
+    do {
+      next_addr = m_next_rt_accesses.front();
+      m_next_rt_accesses.pop_front();
+    } while (m_next_rt_accesses_set.find(next_addr) == m_next_rt_accesses_set.end());
+      
     m_next_rt_accesses_set.erase(next_addr);
-    assert(m_next_rt_accesses_set.size() == m_next_rt_accesses.size());
+    // assert(m_next_rt_accesses_set.size() == m_next_rt_accesses.size());
   }
   
 
