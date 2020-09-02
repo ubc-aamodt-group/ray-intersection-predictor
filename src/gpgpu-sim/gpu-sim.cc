@@ -261,6 +261,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       opp, "-gpgpu_rt_coalesce_warps", OPT_BOOL, &m_rt_coalesce_warps,
       "try to coalesce memory requests between warps ",
       "0");
+  option_parser_register(
+      opp, "-gpgpu_rt_warppool", OPT_BOOL, &m_rt_warppool,
+      "manage memory of all warps in rt core as one set ",
+      "0");
   // option_parser_register(
   //     opp, "-gpgpu_rt_warp_cycle", OPT_UINT32, &m_rt_warp_cycle,
   //     "number of memory requests before switching warps ",

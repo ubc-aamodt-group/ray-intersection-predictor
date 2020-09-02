@@ -1303,6 +1303,8 @@ class rt_unit : public pipelined_simd_unit {
       // mem_stage_stall_type process_memory_access_queue_l1cache(l1_cache *cache, warp_inst_t &inst);
       
       void coalesce_warp_requests(mem_access_t access);
+      void track_warp_mem_accesses(warp_inst_t &inst);
+      mem_access_t get_next_rt_mem_access(warp_inst_t &inst);
       
       const memory_config *m_memory_config;
       class mem_fetch_interface *m_icnt;
@@ -1328,7 +1330,16 @@ class rt_unit : public pipelined_simd_unit {
       // std::vector<std::deque<mem_fetch *>> l0t_latency_queue;
       // void l0t_latency_queue_cycle();
       
+      // {warp id, warp instruction}
       std::map<unsigned, warp_inst_t> m_current_warps;
+      
+      std::set<new_addr_type> m_current_warp_mem_accesses;
+      std::set<new_addr_type> m_current_warp_awaiting_accesses;
+      std::set<new_addr_type> m_current_warp_stalled_accesses;
+      
+      std::set<new_addr_type> m_mem_access_list;
+      std::map<new_addr_type, unsigned> m_mem_access_heat_map;
+      
       
 };
 
@@ -1699,6 +1710,7 @@ class shader_core_config : public core_config {
   unsigned m_rt_max_mshr_entries;
   bool m_rt_lock_threads;
   bool m_rt_coalesce_warps;
+  bool m_rt_warppool;
   // bool m_rt_warp_cycle;
 };
 
@@ -1794,6 +1806,9 @@ struct shader_core_stats_pod {
   unsigned rt_max_mshr_entries;
   unsigned rt_thread_coalesced_count;
   unsigned rt_warp_coalesced_count;
+  unsigned rt_repeated_accesses;
+ 
+  std::map<new_addr_type, unsigned> rt_mem_access_heat_map;
  
 };
 

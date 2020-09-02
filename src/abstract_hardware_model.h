@@ -1178,6 +1178,7 @@ class warp_inst_t : public inst_t {
   
   // RT-CORE NOTE: May need to update this logic for special node fetching? (i.e. vote on next mem access)
   mem_access_t get_next_rt_mem_access(bool locked);
+  void fill_next_rt_mem_access(bool locked);
   mem_access_t memory_coalescing_arch_rt(new_addr_type addr);
   
   bool mem_fetch_wait(bool locked);

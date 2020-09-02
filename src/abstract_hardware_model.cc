@@ -826,8 +826,7 @@ void warp_inst_t::clear_rt_awaiting_threads(new_addr_type addr) {
     
 }
 
-mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
-  // RT-CORE NOTE: first version (round robin?) this section tbd
+void warp_inst_t::fill_next_rt_mem_access(bool locked) {
   new_addr_type next_addr;
   m_coalesce_count = 0;
   
@@ -849,10 +848,6 @@ mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
       }
     }  
     assert(!m_next_rt_accesses_set.empty());
-    
-    auto it = m_next_rt_accesses_set.begin();
-    next_addr = *it;
-    m_next_rt_accesses_set.erase(next_addr);
   }
   
   // Not in lock step
@@ -873,9 +868,26 @@ mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
         }
       }
     }
-    assert(!m_next_rt_accesses.empty());
-    assert(!m_next_rt_accesses_set.empty());
-    
+  }
+}
+
+mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
+  
+  fill_next_rt_mem_access(locked);
+  
+  if (!locked) assert(!m_next_rt_accesses.empty());
+  assert(!m_next_rt_accesses_set.empty());
+  
+  // RT-CORE NOTE: first version (round robin?) this section tbd
+  new_addr_type next_addr;
+  
+  if (locked) {
+    auto it = m_next_rt_accesses_set.begin();
+    next_addr = *it;
+    m_next_rt_accesses_set.erase(next_addr);
+  } 
+  
+  else {
     do {
       next_addr = m_next_rt_accesses.front();
       m_next_rt_accesses.pop_front();
@@ -884,7 +896,6 @@ mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
     m_next_rt_accesses_set.erase(next_addr);
     // assert(m_next_rt_accesses_set.size() == m_next_rt_accesses.size());
   }
-  
 
   // Generate mem_access_t
   // RT-CORE NOTE: Coalesce requests?

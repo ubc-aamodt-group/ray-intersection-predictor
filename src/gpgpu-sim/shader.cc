@@ -701,6 +701,14 @@ void shader_core_stats::print(FILE *fout) const {
   fprintf(fout, "rt_max_mshr_entries = %d\n", rt_max_mshr_entries);
   fprintf(fout, "rt_thread_coalesced_count = %d\n", rt_thread_coalesced_count);
   fprintf(fout, "rt_warp_coalesced_count = %d\n", rt_warp_coalesced_count);
+  fprintf(fout, "rt_repeated_accesses = %d\n", rt_repeated_accesses);
+  
+  fprintf(fout, "rt_mem_access_heat_map: \n");
+  for (auto it=rt_mem_access_heat_map.begin(); it!=rt_mem_access_heat_map.end(); ++it) {
+    if (it->second > 1) {
+      fprintf(fout, "0x%x: %d\n", it->first, it->second);
+    }
+  }
 
 
   fprintf(fout, "gpu_reg_bank_conflict_stalls = %d\n",
@@ -2445,6 +2453,10 @@ void rt_unit::cycle() {
           (it->second).clear_mem_fetch_wait(mf->get_addr());
           if (!m_config->m_rt_lock_threads) (it->second).clear_rt_awaiting_threads(mf->get_addr());
         }
+        if (m_config->m_rt_warppool) {
+          assert(m_current_warp_awaiting_accesses.find(mf->get_addr()) != m_current_warp_awaiting_accesses.end());
+          m_current_warp_awaiting_accesses.erase(mf->get_addr());
+        }
       } 
       
       else {
@@ -2555,36 +2567,55 @@ void rt_unit::cycle() {
 
 bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem_stage_access_type &fail_type) {
   
-  if (inst.empty()) {
-    if (m_config->m_rt_max_warps > 0) {
-      // Check awaiting warps to see if any are ready
-      if (m_current_warps.empty()) return true;
-      else {
-        for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
-          if (!((it->second).mem_fetch_wait(m_config->m_rt_lock_threads))) { 
-            inst = it->second;
-            // inst.set_rt_warp_cycle();
-            unsigned warp_id = it->first;
-            m_current_warps.erase(it);
-            break;
-          }
-        }
-        // Return if none are ready
-        if (inst.empty()) return true;
+  
+  if (m_config->m_rt_warppool) {
+    if (inst.empty()) {
+      if (!m_current_warps.empty()) {
+        auto it = m_current_warps.begin();
+        inst = it->second;
+        m_current_warps.erase(it);
+        assert(!inst.empty());
       }
-    } else {
-      return true;
+      else {
+        return true;
+      }
     }
+    if (!inst.active_count()) return true;
   }
   
-  if (!inst.active_count()) return true;
-  assert(inst.space.get_type() == global_space);
-  
-  // If waiting for responses, don't send new requests
-  if (inst.mem_fetch_wait(m_config->m_rt_lock_threads)) return inst.rt_mem_accesses_empty();
-  
-  // If MSHR is at the "limit" don't sent new requests
-  if (m_config->m_rt_max_warps > 0 && m_L0_complet->num_mshr_entries() > m_config->m_rt_max_mshr_entries) return inst.rt_mem_accesses_empty();
+  else {
+    if (inst.empty()) {
+      if (m_config->m_rt_max_warps > 0) {
+        // Check awaiting warps to see if any are ready
+        if (m_current_warps.empty()) return true;
+        else {
+          for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
+            if (!((it->second).mem_fetch_wait(m_config->m_rt_lock_threads))) { 
+              inst = it->second;
+              // inst.set_rt_warp_cycle();
+              unsigned warp_id = it->first;
+              m_current_warps.erase(it);
+              break;
+            }
+          }
+          // Return if none are ready
+          if (inst.empty()) return true;
+        }
+      } else {
+        return true;
+      }
+    }
+
+    
+    if (!inst.active_count()) return true;
+    assert(inst.space.get_type() == global_space);
+    
+    // If waiting for responses, don't send new requests
+    if (inst.mem_fetch_wait(m_config->m_rt_lock_threads)) return inst.rt_mem_accesses_empty();
+    
+    // If MSHR is at the "limit" don't sent new requests
+    if (m_config->m_rt_max_warps > 0 && m_L0_complet->num_mshr_entries() > m_config->m_rt_max_mshr_entries) return inst.rt_mem_accesses_empty();
+  }
   
   mem_stage_stall_type fail;
   fail = process_memory_access_queue(m_L0_complet, inst);
@@ -2631,6 +2662,52 @@ void rt_unit::coalesce_warp_requests(mem_access_t access) {
 
 // RT-CORE NOTE: Add version that re-orders next accesses in a warp depending on whether of not they're in other warps
 
+void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
+  
+  if (m_current_warp_mem_accesses.empty()) {
+    if (!m_current_warp_stalled_accesses.empty()) {
+      m_current_warp_mem_accesses.insert(m_current_warp_stalled_accesses.begin(), m_current_warp_stalled_accesses.end());
+      m_current_warp_stalled_accesses.clear();
+    }
+  }
+  
+  inst.fill_next_rt_mem_access(m_config->m_rt_lock_threads);
+  std::set<new_addr_type> warp_accesses = inst.get_rt_accesses();
+  for (auto it=warp_accesses.begin(); it!=warp_accesses.end(); ++it) {
+    new_addr_type addr = *it;
+    new_addr_type block_addr = addr & ~(32 - 1);
+    inst.clear_rt_access(addr);
+    inst.set_mem_fetch_wait(block_addr);
+    if (m_current_warp_awaiting_accesses.find(block_addr) == m_current_warp_awaiting_accesses.end()) {
+      m_current_warp_mem_accesses.insert(addr);
+    }
+  }
+  for(auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
+    warp_inst_t &inst = it->second;
+    inst.fill_next_rt_mem_access(m_config->m_rt_lock_threads);
+    std::set<new_addr_type> warp_accesses = inst.get_rt_accesses();
+    for (auto it=warp_accesses.begin(); it!=warp_accesses.end(); ++it) {
+      new_addr_type addr = *it;
+      new_addr_type block_addr = addr & ~(32 - 1);
+      inst.clear_rt_access(addr);
+      inst.set_mem_fetch_wait(block_addr);
+      if (m_current_warp_awaiting_accesses.find(block_addr) == m_current_warp_awaiting_accesses.end()) {
+        m_current_warp_mem_accesses.insert(addr);
+      }
+    }
+  }
+}
+
+mem_access_t rt_unit::get_next_rt_mem_access(warp_inst_t &inst) {
+  new_addr_type next_addr;
+ 
+  auto it = m_current_warp_mem_accesses.begin();
+  next_addr = *it;
+  m_current_warp_mem_accesses.erase(next_addr); 
+  
+  return inst.memory_coalescing_arch_rt(next_addr);
+  
+}
 
 mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_inst_t &inst) {
   mem_stage_stall_type result = NO_RC_FAIL;
@@ -2638,20 +2715,38 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
   
   if (!cache->data_port_free()) return DATA_PORT_STALL;
 
-  // Get next node to fetch
-  mem_access_t access = inst.get_next_rt_mem_access(m_config->m_rt_lock_threads);
-  m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
+  mem_fetch *mf;
+  
+  if (m_config->m_rt_warppool) {
+    // Get next node to fetch
+    track_warp_mem_accesses(inst);
+    
+    if (m_current_warp_mem_accesses.empty()) return result;
+    mem_access_t access = get_next_rt_mem_access(inst);
+    m_current_warp_awaiting_accesses.insert(access.get_addr());
+    
+    // Access cache
+    mf = m_mf_allocator->alloc(
+      inst, access, m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle
+    );
+  }
+  else {
+    mem_access_t access = inst.get_next_rt_mem_access(m_config->m_rt_lock_threads);
+    m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
 
-  // Attempt to coalesce memory accesses between multiple warps
-  // if (m_config->m_rt_coalesce_warps && m_config->m_rt_lock_threads) {
-  if (m_config->m_rt_coalesce_warps) {
-    coalesce_warp_requests(access);
+    // Attempt to coalesce memory accesses between multiple warps
+    // if (m_config->m_rt_coalesce_warps && m_config->m_rt_lock_threads) {
+    if (m_config->m_rt_coalesce_warps) {
+      coalesce_warp_requests(access);
+    }
+    
+    // Access cache
+    mf = m_mf_allocator->alloc(
+      inst, access, m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle
+    );
   }
   
-  // Access cache
-  mem_fetch *mf = m_mf_allocator->alloc(
-    inst, access, m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle
-  );
+  
   std::list<cache_event> events;
   enum cache_request_status status = cache->access(
     mf->get_addr(), mf,
@@ -2661,8 +2756,34 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
   
   // Stalled
   if (status == RESERVATION_FAIL) {
-    // Remove from m_mf_awaiting_response 
-    inst.undo_rt_access(mf->get_addr());
+    if (m_config->m_rt_warppool) {
+      m_current_warp_awaiting_accesses.erase(mf->get_addr());
+      // Technically the wrong address but it should be okay since it's coalesced anyway?
+      // m_current_warp_mem_accesses.insert(mf->get_addr());
+      m_current_warp_stalled_accesses.insert(mf->get_addr());
+    }
+    else {
+      // Remove from m_mf_awaiting_response 
+      inst.undo_rt_access(mf->get_addr());
+      // Remove the unnecessary list of next_rt_accesses (not the set)
+      // if (m_config->m_rt_lock_threads) 
+    }
+  }
+  
+  // Stats
+  else {
+    new_addr_type mem_access_addr = mf->get_addr();
+    if (m_mem_access_list.find(mem_access_addr) != m_mem_access_list.end()) {
+      m_stats->rt_repeated_accesses++;
+    }
+    else {
+      m_mem_access_list.insert(mem_access_addr);
+    }
+    if (m_mem_access_heat_map.find(mem_access_addr) == m_mem_access_heat_map.end()) {
+      (m_mem_access_heat_map).insert(std::pair<new_addr_type, unsigned>(mem_access_addr, 0));
+    }
+    m_mem_access_heat_map[mem_access_addr]++;
+    m_stats->rt_mem_access_heat_map = m_mem_access_heat_map;
   }
   
   return process_cache_access(cache, mf->get_addr(), inst, events, mf, status);
@@ -2686,6 +2807,7 @@ mem_stage_stall_type rt_unit::process_cache_access(
           if (!m_config->m_rt_lock_threads) (it->second).clear_rt_awaiting_threads(address);
         }
       }
+      if (m_config->m_rt_warppool) m_current_warp_awaiting_accesses.erase(address);
     } else if (status == RESERVATION_FAIL) {
       result = BK_CONF;
       delete mf;
