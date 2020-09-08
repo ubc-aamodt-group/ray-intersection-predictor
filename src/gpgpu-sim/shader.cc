@@ -705,11 +705,45 @@ void shader_core_stats::print(FILE *fout) const {
   
   fprintf(fout, "rt_mem_access_heat_map: \n");
   for (auto it=rt_mem_access_heat_map.begin(); it!=rt_mem_access_heat_map.end(); ++it) {
-    if (it->second > 1) {
+    if (it->second > 5) {
       fprintf(fout, "0x%x: %d\n", it->first, it->second);
     }
   }
-
+  for (unsigned i=5; i>0; --i) {
+    unsigned count = 0;
+    for (auto it=rt_mem_access_heat_map.begin(); it!=rt_mem_access_heat_map.end(); ++it) {
+      if (it->second == i) {
+        count++;
+      }
+    }
+    fprintf(fout, "%d accesses: %d\t", i, count);
+  }
+  
+  fprintf(fout, "\nm_rt_cache_unused: %d\n", rt_cache_unused.size());
+  unsigned i = 0;
+  for (auto it=rt_cache_unused.begin(); it!=rt_cache_unused.end(); ++it) {
+    if (i > 50) {
+      fprintf(fout, "...\n");
+      break;
+    }
+    fprintf(fout, "0x%x\t", *it);
+    i++;
+  }
+  fprintf(fout, "\nm_rt_cache_usefulness:\n");
+  for (auto it=rt_cache_usefulness.begin(); it!=rt_cache_usefulness.end(); ++it) {
+    if (it->second > 5)
+      fprintf(fout, "0x%x:\t%d\n", it->first, it->second);
+  }
+  for (unsigned i=5; i>0; --i) {
+    unsigned count = 0;
+    for (auto it=rt_cache_usefulness.begin(); it!=rt_cache_usefulness.end(); ++it) {
+      if (it->second == i) {
+        count++;
+      }
+    }
+    fprintf(fout, "%d accesses: %d\t", i, count);
+  }
+  fprintf(fout, "\n");
 
   fprintf(fout, "gpu_reg_bank_conflict_stalls = %d\n",
           gpu_reg_bank_conflict_stalls);
@@ -2454,8 +2488,8 @@ void rt_unit::cycle() {
           if (!m_config->m_rt_lock_threads) (it->second).clear_rt_awaiting_threads(mf->get_addr());
         }
         if (m_config->m_rt_warppool) {
-          assert(m_current_warp_awaiting_accesses.find(mf->get_addr()) != m_current_warp_awaiting_accesses.end());
-          m_current_warp_awaiting_accesses.erase(mf->get_addr());
+          assert(m_warppool_awaiting_response.find(mf->get_addr()) != m_warppool_awaiting_response.end());
+          m_warppool_awaiting_response.erase(mf->get_addr());
         }
       } 
       
@@ -2664,13 +2698,30 @@ void rt_unit::coalesce_warp_requests(mem_access_t access) {
 
 void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
   
-  if (m_current_warp_mem_accesses.empty()) {
-    if (!m_current_warp_stalled_accesses.empty()) {
-      m_current_warp_mem_accesses.insert(m_current_warp_stalled_accesses.begin(), m_current_warp_stalled_accesses.end());
-      m_current_warp_stalled_accesses.clear();
+  // If no more accesses, check if there were any previously stalled ones
+  if (m_warppool_mem_accesses.empty()) {
+    if (!m_warppool_stalled_accesses.empty()) {
+      // If tracking order, add one by one
+      if (m_config->m_rt_warppool_fifo) {
+        for (auto it=m_warppool_stalled_accesses.begin(); it!=m_warppool_stalled_accesses.end(); ++it){
+          if (m_warppool_mem_accesses.find(*it) == m_warppool_mem_accesses.end()) {
+            m_warppool_fifo_list.push_back(*it);
+            m_warppool_mem_accesses.insert(*it);
+          }
+        }
+      }
+      
+      // Otherwise order doesn't matter
+      else {
+        m_warppool_mem_accesses.insert(m_warppool_stalled_accesses.begin(), m_warppool_stalled_accesses.end());
+      }
+      
+      // Stalled accesses moved to end of list
+      m_warppool_stalled_accesses.clear();
     }
   }
   
+  // Add currently selected warp's accesses
   inst.fill_next_rt_mem_access(m_config->m_rt_lock_threads);
   std::set<new_addr_type> warp_accesses = inst.get_rt_accesses();
   for (auto it=warp_accesses.begin(); it!=warp_accesses.end(); ++it) {
@@ -2678,10 +2729,19 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
     new_addr_type block_addr = addr & ~(32 - 1);
     inst.clear_rt_access(addr);
     inst.set_mem_fetch_wait(block_addr);
-    if (m_current_warp_awaiting_accesses.find(block_addr) == m_current_warp_awaiting_accesses.end()) {
-      m_current_warp_mem_accesses.insert(addr);
+    if (m_warppool_awaiting_response.find(block_addr) == m_warppool_awaiting_response.end()) {
+      // If tracking order, also add to list
+      if (m_config->m_rt_warppool_fifo) {
+        if (m_warppool_mem_accesses.find(addr) == m_warppool_mem_accesses.end()) {
+          m_warppool_fifo_list.push_back(addr);
+        }
+      }
+      
+      m_warppool_mem_accesses.insert(addr);
     }
   }
+  
+  // Add all other warp's accesses
   for(auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
     warp_inst_t &inst = it->second;
     inst.fill_next_rt_mem_access(m_config->m_rt_lock_threads);
@@ -2691,8 +2751,15 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
       new_addr_type block_addr = addr & ~(32 - 1);
       inst.clear_rt_access(addr);
       inst.set_mem_fetch_wait(block_addr);
-      if (m_current_warp_awaiting_accesses.find(block_addr) == m_current_warp_awaiting_accesses.end()) {
-        m_current_warp_mem_accesses.insert(addr);
+      if (m_warppool_awaiting_response.find(block_addr) == m_warppool_awaiting_response.end()) {
+        // If tracking order, also add to list
+        if (m_config->m_rt_warppool_fifo) {
+          if (m_warppool_mem_accesses.find(addr) == m_warppool_mem_accesses.end()) {
+            m_warppool_fifo_list.push_back(addr);
+          }
+        }
+        
+        m_warppool_mem_accesses.insert(addr);
       }
     }
   }
@@ -2701,9 +2768,20 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
 mem_access_t rt_unit::get_next_rt_mem_access(warp_inst_t &inst) {
   new_addr_type next_addr;
  
-  auto it = m_current_warp_mem_accesses.begin();
-  next_addr = *it;
-  m_current_warp_mem_accesses.erase(next_addr); 
+  if (m_config->m_rt_warppool_fifo) {
+    do {
+      next_addr = m_warppool_fifo_list.front();
+      m_warppool_fifo_list.pop_front();
+    } while (m_warppool_mem_accesses.find(next_addr) == m_warppool_mem_accesses.end());
+    // Repeatedly take next addr from fifo list if the current one has already been erased at some point (fifo list does not track this)
+    m_warppool_mem_accesses.erase(next_addr);
+  }
+  
+  else {
+    auto it = m_warppool_mem_accesses.begin();
+    next_addr = *it;
+    m_warppool_mem_accesses.erase(next_addr); 
+  }
   
   return inst.memory_coalescing_arch_rt(next_addr);
   
@@ -2721,9 +2799,9 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     // Get next node to fetch
     track_warp_mem_accesses(inst);
     
-    if (m_current_warp_mem_accesses.empty()) return result;
+    if (m_warppool_mem_accesses.empty()) return result;
     mem_access_t access = get_next_rt_mem_access(inst);
-    m_current_warp_awaiting_accesses.insert(access.get_addr());
+    m_warppool_awaiting_response.insert(access.get_addr());
     
     // Access cache
     mf = m_mf_allocator->alloc(
@@ -2757,10 +2835,10 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
   // Stalled
   if (status == RESERVATION_FAIL) {
     if (m_config->m_rt_warppool) {
-      m_current_warp_awaiting_accesses.erase(mf->get_addr());
+      m_warppool_awaiting_response.erase(mf->get_addr());
       // Technically the wrong address but it should be okay since it's coalesced anyway?
-      // m_current_warp_mem_accesses.insert(mf->get_addr());
-      m_current_warp_stalled_accesses.insert(mf->get_addr());
+      // m_warppool_mem_accesses.insert(mf->get_addr());
+      m_warppool_stalled_accesses.insert(mf->get_addr());
     }
     else {
       // Remove from m_mf_awaiting_response 
@@ -2807,13 +2885,19 @@ mem_stage_stall_type rt_unit::process_cache_access(
           if (!m_config->m_rt_lock_threads) (it->second).clear_rt_awaiting_threads(address);
         }
       }
-      if (m_config->m_rt_warppool) m_current_warp_awaiting_accesses.erase(address);
+      if (m_config->m_rt_warppool) m_warppool_awaiting_response.erase(address);
+      inc_block_addr(address);
+      rm_block_addr(address);
     } else if (status == RESERVATION_FAIL) {
       result = BK_CONF;
       delete mf;
     } else {
       assert(status == MISS);
+      add_block_addr(address);
     }
+    
+    m_stats->rt_cache_usefulness = m_rt_cache_usefulness;
+    m_stats->rt_cache_unused = m_rt_cache_unused;
     
     if (!inst.rt_mem_accesses_empty() && result == NO_RC_FAIL) result = COAL_STALL;
     return result;

@@ -237,7 +237,7 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       " {<nsets>:<bsize>:<assoc>,<rep>:<wr>:<alloc>:<wr_alloc>,<mshr>:<N>:<"
       "merge>,<mq>} ",
       "64:64:2,L:R:f:N,A:2:32,4");
-  // RT-CORE NOTE: Temporary
+  // RT-CORE NOTE: Temporary (this section to be fixed..)
   option_parser_register(
       opp, "-gpgpu_rt_cache:l1", OPT_CSTR, &m_L0C_config.m_config_string,
       "per-shader L1 constant memory cache  (READ-ONLY) config "
@@ -263,6 +263,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "0");
   option_parser_register(
       opp, "-gpgpu_rt_warppool", OPT_BOOL, &m_rt_warppool,
+      "manage memory of all warps in rt core as one set ",
+      "0");
+  option_parser_register(
+      opp, "-gpgpu_rt_warppool_fifo", OPT_BOOL, &m_rt_warppool_fifo,
       "manage memory of all warps in rt core as one set ",
       "0");
   // option_parser_register(

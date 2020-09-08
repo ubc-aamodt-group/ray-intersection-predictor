@@ -1306,6 +1306,22 @@ class rt_unit : public pipelined_simd_unit {
       void track_warp_mem_accesses(warp_inst_t &inst);
       mem_access_t get_next_rt_mem_access(warp_inst_t &inst);
       
+      void add_block_addr(new_addr_type block_addr) {
+        m_rt_cache_unused.insert(block_addr);
+      }
+
+      void rm_block_addr(new_addr_type block_addr) {
+        m_rt_cache_unused.erase(block_addr);
+      }
+
+      void inc_block_addr(new_addr_type block_addr) {
+        if (m_rt_cache_usefulness.find(block_addr) == m_rt_cache_usefulness.end()) {
+          m_rt_cache_usefulness.insert(std::pair<new_addr_type, unsigned>(block_addr, 0));
+        }
+        
+        m_rt_cache_usefulness[block_addr]++;
+      }
+      
       const memory_config *m_memory_config;
       class mem_fetch_interface *m_icnt;
       shader_core_mem_fetch_allocator *m_mf_allocator;
@@ -1333,14 +1349,17 @@ class rt_unit : public pipelined_simd_unit {
       // {warp id, warp instruction}
       std::map<unsigned, warp_inst_t> m_current_warps;
       
-      std::set<new_addr_type> m_current_warp_mem_accesses;
-      std::set<new_addr_type> m_current_warp_awaiting_accesses;
-      std::set<new_addr_type> m_current_warp_stalled_accesses;
+      std::set<new_addr_type> m_warppool_mem_accesses;
+      std::set<new_addr_type> m_warppool_awaiting_response;
+      std::set<new_addr_type> m_warppool_stalled_accesses;
+      
+      std::list<new_addr_type> m_warppool_fifo_list;
       
       std::set<new_addr_type> m_mem_access_list;
       std::map<new_addr_type, unsigned> m_mem_access_heat_map;
       
-      
+      std::set<new_addr_type> m_rt_cache_unused;
+      std::map<new_addr_type, unsigned> m_rt_cache_usefulness;
 };
 
 class ldst_unit : public pipelined_simd_unit {
@@ -1711,6 +1730,7 @@ class shader_core_config : public core_config {
   bool m_rt_lock_threads;
   bool m_rt_coalesce_warps;
   bool m_rt_warppool;
+  bool m_rt_warppool_fifo;
   // bool m_rt_warp_cycle;
 };
 
@@ -1809,6 +1829,9 @@ struct shader_core_stats_pod {
   unsigned rt_repeated_accesses;
  
   std::map<new_addr_type, unsigned> rt_mem_access_heat_map;
+  
+  std::set<new_addr_type> rt_cache_unused;
+  std::map<new_addr_type, unsigned> rt_cache_usefulness;
  
 };
 

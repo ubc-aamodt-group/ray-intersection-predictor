@@ -834,8 +834,9 @@ void warp_inst_t::fill_next_rt_mem_access(bool locked) {
   if (locked) {
     // Get current round of requests
     if (m_next_rt_accesses_set.empty()) {
-      assert(!mem_fetch_wait(locked));
-      assert(m_next_rt_accesses_set.empty());
+      // RT-CORE NOTE: Assertions only valid when not pooling warp accesses... TODO:
+      // assert(!mem_fetch_wait(locked));
+      // assert(m_next_rt_accesses_set.empty());
       // printf("Getting next set of rt mem accesses...\n");
       for (unsigned i=0; i<m_config->warp_size; i++) {
         if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty()) {

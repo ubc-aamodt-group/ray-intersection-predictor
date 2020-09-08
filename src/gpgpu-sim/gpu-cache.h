@@ -1099,6 +1099,10 @@ class cache_stats {
   void get_sub_stats_pw(struct cache_sub_stats_pw &css) const;
 
   void sample_cache_port_utility(bool data_port_busy, bool fill_port_busy);
+  
+  void add_block_addr(new_addr_type block_addr);
+  void remove_block_addr(new_addr_type block_addr);
+  void increment_block_addr(new_addr_type block_addr);
 
  private:
   bool check_valid(int type, int status) const;
@@ -1109,6 +1113,9 @@ class cache_stats {
   std::vector<std::vector<unsigned long long> > m_stats_pw;
   std::vector<std::vector<unsigned long long> > m_fail_stats;
 
+  std::set<new_addr_type> m_rt_cache_unused;
+  std::map<new_addr_type, unsigned> m_rt_cache_usefulness;
+  
   unsigned long long m_cache_port_available_cycles;
   unsigned long long m_cache_data_port_busy_cycles;
   unsigned long long m_cache_fill_port_busy_cycles;

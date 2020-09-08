@@ -948,6 +948,23 @@ void cache_stats::sample_cache_port_utility(bool data_port_busy,
   }
 }
 
+void cache_stats::add_block_addr(new_addr_type block_addr) {
+  m_rt_cache_unused.insert(block_addr);
+}
+
+void cache_stats::remove_block_addr(new_addr_type block_addr) {
+  m_rt_cache_unused.erase(block_addr);
+}
+
+void cache_stats::increment_block_addr(new_addr_type block_addr) {
+  if (m_rt_cache_usefulness.find(block_addr) == m_rt_cache_usefulness.end()) {
+    m_rt_cache_usefulness.insert(std::pair<new_addr_type, unsigned>(block_addr, 0));
+  }
+  
+  m_rt_cache_usefulness[block_addr]++;
+}
+
+
 baseline_cache::bandwidth_management::bandwidth_management(cache_config &config)
     : m_config(config) {
   m_data_port_occupied_cycles = 0;
@@ -1582,13 +1599,17 @@ enum cache_request_status read_only_cache::access(
   if (status == HIT) {
     cache_status = m_tag_array->access(block_addr, time, cache_index,
                                        mf);  // update LRU state
+    m_stats.increment_block_addr(block_addr);
+    m_stats.remove_block_addr(block_addr);
   } else if (status != RESERVATION_FAIL) {
     if (!miss_queue_full(0)) {
       bool do_miss = false;
       send_read_request(addr, block_addr, cache_index, mf, time, do_miss,
                         events, true, false);
-      if (do_miss)
+      if (do_miss) {
         cache_status = MISS;
+        m_stats.add_block_addr(block_addr);
+      }
       else
         cache_status = RESERVATION_FAIL;
     } else {
