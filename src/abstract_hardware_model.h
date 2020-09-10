@@ -796,12 +796,16 @@ class mem_access_t {
 
   new_addr_type get_addr() const { return m_addr; }
   void set_addr(new_addr_type addr) { m_addr = addr; }
+  new_addr_type get_uncoalesced_addr() const { return m_uncoalesced_addr; }
+  void set_uncoalesced_addr(new_addr_type addr) { m_uncoalesced_addr = addr; }
   unsigned get_size() const { return m_req_size; }
   const active_mask_t &get_warp_mask() const { return m_warp_mask; }
   bool is_write() const { return m_write; }
   enum mem_access_type get_type() const { return m_type; }
   mem_access_byte_mask_t get_byte_mask() const { return m_byte_mask; }
   mem_access_sector_mask_t get_sector_mask() const { return m_sector_mask; }
+  unsigned get_tree_level() const { return m_rt_tree_level; }
+  void set_tree_level(unsigned tree_level) { m_rt_tree_level = tree_level; }
 
   void print(FILE *fp) const {
     fprintf(fp, "addr=0x%llx, %s, size=%u, ", m_addr,
@@ -853,6 +857,8 @@ class mem_access_t {
   active_mask_t m_warp_mask;
   mem_access_byte_mask_t m_byte_mask;
   mem_access_sector_mask_t m_sector_mask;
+  unsigned m_rt_tree_level;
+  new_addr_type m_uncoalesced_addr;
 };
 
 class mem_fetch;

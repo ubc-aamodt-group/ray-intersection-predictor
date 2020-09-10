@@ -929,9 +929,14 @@ mem_access_t warp_inst_t::memory_coalescing_arch_rt(new_addr_type addr) {
   
   assert((block_address & (segment_size - 1)) == 0);
   
-  return mem_access_t(  GLOBAL_ACC_R, block_address, segment_size, is_wr,
+  mem_access_t *access = new mem_access_t(  GLOBAL_ACC_R, block_address, segment_size, is_wr,
                         info.active, info.bytes, info.chunks,
                         m_config->gpgpu_ctx);
+                        
+  assert(GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map.find(addr) != GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map.end());
+  access->set_uncoalesced_addr(addr);
+  access->set_tree_level(GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[addr]);
+  return *access;
 }
 
 kernel_info_t::kernel_info_t(dim3 gridDim, dim3 blockDim,

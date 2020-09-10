@@ -362,6 +362,10 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     bool hit = false;
     addr_t hit_addr;
     
+    // Map of address to tree level
+    std::map<new_addr_type, unsigned> tree_level_map;
+    tree_level_map.insert(std::pair<new_addr_type, unsigned>(node_start, 1));
+        
     do {
 
         // Check not a leaf node and not empty traversal stack (Leaf nodes start with 0xf...)
@@ -376,6 +380,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             mem->read(node_start + next_node, sizeof(float4), &n0xy);
             mem->read(node_start + next_node + sizeof(float4), sizeof(float4), &n1xy);
             mem->read(node_start + next_node + 2*sizeof(float4), sizeof(float4), &n01z);
+            
+            unsigned current_tree_level = tree_level_map[node_start + next_node];
+            assert(current_tree_level > 0);
             
             // TODO: Figure out if node_start + next_node + 2 also should be recorded
             thread->add_raytrace_mem_access(node_start + next_node);
@@ -407,6 +414,11 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             
             mem->read(node_start + next_node + 3*sizeof(float4), sizeof(addr_t), &child0_addr);
             mem->read(node_start + next_node + 3*sizeof(float4) + sizeof(addr_t), sizeof(addr_t), &child1_addr);
+            
+            if ((int)child0_addr > 0)
+                tree_level_map.insert(std::pair<new_addr_type, unsigned>(node_start + child0_addr * 0x10, current_tree_level + 1));
+            if ((int)child1_addr > 0)
+                tree_level_map.insert(std::pair<new_addr_type, unsigned>(node_start + child1_addr * 0x10, current_tree_level + 1));
             
             #ifdef DEBUG_PRINT
             printf("Child 0 offset: 0x%x \t", child0_addr);
@@ -489,6 +501,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 thread->add_raytrace_mem_access(tri_start + tri_addr);
                 memory_accesses.push_back(tri_start + tri_addr);
                 
+                // RT-CORE NOTE: Fix for triangles
+                tree_level_map.insert(std::pair<new_addr_type, unsigned>(tri_start + tri_addr, 0xff));
+                
                 // Check if triangle is valid (if (__float_as_int(v00.x) == 0x80000000))
                 if (*(int*)&p0.x ==  0x80000000) {
                     #ifdef DEBUG_PRINT
@@ -548,6 +563,8 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     printf("Memory Accesses:\n");
     print_stack(memory_accesses);
     #endif
+    
+    thread->set_tree_level_map(tree_level_map);
 }
 
 bool ray_box_test_cwbvh(float3 low, float3 high, float3 idir, float3 origin, float tmin, float tmax, float& thit) 

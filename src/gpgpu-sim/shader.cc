@@ -706,7 +706,7 @@ void shader_core_stats::print(FILE *fout) const {
   fprintf(fout, "rt_mem_access_heat_map: \n");
   for (auto it=rt_mem_access_heat_map.begin(); it!=rt_mem_access_heat_map.end(); ++it) {
     if (it->second > 5) {
-      fprintf(fout, "0x%x: %d\n", it->first, it->second);
+      fprintf(fout, "0x%x (%d): %d\n", it->first, GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[it->first], it->second);
     }
   }
   for (unsigned i=5; i>0; --i) {
@@ -732,7 +732,7 @@ void shader_core_stats::print(FILE *fout) const {
   fprintf(fout, "\nm_rt_cache_usefulness:\n");
   for (auto it=rt_cache_usefulness.begin(); it!=rt_cache_usefulness.end(); ++it) {
     if (it->second > 5)
-      fprintf(fout, "0x%x:\t%d\n", it->first, it->second);
+      fprintf(fout, "0x%x (%d):\t%d\n", it->first, GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[it->first], it->second);
   }
   for (unsigned i=5; i>0; --i) {
     unsigned count = 0;
@@ -2807,6 +2807,9 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     mf = m_mf_allocator->alloc(
       inst, access, m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle
     );
+    assert(access.get_tree_level() > 0);
+    mf->set_tree_level(access.get_tree_level());
+    assert(mf->get_tree_level() > 0); 
   }
   else {
     mem_access_t access = inst.get_next_rt_mem_access(m_config->m_rt_lock_threads);
@@ -2822,6 +2825,9 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     mf = m_mf_allocator->alloc(
       inst, access, m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle
     );
+    assert(access.get_tree_level() > 0);
+    mf->set_tree_level(access.get_tree_level());
+    assert(mf->get_tree_level() > 0); 
   }
   
   
@@ -2836,9 +2842,8 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
   if (status == RESERVATION_FAIL) {
     if (m_config->m_rt_warppool) {
       m_warppool_awaiting_response.erase(mf->get_addr());
-      // Technically the wrong address but it should be okay since it's coalesced anyway?
       // m_warppool_mem_accesses.insert(mf->get_addr());
-      m_warppool_stalled_accesses.insert(mf->get_addr());
+      m_warppool_stalled_accesses.insert(mf->get_uncoalesced_addr());
     }
     else {
       // Remove from m_mf_awaiting_response 

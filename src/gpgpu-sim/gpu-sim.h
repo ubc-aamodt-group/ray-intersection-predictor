@@ -658,6 +658,8 @@ class gpgpu_sim : public gpgpu_t {
   unsigned long long gpu_tot_sim_cycle_parition_util;
   unsigned long long partiton_replys_in_parallel;
   unsigned long long partiton_replys_in_parallel_total;
+  
+  std::map<new_addr_type, unsigned> rt_tree_level_map;
 
   FuncCache get_cache_config(std::string kernel_name);
   void set_cache_config(std::string kernel_name, FuncCache cacheConfig);

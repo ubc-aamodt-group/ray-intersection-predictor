@@ -410,7 +410,7 @@ struct sector_cache_block : public cache_block_t {
   }
 };
 
-enum replacement_policy_t { LRU, FIFO };
+enum replacement_policy_t { LRU, FIFO, RT_SPECIAL };
 
 enum write_policy_t {
   READ_ONLY,
@@ -500,15 +500,8 @@ class cache_config {
       case 'F':
         m_replacement_policy = FIFO;
         break;
-      default:
-        exit_parse_error();
-    }
-    switch (rp) {
-      case 'L':
-        m_replacement_policy = LRU;
-        break;
-      case 'F':
-        m_replacement_policy = FIFO;
+      case 'R':
+        m_replacement_policy = RT_SPECIAL;
         break;
       default:
         exit_parse_error();

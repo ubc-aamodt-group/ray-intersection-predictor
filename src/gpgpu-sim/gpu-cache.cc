@@ -248,6 +248,7 @@ enum cache_request_status tag_array::probe(new_addr_type addr, unsigned &idx,
   unsigned invalid_line = (unsigned)-1;
   unsigned valid_line = (unsigned)-1;
   unsigned long long valid_timestamp = (unsigned)-1;
+  unsigned valid_tree_level = 0;
 
   bool all_reserved = true;
 
@@ -294,6 +295,12 @@ enum cache_request_status tag_array::probe(new_addr_type addr, unsigned &idx,
             valid_timestamp = line->get_alloc_time();
             valid_line = index;
           }
+        } else if (m_config.m_replacement_policy == RT_SPECIAL) {
+           assert(mf->get_tree_level() != 0);
+           if (mf->get_tree_level() > valid_tree_level) {
+             valid_tree_level = mf->get_tree_level();
+             valid_line = index;
+           }
         }
       }
     }

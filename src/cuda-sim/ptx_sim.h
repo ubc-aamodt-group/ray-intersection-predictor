@@ -460,6 +460,7 @@ class ptx_thread_info {
   kernel_info_t &get_kernel() { return m_kernel; }
   
   void add_raytrace_mem_access(addr_t addr) { m_raytrace_mem_accesses.push_back(addr); }
+  void set_tree_level_map(std::map<new_addr_type, unsigned> tree_level) { m_rt_tree_level_map = tree_level; }
 
  public:
   addr_t m_last_effective_address;
@@ -518,6 +519,7 @@ class ptx_thread_info {
   
   // RT-CORE NOTE: Might want to track parent-child relations? not sure..
   std::list<new_addr_type> m_raytrace_mem_accesses;
+  std::map<new_addr_type, unsigned> m_rt_tree_level_map;
 };
 
 addr_t generic_to_local(unsigned smid, unsigned hwtid, addr_t addr);

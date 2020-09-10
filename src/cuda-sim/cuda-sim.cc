@@ -1860,7 +1860,7 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
     }
 
     if (pI->m_is_raytrace) {
-      // TODO: Per lane mem access in warp?
+      // RT-CORE NOTE
       inst.set_rt_mem_accesses(lane_id, m_raytrace_mem_accesses);
       insn_space.set_type(global_space);
       inst.space = insn_space;
@@ -1868,6 +1868,9 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
       inst.data_size = insn_data_size;
       
       m_gpu->gpgpu_ctx->func_sim->g_total_raytrace_mem_accesses += m_raytrace_mem_accesses.size();
+      
+      // Add tree level map
+      m_gpu->gpgpu_ctx->the_gpgpusim->g_the_gpu->rt_tree_level_map.insert(m_rt_tree_level_map.begin(), m_rt_tree_level_map.end());
       
       // insn_memaddr = m_raytrace_mem_accesses.front();
       inst.set_addr(lane_id, m_raytrace_mem_accesses, MAX_ACCESSES_PER_INSN_PER_THREAD);
