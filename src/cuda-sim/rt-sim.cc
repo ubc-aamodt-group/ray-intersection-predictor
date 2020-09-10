@@ -266,6 +266,9 @@ void trace_cwbvh(const class ptx_instruction * pI, class ptx_thread_info * threa
 
 void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread, const class function_info * target_func, std::list<addr_t> & memory_accesses)
 {
+    // RT-CORE NOTE: Temporary (to be replaced with parameter in magic function)
+    bool anyhit = true;
+    
     unsigned n_return = target_func->has_return();
     assert(n_return == 0);
     unsigned n_args = target_func->num_args();
@@ -518,6 +521,11 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                     printf("HIT\t t: %f\n", thit);
                     #endif
                     ray_payload.t_triId_u_v.y = tri_addr >> 4;
+                    
+                    if (anyhit) {
+                        next_node = EMPTY_STACK;
+                        break;
+                    }
                 }
                 
                 #ifdef DEBUG_PRINT
