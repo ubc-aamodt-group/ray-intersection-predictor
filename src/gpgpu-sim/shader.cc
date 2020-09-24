@@ -702,49 +702,99 @@ void shader_core_stats::print(FILE *fout) const {
   fprintf(fout, "rt_thread_coalesced_count = %d\n", rt_thread_coalesced_count);
   fprintf(fout, "rt_warp_coalesced_count = %d\n", rt_warp_coalesced_count);
   fprintf(fout, "rt_repeated_accesses = %d\n", rt_repeated_accesses);
+  fprintf(fout, "rt_consecutive_reservation_fails = %d\n", rt_consecutive_reservation_fails);
+  fprintf(fout, "rt_repeated_reservation_fails = %d\n", rt_repeated_reservation_fails);
   
-  fprintf(fout, "rt_mem_access_heat_map: \n");
-  for (auto it=rt_mem_access_heat_map.begin(); it!=rt_mem_access_heat_map.end(); ++it) {
-    if (it->second > 5) {
-      fprintf(fout, "0x%x (%d): %d\n", it->first, GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[it->first], it->second);
+  
+  if (!rt_readded_reservation_fails.empty()) {
+    fprintf(fout, "Number of times readded to the warp pool: \n");
+    for (auto it=rt_readded_reservation_fails.begin(); it!=rt_readded_reservation_fails.end(); ++it) {
+      if (it->second > 5) {
+        fprintf(fout, "[0x%x (%d)]: %d\n", it->first, GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[it->first], it->second);
+      }
     }
+    for (unsigned i=5; i>0; --i) {
+      unsigned count = 0;
+      for (auto it=rt_readded_reservation_fails.begin(); it!=rt_readded_reservation_fails.end(); ++it) {
+        if (it->second == i) {
+          count++;
+        }
+      }
+      fprintf(fout, "%d reservation fails: %d\t", i, count);
+    }
+  } else {
+    fprintf(fout, "No reservation fails readded to warp pool.\n");
   }
-  for (unsigned i=5; i>0; --i) {
-    unsigned count = 0;
+  
+  if (!rt_reservation_fail_map.empty()) {
+    fprintf(fout, "\nNumber of reservation fails on address: \n");
+    for (auto it=rt_reservation_fail_map.begin(); it!=rt_reservation_fail_map.end(); ++it) {
+      if (it->second > 100) {
+        fprintf(fout, "[0x%x (%d)]: %d\n", it->first, GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[it->first], it->second);
+      }
+    }
+    // for (unsigned i=10; i>0; --i) {
+    //   unsigned count = 0;
+    //   for (auto it=rt_reservation_fail_map.begin(); it!=rt_reservation_fail_map.end(); ++it) {
+    //     if (it->second == i) {
+    //       count++;
+    //     }
+    //   }
+    //   fprintf(fout, "%d reservation fails: %d\t", i, count);
+    // }
+  } 
+  
+  if (!rt_mem_access_heat_map.empty()) {
+    fprintf(fout, "\nNumber of accesses to address: \n");
     for (auto it=rt_mem_access_heat_map.begin(); it!=rt_mem_access_heat_map.end(); ++it) {
-      if (it->second == i) {
-        count++;
+      if (it->second > 100) {
+        fprintf(fout, "0x%x (%d): %d\n", it->first, GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[it->first], it->second);
       }
     }
-    fprintf(fout, "%d accesses: %d\t", i, count);
+    // for (unsigned i=5; i>0; --i) {
+    //   unsigned count = 0;
+    //   for (auto it=rt_mem_access_heat_map.begin(); it!=rt_mem_access_heat_map.end(); ++it) {
+    //     if (it->second == i) {
+    //       count++;
+    //     }
+    //   }
+    //   fprintf(fout, "%d accesses: %d\t", i, count);
+    // }
   }
   
-  fprintf(fout, "\nm_rt_cache_unused: %d\n", rt_cache_unused.size());
-  unsigned i = 0;
-  for (auto it=rt_cache_unused.begin(); it!=rt_cache_unused.end(); ++it) {
-    if (i > 50) {
-      fprintf(fout, "...\n");
-      break;
-    }
-    fprintf(fout, "0x%x\t", *it);
-    i++;
-  }
-  fprintf(fout, "\nm_rt_cache_usefulness:\n");
-  for (auto it=rt_cache_usefulness.begin(); it!=rt_cache_usefulness.end(); ++it) {
-    if (it->second > 5)
-      fprintf(fout, "0x%x (%d):\t%d\n", it->first, GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[it->first], it->second);
-  }
-  for (unsigned i=5; i>0; --i) {
-    unsigned count = 0;
-    for (auto it=rt_cache_usefulness.begin(); it!=rt_cache_usefulness.end(); ++it) {
-      if (it->second == i) {
-        count++;
+  if (!rt_cache_unused.empty()) {
+    fprintf(fout, "\nAddresses added to cache but never hit: %d\n", rt_cache_unused.size());
+    unsigned i = 0;
+    for (auto it=rt_cache_unused.begin(); it!=rt_cache_unused.end(); ++it) {
+      if (i > 50) {
+        fprintf(fout, "...\n");
+        break;
       }
+      fprintf(fout, "0x%x\t", *it);
+      i++;
     }
-    fprintf(fout, "%d accesses: %d\t", i, count);
   }
-  fprintf(fout, "\n");
-
+  
+  if (!rt_cache_usefulness.empty()) {
+    fprintf(fout, "\nNumber of hits on address in cache:\n");
+    for (auto it=rt_cache_usefulness.begin(); it!=rt_cache_usefulness.end(); ++it) {
+      if (it->second > 5)
+        fprintf(fout, "0x%x (%d):\t%d\n", it->first, GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[it->first], it->second);
+    }
+    for (unsigned i=5; i>0; --i) {
+      unsigned count = 0;
+      for (auto it=rt_cache_usefulness.begin(); it!=rt_cache_usefulness.end(); ++it) {
+        if (it->second == i) {
+          count++;
+        }
+      }
+      fprintf(fout, "%d accesses: %d\t", i, count);
+    }
+    fprintf(fout, "\n");
+  }
+  
+  fprintf(fout, "\nNumber of unique addresses accessed: %d\n", rt_unique_accesses.size());
+  
   fprintf(fout, "gpu_reg_bank_conflict_stalls = %d\n",
           gpu_reg_bank_conflict_stalls);
 
@@ -2519,6 +2569,9 @@ void rt_unit::cycle() {
       if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
     }   
     
+    // Reservation fails stats tracking
+    m_reservation_fails.erase(mf->get_uncoalesced_addr());
+    
   }
     
   writeback();
@@ -2716,6 +2769,16 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
         m_warppool_mem_accesses.insert(m_warppool_stalled_accesses.begin(), m_warppool_stalled_accesses.end());
       }
       
+      // Count how many times a reservation fail accesses is returned to the warppool
+      if (m_config->m_rt_accumulate_stats) m_reservation_fail_readded = m_stats->rt_readded_reservation_fails;
+      for (auto it=m_warppool_stalled_accesses.begin(); it!=m_warppool_stalled_accesses.end(); ++it) {
+        if (m_reservation_fail_readded.find(*it) == m_reservation_fail_readded.end()) {
+          m_reservation_fail_readded.insert(std::pair<new_addr_type, unsigned>(*it, 0));
+        }
+        m_reservation_fail_readded[*it]++;
+      }
+      m_stats->rt_readded_reservation_fails = m_reservation_fail_readded;
+      
       // Stalled accesses moved to end of list
       m_warppool_stalled_accesses.clear();
     }
@@ -2774,6 +2837,20 @@ mem_access_t rt_unit::get_next_rt_mem_access(warp_inst_t &inst) {
       m_warppool_fifo_list.pop_front();
     } while (m_warppool_mem_accesses.find(next_addr) == m_warppool_mem_accesses.end());
     // Repeatedly take next addr from fifo list if the current one has already been erased at some point (fifo list does not track this)
+    m_warppool_mem_accesses.erase(next_addr);
+  }
+  
+  else if (m_config->m_rt_warppool_tree) {
+    auto it = m_warppool_mem_accesses.begin();
+    next_addr = *it;
+    unsigned count = 0;
+    for (auto it = m_warppool_mem_accesses.begin(); it != m_warppool_mem_accesses.end() && count < 100; ++it) {
+      if (GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[*it] > GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[next_addr]) {
+        next_addr = *it;
+      }
+      count++;
+    }  
+    
     m_warppool_mem_accesses.erase(next_addr);
   }
   
@@ -2838,8 +2915,34 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     events
   );
   
+  if (m_config->m_rt_accumulate_stats) m_unique_accesses = m_stats->rt_unique_accesses;
+  m_unique_accesses.insert(mf->get_addr());
+  m_stats->rt_unique_accesses = m_unique_accesses;
+  
   // Stalled
   if (status == RESERVATION_FAIL) {
+    
+    // Record addresses that hit reservation fails many times
+    if (m_config->m_rt_accumulate_stats) m_reservation_fail_map = m_stats->rt_reservation_fail_map;
+    if (m_reservation_fail_map.find(mf->get_uncoalesced_addr()) == m_reservation_fail_map.end()) {
+      m_reservation_fail_map.insert(std::pair<new_addr_type, unsigned>(mf->get_uncoalesced_addr(), 0));
+    }
+    else {
+      m_reservation_fail_map[mf->get_uncoalesced_addr()]++;
+    }
+    m_stats->rt_reservation_fail_map = m_reservation_fail_map;
+      
+    
+    // Check if consecutive
+    if (mf->get_uncoalesced_addr() == m_prev_reservation_fail) {
+      m_stats->rt_consecutive_reservation_fails++;
+    }
+    else if (m_reservation_fails.find(mf->get_uncoalesced_addr()) != m_reservation_fails.end()) {
+      m_stats->rt_repeated_reservation_fails++;
+    }
+    m_reservation_fails.insert(mf->get_uncoalesced_addr());
+    m_prev_reservation_fail = mf->get_uncoalesced_addr();
+    
     if (m_config->m_rt_warppool) {
       m_warppool_awaiting_response.erase(mf->get_addr());
       // m_warppool_mem_accesses.insert(mf->get_addr());
@@ -2855,6 +2958,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
   
   // Stats
   else {
+    if (m_config->m_rt_accumulate_stats) m_mem_access_heat_map = m_stats->rt_mem_access_heat_map;
     new_addr_type mem_access_addr = mf->get_addr();
     if (m_mem_access_list.find(mem_access_addr) != m_mem_access_list.end()) {
       m_stats->rt_repeated_accesses++;
@@ -2880,6 +2984,9 @@ mem_stage_stall_type rt_unit::process_cache_access(
     mem_stage_stall_type result = NO_RC_FAIL;
     
     // RT-CORE NOTE Assume no writes sent?
+    
+    if (m_config->m_rt_accumulate_stats) m_rt_cache_unused = m_stats->rt_cache_unused;
+    if (m_config->m_rt_accumulate_stats) m_rt_cache_usefulness = m_stats->rt_cache_usefulness;
     
     if (status == HIT) {
       inst.clear_mem_fetch_wait(address);

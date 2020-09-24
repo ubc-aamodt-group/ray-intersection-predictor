@@ -1353,10 +1353,17 @@ class rt_unit : public pipelined_simd_unit {
       std::set<new_addr_type> m_warppool_awaiting_response;
       std::set<new_addr_type> m_warppool_stalled_accesses;
       
+      std::set<new_addr_type> m_reservation_fails;
+      new_addr_type m_prev_reservation_fail;
+      
       std::list<new_addr_type> m_warppool_fifo_list;
       
       std::set<new_addr_type> m_mem_access_list;
       std::map<new_addr_type, unsigned> m_mem_access_heat_map;
+      std::map<new_addr_type, unsigned> m_reservation_fail_map;
+      std::map<new_addr_type, unsigned> m_reservation_fail_readded;
+      
+      std::set<new_addr_type> m_unique_accesses;
       
       std::set<new_addr_type> m_rt_cache_unused;
       std::map<new_addr_type, unsigned> m_rt_cache_usefulness;
@@ -1538,6 +1545,9 @@ class shader_core_config : public core_config {
       abort();
     }
 
+    m_rt_warppool_fifo = *m_rt_warppool_order == 'f';
+    m_rt_warppool_tree = *m_rt_warppool_order == 't';
+    
     char *toks = new char[100];
     char *tokd = toks;
     strcpy(toks, pipeline_widths_string);
@@ -1730,7 +1740,10 @@ class shader_core_config : public core_config {
   bool m_rt_lock_threads;
   bool m_rt_coalesce_warps;
   bool m_rt_warppool;
+  char * m_rt_warppool_order;
   bool m_rt_warppool_fifo;
+  bool m_rt_warppool_tree;
+  bool m_rt_accumulate_stats;
   // bool m_rt_warp_cycle;
 };
 
@@ -1827,8 +1840,14 @@ struct shader_core_stats_pod {
   unsigned rt_thread_coalesced_count;
   unsigned rt_warp_coalesced_count;
   unsigned rt_repeated_accesses;
+  unsigned rt_consecutive_reservation_fails;
+  unsigned rt_repeated_reservation_fails;
  
   std::map<new_addr_type, unsigned> rt_mem_access_heat_map;
+  std::map<new_addr_type, unsigned> rt_reservation_fail_map;
+  std::map<new_addr_type, unsigned> rt_readded_reservation_fails;
+  
+  std::set<new_addr_type> rt_unique_accesses;
   
   std::set<new_addr_type> rt_cache_unused;
   std::map<new_addr_type, unsigned> rt_cache_usefulness;

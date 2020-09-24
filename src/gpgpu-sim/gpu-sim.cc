@@ -266,9 +266,13 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "manage memory of all warps in rt core as one set ",
       "0");
   option_parser_register(
-      opp, "-gpgpu_rt_warppool_fifo", OPT_BOOL, &m_rt_warppool_fifo,
-      "manage memory of all warps in rt core as one set ",
-      "0");
+      opp, "-gpgpu_rt_warppool_order", OPT_CSTR, &m_rt_warppool_order,
+      "defines order of memory accesses from the warp pool ",
+      "s");
+  option_parser_register(
+      opp, "-gpgpu_rt_accumulate_stats", OPT_CSTR, &m_rt_accumulate_stats,
+      "accumulate stats between shaders ",
+      "s");
   // option_parser_register(
   //     opp, "-gpgpu_rt_warp_cycle", OPT_UINT32, &m_rt_warp_cycle,
   //     "number of memory requests before switching warps ",

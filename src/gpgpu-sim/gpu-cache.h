@@ -103,11 +103,15 @@ struct cache_block_t {
   cache_block_t() {
     m_tag = 0;
     m_block_addr = 0;
+    m_rt_permanent = false;
   }
 
   virtual void allocate(new_addr_type tag, new_addr_type block_addr,
                         unsigned time,
                         mem_access_sector_mask_t sector_mask) = 0;
+  virtual void allocate(new_addr_type tag, new_addr_type block_addr,
+                        unsigned time,
+                        mem_access_sector_mask_t sector_mask, bool rt_permanent) = 0;
   virtual void fill(unsigned time, mem_access_sector_mask_t sector_mask) = 0;
 
   virtual bool is_invalid_line() = 0;
@@ -137,6 +141,7 @@ struct cache_block_t {
 
   new_addr_type m_tag;
   new_addr_type m_block_addr;
+  bool m_rt_permanent;
 };
 
 struct line_cache_block : public cache_block_t {
@@ -159,6 +164,11 @@ struct line_cache_block : public cache_block_t {
     m_status = RESERVED;
     m_ignore_on_fill_status = false;
     m_set_modified_on_fill = false;
+  }
+  void allocate(new_addr_type tag, new_addr_type block_addr, unsigned time,
+                mem_access_sector_mask_t sector_mask, bool rt_permanent) {
+    m_rt_permanent = rt_permanent;
+    allocate(tag, block_addr, time, sector_mask);
   }
   void fill(unsigned time, mem_access_sector_mask_t sector_mask) {
     // if(!m_ignore_on_fill_status)
@@ -237,10 +247,16 @@ struct sector_cache_block : public cache_block_t {
     m_line_alloc_time = 0;
     m_line_last_access_time = 0;
     m_line_fill_time = 0;
+    m_rt_permanent = false;
   }
 
   virtual void allocate(new_addr_type tag, new_addr_type block_addr,
                         unsigned time, mem_access_sector_mask_t sector_mask) {
+    allocate_line(tag, block_addr, time, sector_mask);
+  }
+  virtual void allocate(new_addr_type tag, new_addr_type block_addr,
+                        unsigned time, mem_access_sector_mask_t sector_mask, bool rt_permanent) {
+    m_rt_permanent = rt_permanent;
     allocate_line(tag, block_addr, time, sector_mask);
   }
 
@@ -470,10 +486,10 @@ class cache_config {
     char ct, rp, wp, ap, mshr_type, wap, sif;
 
     int ntok =
-        sscanf(config, "%c:%u:%u:%u,%c:%c:%c:%c:%c,%c:%u:%u,%u:%u,%u", &ct,
+        sscanf(config, "%c:%u:%u:%u,%c:%c:%c:%c:%c,%c:%u:%u,%u:%u,%u:%u", &ct,
                &m_nset, &m_line_sz, &m_assoc, &rp, &wp, &ap, &wap, &sif,
                &mshr_type, &m_mshr_entries, &m_mshr_max_merge,
-               &m_miss_queue_size, &m_result_fifo_entries, &m_data_port_width);
+               &m_miss_queue_size, &m_result_fifo_entries, &m_data_port_width, &m_bypass_on_rf);
 
     if (ntok < 12) {
       if (!strcmp(config, "none")) {
@@ -764,6 +780,7 @@ class cache_config {
   };
   unsigned m_result_fifo_entries;
   unsigned m_data_port_width;  //< number of byte the cache can access per cycle
+  bool m_bypass_on_rf;
   enum set_index_function
       m_set_index_function;  // Hash, linear, or custom set index function
 
