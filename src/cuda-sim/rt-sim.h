@@ -28,6 +28,8 @@ struct Ray
 {
 	float4 origin_tmin;
 	float4 dir_tmax;
+	
+	bool anyhit;
 
   float3 get_origin() { return {origin_tmin.x, origin_tmin.y, origin_tmin.z}; }
   void set_origin(float3 new_origin) { origin_tmin = {new_origin.x, new_origin.y, new_origin.z, origin_tmin.w}; }

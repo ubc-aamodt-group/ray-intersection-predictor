@@ -265,10 +265,7 @@ void trace_cwbvh(const class ptx_instruction * pI, class ptx_thread_info * threa
 }
 
 void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread, const class function_info * target_func, std::list<addr_t> & memory_accesses)
-{
-    // RT-CORE NOTE: Temporary (to be replaced with parameter in magic function)
-    bool anyhit = true;
-    
+{    
     unsigned n_return = target_func->has_return();
     assert(n_return == 0);
     unsigned n_args = target_func->num_args();
@@ -281,7 +278,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     const symbol *formal_param1 = target_func->get_arg(arg);
     addr_t from_addr = actual_param_op1.get_symbol()->get_address();
     unsigned size=formal_param1->get_size_in_bytes();
-    assert(size == 32);
+    assert(size == sizeof(Ray));
     
     // Ray
     Ray ray_properties;
@@ -324,13 +321,6 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     printf("Node address: 0x%8x\n", node_start);
     #endif
     
-    // TODO: Figure out how to calculate triangle start (Modify rtao to use set offset?)
-    // White Oak
-    // addr_t tri_start = node_start + 0x11bc00; 
-    // addr_t tri_end = tri_start + 0x221a10;
-    // Teapot
-    // addr_t tri_start = node_start + 0x6e600; 
-    // addr_t tri_end = tri_start + 0xd6f40;
     arg++;
     // Fourth argument: Start of triangle data
     const operand_info &actual_param_op4 = pI->operand_lookup(arg + 1);    
@@ -522,7 +512,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                     #endif
                     ray_payload.t_triId_u_v.y = tri_addr >> 4;
                     
-                    if (anyhit) {
+                    if (ray_properties.anyhit) {
                         next_node = EMPTY_STACK;
                         break;
                     }
