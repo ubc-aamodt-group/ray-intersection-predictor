@@ -352,7 +352,11 @@ class gpgpu_sim_config : public power_config,
       s++;
     }
     char buf[1024];
-    snprintf(buf, 1024, "gpgpusim_visualizer__%s.log.gz", date);
+    if (g_visualizer_filename == 0x0) {
+      snprintf(buf, 1024, "gpgpusim_visualizer__%s.log.gz", date);
+    } else {
+      snprintf(buf, 1024, "aerialvision__%s__%s.log.gz", g_visualizer_filename, date);
+    }
     g_visualizer_filename = strdup(buf);
 
     m_valid = true;

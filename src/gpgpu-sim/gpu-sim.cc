@@ -1349,6 +1349,7 @@ void gpgpu_sim::gpu_print_stat() {
   // shader_print_l1_miss_stat( stdout );
   shader_print_cache_stats(stdout);
   printf("rt_total_mem_access_count = %d\n", gpgpu_ctx->func_sim->g_total_raytrace_mem_accesses);
+  printf("rt_total_hits = %d\n", gpgpu_ctx->func_sim->g_total_raytrace_hits);
   
   
   cache_stats core_cache_stats;

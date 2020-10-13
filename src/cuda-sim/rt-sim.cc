@@ -510,7 +510,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                     #ifdef DEBUG_PRINT
                     printf("HIT\t t: %f\n", thit);
                     #endif
-                    ray_payload.t_triId_u_v.y = tri_addr >> 4;
+                    *(int*) &ray_payload.t_triId_u_v.y = tri_addr >> 4;
                     
                     if (ray_properties.anyhit) {
                         next_node = EMPTY_STACK;
@@ -553,8 +553,13 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
         
         mem->write(ray_payload_addr, sizeof(Hit), &ray_payload, NULL, NULL);
         
+        thread->add_hit_count();
+        
         // TODO: Keep this separate from read accesses
         // thread->add_raytrace_mem_access(ray_payload_addr);
+    } else{
+        *(int*) &ray_payload.t_triId_u_v.y = (int)-1;
+        mem->write(ray_payload_addr, sizeof(Hit), &ray_payload, NULL, NULL);
     }
     
     #ifdef DEBUG_PRINT

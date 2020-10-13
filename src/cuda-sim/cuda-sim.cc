@@ -1868,6 +1868,7 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
       inst.data_size = insn_data_size;
       
       m_gpu->gpgpu_ctx->func_sim->g_total_raytrace_mem_accesses += m_raytrace_mem_accesses.size();
+      m_gpu->gpgpu_ctx->func_sim->g_total_raytrace_hits += m_raytrace_hitcount;
       
       // Add tree level map
       m_gpu->gpgpu_ctx->the_gpgpusim->g_the_gpu->rt_tree_level_map.insert(m_rt_tree_level_map.begin(), m_rt_tree_level_map.end());
