@@ -1027,7 +1027,8 @@ class graphManager:
         numCols = len(y[0]) #the number of columns in the stacked bar plot
         width = 1.0 #Our bars will occupy 100% of the space allocated to them
         numRows = len(y) #The number of stacks
-        colours = mpl.cm.get_cmap('RdBu', numRows) #discretizing a matplotlib color scheme to serve as the various colors of our stacked bar plot
+        colours = mpl.cm.get_cmap('coolwarm', numRows) #discretizing a matplotlib color scheme to serve as the various colors of our stacked bar plot
+        coloursB = mpl.cm.get_cmap('Oranges', numRows) #discretizing a matplotlib color scheme to serve as the various colors of our stacked bar plot
         
     
         #Labelling the xAxis with the name of the variable and also the file that the data was chosen from
@@ -1042,9 +1043,9 @@ class graphManager:
 
         if yAxis == 'WarpDivergenceBreakdown':
             Legendname = []
-            Legendname.append('Idle')
-            Legendname.append('Data Hazard')
-            Legendname.append('Stall')
+            Legendname.append('Waiting for Memory')
+            Legendname.append('Data Hazard (RAW)')
+            Legendname.append('Inst. Stalled')
             for c in range(2, numRows):
                 Legendname.append('W' + `4*(c-2)+1` +  ':' + `4*(c-1)`)
             BarSequence = range(0,numRows)
@@ -1069,7 +1070,10 @@ class graphManager:
         for row in BarSequence:
             row1 = float(row) #Used to select a new color from the colormap.. need to be a float thats why a new variable was made
             yoff = yoff + y[row] #updating the yoff variable
-            self.plot.bar(ind, y[row], width, bottom = yoff_max-yoff, color=colours(row1/numRows), edgecolor=colours(row1/numRows), label = Legendname[row]) #plotting each set of bar plots individually
+            if yAxis == 'WarpDivergenceBreakdown' and row <= 2:
+                self.plot.bar(ind, y[row], width, bottom = yoff_max-yoff, color=coloursB((row1*3)/numRows), edgecolor=coloursB((row1*3)/numRows), label = Legendname[row]) #plotting each set of bar plots individually
+            else:
+                self.plot.bar(ind, y[row], width, bottom = yoff_max-yoff, color=colours(row1/numRows), edgecolor=colours(row1/numRows), label = Legendname[row]) #plotting each set of bar plots individually
         
         
         plotFormat = self.plotFormatInfo[plotID]
@@ -1143,7 +1147,22 @@ class graphManager:
 
             keys = majorKeys
         else: 
-            pass
+            image = []
+            for iter in keys:
+                image.append(y[iter])
+            
+            prev_val = x[0]
+            for (i, val) in enumerate(x):
+                if val < prev_val:
+                    milestone = prev_val
+                    x[i] = val + milestone
+                prev_val = val
+              
+            if self.dataPointer.dydx >= 1:
+                for iter in range(0, self.dataPointer.dydx):
+                    image = self.takeDerivativeMult(x, image)
+            self.plotMultVarLine(x, xAxis, image, yAxis)
+            return
 
         self.plotParallelIntensity(x, xAxis, image, yAxis, yAxis, keys, plotID)
       
