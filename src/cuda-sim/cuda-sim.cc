@@ -1868,6 +1868,8 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
       inst.data_size = insn_data_size;
       
       m_gpu->gpgpu_ctx->func_sim->g_total_raytrace_mem_accesses += m_raytrace_mem_accesses.size();
+      if (m_raytrace_mem_accesses.size() < 49) m_gpu->gpgpu_ctx->func_sim->g_raytrace_mem_accesses[m_raytrace_mem_accesses.size()]++;
+      else m_gpu->gpgpu_ctx->func_sim->g_raytrace_mem_accesses[49]++;
       m_gpu->gpgpu_ctx->func_sim->g_total_raytrace_hits += m_raytrace_hitcount;
       
       // Add tree level map

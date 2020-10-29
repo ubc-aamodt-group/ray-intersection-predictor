@@ -152,6 +152,7 @@ class cuda_sim {
   int g_ptxinfo_error_detected;
   unsigned g_ptx_sim_num_insn;
   unsigned g_total_raytrace_mem_accesses;
+  unsigned g_raytrace_mem_accesses[50];
   unsigned g_total_raytrace_hits;
   char *cdp_latency_str;
   int g_ptx_kernel_count;  // used for classification stat collection purposes

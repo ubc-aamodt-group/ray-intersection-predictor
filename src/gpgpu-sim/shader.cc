@@ -696,31 +696,60 @@ void shader_core_stats::print(FILE *fout) const {
   // "gpgpu_stall_shd_mem[l_mem_ld][wb_rsrv_fail] = %d\n",
   // gpu_stall_shd_mem_breakdown[L_MEM_ST][WB_CACHE_RSRV_FAIL]);
 
+  fprintf(fout, "\nRT UNIT STATS:\n");
 
-  fprintf(fout, "rt_max_warps = %d\n", rt_max_warps);
-  fprintf(fout, "rt_max_mshr_entries = %d\n", rt_max_mshr_entries);
-  fprintf(fout, "rt_thread_coalesced_count = %d\n", rt_thread_coalesced_count);
+  fprintf(fout, "rt_max_warps (per shader)= ");
+  unsigned max_warps = 0;
+  for (unsigned i=0; i<m_config->num_shader(); i++) {
+    fprintf(fout, "%4d", rt_max_warps[i]);
+    if (rt_max_warps[i] > max_warps) max_warps = rt_max_warps[i];
+  }
+  fprintf(fout, "\nrt_max_warps = %d\n", max_warps);
+  
+  fprintf(fout, "rt_max_mshr_entries (per shader)= ");
+  unsigned max_mshr = 0;
+  for (unsigned i=0; i<m_config->num_shader(); i++) {
+    fprintf(fout, "%4d", rt_max_mshr_entries[i]);
+    if (rt_max_mshr_entries[i] > max_mshr) max_mshr = rt_max_mshr_entries[i];
+  }
+  fprintf(fout, "\nrt_max_mshr_entries = %d\n", max_mshr);
+  
   fprintf(fout, "rt_warp_coalesced_count = %d\n", rt_warp_coalesced_count);
   fprintf(fout, "rt_repeated_accesses = %d\n", rt_repeated_accesses);
   fprintf(fout, "rt_consecutive_reservation_fails = %d\n", rt_consecutive_reservation_fails);
   fprintf(fout, "rt_repeated_reservation_fails = %d\n", rt_repeated_reservation_fails);
   
+  fprintf(fout, "Number of accesses after thread coalescing = %d\n", rt_thread_coalesced_count);
+  fprintf(fout, "Number of accesses potentially merged after leaving warp pool = %d\n", rt_warppool_potential_merge);
+  
+  fprintf(fout, "Number of cycles in warp pool:\n");
+  for (unsigned i=0; i<200; i++) {
+    fprintf(fout, "%d: %d\t", i, rt_warppool_wait_time[i]);
+  }
+  fprintf(fout, "\n");
+  
+  fprintf(fout, "Number of cycles before response:\n");
+  for (unsigned i=0; i<200; i++) {
+    fprintf(fout, "%d: %d\t", i*10, rt_mem_wait_time[i]);
+  }
+  fprintf(fout, "\n");
+  
+  if(!m_config->m_rt_accumulate_stats) {
+    fprintf(fout, "(1 shader stats)\n");
+  }
   
   if (!rt_readded_reservation_fails.empty()) {
     fprintf(fout, "Number of times readded to the warp pool: \n");
+    unsigned count = 0;
     for (auto it=rt_readded_reservation_fails.begin(); it!=rt_readded_reservation_fails.end(); ++it) {
-      if (it->second > 5) {
+      if (it->second > 50) {
         fprintf(fout, "[0x%x (%d)]: %d\n", it->first, GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[it->first], it->second);
+        count++;
       }
-    }
-    for (unsigned i=5; i>0; --i) {
-      unsigned count = 0;
-      for (auto it=rt_readded_reservation_fails.begin(); it!=rt_readded_reservation_fails.end(); ++it) {
-        if (it->second == i) {
-          count++;
-        }
+      if (count > 10) {
+        fprintf(fout, "and others ...\n");
+        break;
       }
-      fprintf(fout, "%d reservation fails: %d\t", i, count);
     }
   } else {
     fprintf(fout, "No reservation fails readded to warp pool.\n");
@@ -728,38 +757,32 @@ void shader_core_stats::print(FILE *fout) const {
   
   if (!rt_reservation_fail_map.empty()) {
     fprintf(fout, "\nNumber of reservation fails on address: \n");
+    unsigned count = 0;
     for (auto it=rt_reservation_fail_map.begin(); it!=rt_reservation_fail_map.end(); ++it) {
       if (it->second > 100) {
         fprintf(fout, "[0x%x (%d)]: %d\n", it->first, GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[it->first], it->second);
+        count++;
+      }
+      if (count > 10) {
+        fprintf(fout, "and others ...\n");
+        break;
       }
     }
-    // for (unsigned i=10; i>0; --i) {
-    //   unsigned count = 0;
-    //   for (auto it=rt_reservation_fail_map.begin(); it!=rt_reservation_fail_map.end(); ++it) {
-    //     if (it->second == i) {
-    //       count++;
-    //     }
-    //   }
-    //   fprintf(fout, "%d reservation fails: %d\t", i, count);
-    // }
   } 
   
   if (!rt_mem_access_heat_map.empty()) {
     fprintf(fout, "\nNumber of accesses to address: \n");
+    unsigned count = 0;
     for (auto it=rt_mem_access_heat_map.begin(); it!=rt_mem_access_heat_map.end(); ++it) {
       if (it->second > 100) {
         fprintf(fout, "0x%x (%d): %d\n", it->first, GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[it->first], it->second);
+        count++;
+      }
+      if (count > 10) {
+        fprintf(fout, "and others ...\n");
+        break;
       }
     }
-    // for (unsigned i=5; i>0; --i) {
-    //   unsigned count = 0;
-    //   for (auto it=rt_mem_access_heat_map.begin(); it!=rt_mem_access_heat_map.end(); ++it) {
-    //     if (it->second == i) {
-    //       count++;
-    //     }
-    //   }
-    //   fprintf(fout, "%d accesses: %d\t", i, count);
-    // }
   }
   
   if (!rt_cache_unused.empty()) {
@@ -777,23 +800,19 @@ void shader_core_stats::print(FILE *fout) const {
   
   if (!rt_cache_usefulness.empty()) {
     fprintf(fout, "\nNumber of hits on address in cache:\n");
+    unsigned count = 0;
     for (auto it=rt_cache_usefulness.begin(); it!=rt_cache_usefulness.end(); ++it) {
-      if (it->second > 5)
+      if (it->second > 5) {
         fprintf(fout, "0x%x (%d):\t%d\n", it->first, GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[it->first], it->second);
-    }
-    for (unsigned i=5; i>0; --i) {
-      unsigned count = 0;
-      for (auto it=rt_cache_usefulness.begin(); it!=rt_cache_usefulness.end(); ++it) {
-        if (it->second == i) {
-          count++;
-        }
+        count++;
       }
-      fprintf(fout, "%d accesses: %d\t", i, count);
+      if (count > 10) {
+        fprintf(fout, "and others ...\n");
+        break;
+      }
     }
     fprintf(fout, "\n");
   }
-  
-  fprintf(fout, "\nNumber of unique addresses accessed: %d\n", rt_unique_accesses.size());
   
   fprintf(fout, "gpu_reg_bank_conflict_stalls = %d\n",
           gpu_reg_bank_conflict_stalls);
@@ -918,6 +937,22 @@ void shader_core_stats::visualizer_print(gzFile visualizer_file) {
            gpgpu_n_cache_bkconflict);
   gzprintf(visualizer_file, "gpgpu_n_shmem_bkconflict: %d\n",
            gpgpu_n_shmem_bkconflict);
+
+  // Warp Pool Stats
+  gzprintf(visualizer_file, "rtwarps:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_cur_warps[i]);
+  gzprintf(visualizer_file, "\n");
+  
+  gzprintf(visualizer_file, "rtwarppool:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_warppool_size[i]);
+  gzprintf(visualizer_file, "\n");
+  
+  gzprintf(visualizer_file, "rtmshr:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_mshr_size[i]);
+  gzprintf(visualizer_file, "\n");
 
   // instruction count per shader core
   gzprintf(visualizer_file, "shaderinsncount:  ");
@@ -1826,6 +1861,7 @@ void ldst_unit::get_cache_stats(cache_stats &cs) {
 
 void rt_unit::get_cache_stats(cache_stats &cs) {
   cs += m_L0_complet->get_stats();
+  m_L0_complet->get_stats().print_rt_stats(stdout);
 }
 
 void ldst_unit::get_L1D_sub_stats(struct cache_sub_stats &css) const {
@@ -2488,7 +2524,23 @@ rt_unit::rt_unit(mem_fetch_interface *icnt,
   // l0c_latency_queue.resize(m_config->m_L0C_config.)
 
   m_mem_rc = NO_RC_FAIL;
-  m_name = "RT_CORE";     
+  m_name = "RT_CORE";
+  
+  // // CACHE REUSE DISTANCE LOG
+  // char * m_log_file_filename;
+  // time_t curr_time;
+  // time(&curr_time);
+  // char *date = ctime(&curr_time);
+  // char *s = date;
+  // while (*s) {
+  //   if (*s == ' ' || *s == '\t' || *s == ':') *s = '-';
+  //   if (*s == '\n' || *s == '\r') *s = 0;
+  //   s++;
+  // }
+  // char buf[1024];
+  // snprintf(buf, 1024, "cache_reuse_distance_test__%s.log", date);
+  // m_log_file_filename = strdup(buf);
+  // m_cache_reuse_log_file = fopen(m_log_file_filename, "w+");
 }
 
 void rt_unit::issue(register_set &reg_set) {
@@ -2510,10 +2562,19 @@ void rt_unit::cycle() {
   // Add cycling for intersection units?
   occupied >>=1;
   
-  if (m_current_warps.size() > m_stats->rt_max_warps) m_stats->rt_max_warps = m_current_warps.size();
-  if (m_L0_complet->num_mshr_entries() > m_stats->rt_max_mshr_entries) m_stats->rt_max_mshr_entries = m_L0_complet->num_mshr_entries();
+  if (m_current_warps.size() > m_stats->rt_max_warps[m_sid]) m_stats->rt_max_warps[m_sid] = m_current_warps.size();
+  if (m_L0_complet->num_mshr_entries() > m_stats->rt_max_mshr_entries[m_sid]) m_stats->rt_max_mshr_entries[m_sid] = m_L0_complet->num_mshr_entries();
+  
+  
+  // AerialVision Update
+  m_stats->rt_cur_warps[m_sid] = m_current_warps.size();
+  if (m_config->m_rt_warppool) m_stats->rt_warppool_size[m_sid] = m_warppool_mem_accesses.size();
+  m_stats->rt_mshr_size[m_sid] = m_L0_complet->num_mshr_entries();
+  
+  
   
   if (!m_response_fifo.empty()) {
+    
     mem_fetch *mf = m_response_fifo.front();
     
     // RT-CORE NOTE: figure out how to separate node and triangle responses
@@ -2572,6 +2633,17 @@ void rt_unit::cycle() {
     // Reservation fails stats tracking
     m_reservation_fails.erase(mf->get_uncoalesced_addr());
     
+    // Warp Pool timing
+    if (m_config->m_rt_warppool) {
+      unsigned long long waiting_time = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle - m_warppool_access_stats[mf->get_addr()];
+      if (waiting_time/10 < 199) {
+        m_stats->rt_mem_wait_time[waiting_time/10]++;
+      } else {
+        m_stats->rt_mem_wait_time[199]++;
+      }
+      m_warppool_access_stats.erase(mf->get_addr());
+    }
+    
   }
     
   writeback();
@@ -2582,27 +2654,6 @@ void rt_unit::cycle() {
   
   // if (m_config->m_L0_complet_config.l1_latency > 0) l0c_latency_queue_cycle();
   // if (m_config->m_L0_tri_config.l1_latency > 0) l0t_latency_queue_cycle();
-  
-  // if (!pipe_reg.empty() && pipe_reg.check_rt_warp_cycle()) {
-  //   // Temporary placeholder
-  //   warp_inst_t temp = pipe_reg;
-    
-  //   // Find an available warp
-  //   for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
-  //     if (!((it->second).mem_fetch_wait())) { 
-  //       pipe_reg = it->second;
-  //       pipe_reg.set_rt_warp_cycle();
-  //       unsigned warp_id = it->first;
-  //       m_current_warps.erase(it);
-  //       break;
-  //     }
-  //   }
-    
-  //   // If found, replace
-  //   if (pipe_reg.warp_id() != temp.warp_id()) {
-  //     m_current_warps.insert(std::pair<unsigned,warp_inst_t>(pipe_reg.warp_id(), temp));
-  //   }
-  // }
   
   bool done = true;
   // RT-CORE NOTE: How to cycle both complet cache and triangle cache?
@@ -2700,9 +2751,9 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
     // If waiting for responses, don't send new requests
     if (inst.mem_fetch_wait(m_config->m_rt_lock_threads)) return inst.rt_mem_accesses_empty();
     
-    // If MSHR is at the "limit" don't sent new requests
-    if (m_config->m_rt_max_warps > 0 && m_L0_complet->num_mshr_entries() > m_config->m_rt_max_mshr_entries) return inst.rt_mem_accesses_empty();
   }
+  // If MSHR is at the "limit" don't sent new requests
+  if (m_config->m_rt_max_warps > 0 && m_L0_complet->num_mshr_entries() > m_config->m_rt_max_mshr_entries) return inst.rt_mem_accesses_empty();
   
   mem_stage_stall_type fail;
   fail = process_memory_access_queue(m_L0_complet, inst);
@@ -2769,16 +2820,6 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
         m_warppool_mem_accesses.insert(m_warppool_stalled_accesses.begin(), m_warppool_stalled_accesses.end());
       }
       
-      // Count how many times a reservation fail accesses is returned to the warppool
-      if (m_config->m_rt_accumulate_stats) m_reservation_fail_readded = m_stats->rt_readded_reservation_fails;
-      for (auto it=m_warppool_stalled_accesses.begin(); it!=m_warppool_stalled_accesses.end(); ++it) {
-        if (m_reservation_fail_readded.find(*it) == m_reservation_fail_readded.end()) {
-          m_reservation_fail_readded.insert(std::pair<new_addr_type, unsigned>(*it, 0));
-        }
-        m_reservation_fail_readded[*it]++;
-      }
-      m_stats->rt_readded_reservation_fails = m_reservation_fail_readded;
-      
       // Stalled accesses moved to end of list
       m_warppool_stalled_accesses.clear();
     }
@@ -2786,6 +2827,7 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
   
   // Add currently selected warp's accesses
   inst.fill_next_rt_mem_access(m_config->m_rt_lock_threads);
+  m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
   std::set<new_addr_type> warp_accesses = inst.get_rt_accesses();
   for (auto it=warp_accesses.begin(); it!=warp_accesses.end(); ++it) {
     new_addr_type addr = *it;
@@ -2801,6 +2843,18 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
       }
       
       m_warppool_mem_accesses.insert(addr);
+      if (m_warppool_stats.find(block_addr) == m_warppool_stats.end()) {
+        unsigned long long current_cycle = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle;
+        m_warppool_stats.insert(std::pair<new_addr_type, unsigned long long>(block_addr, current_cycle));
+        
+        // If still in warp pool, it should still be waiting for the memory response (since it hasn't been sent yet)
+        if (m_warppool_access_stats.find(block_addr) == m_warppool_access_stats.end()) {
+          m_warppool_access_stats.insert(std::pair<new_addr_type, unsigned long long>(block_addr, current_cycle));
+        }
+        else {
+          m_stats->rt_warppool_potential_merge++;
+        }
+      }
     }
   }
   
@@ -2808,6 +2862,7 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
   for(auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
     warp_inst_t &inst = it->second;
     inst.fill_next_rt_mem_access(m_config->m_rt_lock_threads);
+    m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
     std::set<new_addr_type> warp_accesses = inst.get_rt_accesses();
     for (auto it=warp_accesses.begin(); it!=warp_accesses.end(); ++it) {
       new_addr_type addr = *it;
@@ -2823,6 +2878,18 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
         }
         
         m_warppool_mem_accesses.insert(addr);
+        if (m_warppool_stats.find(block_addr) == m_warppool_stats.end()) {
+          unsigned long long current_cycle = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle;
+          m_warppool_stats.insert(std::pair<new_addr_type, unsigned long long>(block_addr, current_cycle));
+          
+          // If still in warp pool, it should still be waiting for the memory response (since it hasn't been sent yet)
+          if (m_warppool_access_stats.find(block_addr) == m_warppool_access_stats.end()) {
+            m_warppool_access_stats.insert(std::pair<new_addr_type, unsigned long long>(block_addr, current_cycle));
+          }
+          else {
+            m_stats->rt_warppool_potential_merge++;
+          }
+        }
       }
     }
   }
@@ -2915,23 +2982,10 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     events
   );
   
-  if (m_config->m_rt_accumulate_stats) m_unique_accesses = m_stats->rt_unique_accesses;
-  m_unique_accesses.insert(mf->get_addr());
-  m_stats->rt_unique_accesses = m_unique_accesses;
+  // fprintf(m_cache_reuse_log_file, "%d: 0x%x\n", m_sid, mf->get_addr());
   
   // Stalled
   if (status == RESERVATION_FAIL) {
-    
-    // Record addresses that hit reservation fails many times
-    if (m_config->m_rt_accumulate_stats) m_reservation_fail_map = m_stats->rt_reservation_fail_map;
-    if (m_reservation_fail_map.find(mf->get_uncoalesced_addr()) == m_reservation_fail_map.end()) {
-      m_reservation_fail_map.insert(std::pair<new_addr_type, unsigned>(mf->get_uncoalesced_addr(), 0));
-    }
-    else {
-      m_reservation_fail_map[mf->get_uncoalesced_addr()]++;
-    }
-    m_stats->rt_reservation_fail_map = m_reservation_fail_map;
-      
     
     // Check if consecutive
     if (mf->get_uncoalesced_addr() == m_prev_reservation_fail) {
@@ -2943,22 +2997,23 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     m_reservation_fails.insert(mf->get_uncoalesced_addr());
     m_prev_reservation_fail = mf->get_uncoalesced_addr();
     
-    if (m_config->m_rt_warppool) {
-      m_warppool_awaiting_response.erase(mf->get_addr());
-      // m_warppool_mem_accesses.insert(mf->get_addr());
-      m_warppool_stalled_accesses.insert(mf->get_uncoalesced_addr());
-    }
-    else {
-      // Remove from m_mf_awaiting_response 
-      inst.undo_rt_access(mf->get_addr());
-      // Remove the unnecessary list of next_rt_accesses (not the set)
-      // if (m_config->m_rt_lock_threads) 
+    if (!m_L0_complet->get_bypass_rf_config()) {
+      if (m_config->m_rt_warppool) {
+        m_warppool_awaiting_response.erase(mf->get_addr());
+        // m_warppool_mem_accesses.insert(mf->get_addr());
+        m_warppool_stalled_accesses.insert(mf->get_uncoalesced_addr());
+      }
+      else {
+        // Remove from m_mf_awaiting_response 
+        inst.undo_rt_access(mf->get_addr());
+        // Remove the unnecessary list of next_rt_accesses (not the set)
+        // if (m_config->m_rt_lock_threads) 
+      }
     }
   }
   
   // Stats
   else {
-    if (m_config->m_rt_accumulate_stats) m_mem_access_heat_map = m_stats->rt_mem_access_heat_map;
     new_addr_type mem_access_addr = mf->get_addr();
     if (m_mem_access_list.find(mem_access_addr) != m_mem_access_list.end()) {
       m_stats->rt_repeated_accesses++;
@@ -2966,11 +3021,17 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     else {
       m_mem_access_list.insert(mem_access_addr);
     }
-    if (m_mem_access_heat_map.find(mem_access_addr) == m_mem_access_heat_map.end()) {
-      (m_mem_access_heat_map).insert(std::pair<new_addr_type, unsigned>(mem_access_addr, 0));
+    
+    if (m_config->m_rt_warppool) {
+      unsigned long long waiting_time = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle - m_warppool_stats[mem_access_addr];
+      m_warppool_stats.erase(mem_access_addr);
+      
+      if (waiting_time < 199) {
+        m_stats->rt_warppool_wait_time[waiting_time]++;
+      } else {
+        m_stats->rt_warppool_wait_time[199]++;
+      }
     }
-    m_mem_access_heat_map[mem_access_addr]++;
-    m_stats->rt_mem_access_heat_map = m_mem_access_heat_map;
   }
   
   return process_cache_access(cache, mf->get_addr(), inst, events, mf, status);
@@ -2985,9 +3046,6 @@ mem_stage_stall_type rt_unit::process_cache_access(
     
     // RT-CORE NOTE Assume no writes sent?
     
-    if (m_config->m_rt_accumulate_stats) m_rt_cache_unused = m_stats->rt_cache_unused;
-    if (m_config->m_rt_accumulate_stats) m_rt_cache_usefulness = m_stats->rt_cache_usefulness;
-    
     if (status == HIT) {
       inst.clear_mem_fetch_wait(address);
       if (!m_config->m_rt_lock_threads) inst.clear_rt_awaiting_threads(address);
@@ -2998,18 +3056,24 @@ mem_stage_stall_type rt_unit::process_cache_access(
         }
       }
       if (m_config->m_rt_warppool) m_warppool_awaiting_response.erase(address);
-      inc_block_addr(address);
-      rm_block_addr(address);
+      
+      // Track memory access time
+      if (m_config->m_rt_warppool) {
+        unsigned long long waiting_time = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle - m_warppool_access_stats[address];
+        if (waiting_time/10 < 199) {
+          m_stats->rt_mem_wait_time[waiting_time/10]++;
+        } else {
+          m_stats->rt_mem_wait_time[199]++;
+        }
+        m_warppool_access_stats.erase(address);
+      }
+      
     } else if (status == RESERVATION_FAIL) {
       result = BK_CONF;
       delete mf;
     } else {
       assert(status == MISS);
-      add_block_addr(address);
     }
-    
-    m_stats->rt_cache_usefulness = m_rt_cache_usefulness;
-    m_stats->rt_cache_unused = m_rt_cache_unused;
     
     if (!inst.rt_mem_accesses_empty() && result == NO_RC_FAIL) result = COAL_STALL;
     return result;
@@ -3846,7 +3910,9 @@ void ldst_unit::print(FILE *fout) const {
 
 void rt_unit::print(FILE *fout) const {
   fprintf(fout, "%s dispatch= ", m_name.c_str());
-  fprintf(fout, "%d ", m_dispatch_reg->mem_fetch_wait(m_config->m_rt_lock_threads));
+  if (m_dispatch_reg->m_is_raytrace) {
+    fprintf(fout, "%d ", m_dispatch_reg->mem_fetch_wait(m_config->m_rt_lock_threads));
+  }
   m_dispatch_reg->print(fout);
   fprintf(fout, "Other awaiting warps:\n");
   for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {

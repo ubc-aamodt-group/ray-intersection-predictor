@@ -1349,7 +1349,11 @@ void gpgpu_sim::gpu_print_stat() {
   // shader_print_l1_miss_stat( stdout );
   shader_print_cache_stats(stdout);
   printf("rt_total_mem_access_count = %d\n", gpgpu_ctx->func_sim->g_total_raytrace_mem_accesses);
-  printf("rt_total_hits = %d\n", gpgpu_ctx->func_sim->g_total_raytrace_hits);
+  printf("accesses per thread (#accesses:#threads): ");
+  for (unsigned i=0; i<50; i++) {
+    printf("%d:%d\t", i, gpgpu_ctx->func_sim->g_raytrace_mem_accesses[i]);
+  }
+  printf("\nrt_total_hits = %d\n", gpgpu_ctx->func_sim->g_total_raytrace_hits);
   
   
   cache_stats core_cache_stats;
@@ -2015,7 +2019,7 @@ void gpgpu_sim::cycle() {
       }
     }
 
-    if (!(gpu_sim_cycle % 50000)) {
+    if (!(gpu_sim_cycle % 100000)) {
       // deadlock detection
       if (m_config.gpu_deadlock_detect && gpu_sim_insn == last_gpu_sim_insn) {
         gpu_deadlock = true;

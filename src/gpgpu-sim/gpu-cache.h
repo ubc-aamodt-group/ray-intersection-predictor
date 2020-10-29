@@ -71,13 +71,20 @@ enum cache_event_type {
 struct evicted_block_info {
   new_addr_type m_block_addr;
   unsigned m_modified_size;
+  unsigned m_hits;
   evicted_block_info() {
     m_block_addr = 0;
     m_modified_size = 0;
+    m_hits = 0;
   }
   void set_info(new_addr_type block_addr, unsigned modified_size) {
     m_block_addr = block_addr;
     m_modified_size = modified_size;
+  }
+  void set_info(new_addr_type block_addr, unsigned modified_size, unsigned hits) {
+    m_block_addr = block_addr;
+    m_modified_size = modified_size;
+    m_hits = hits;
   }
 };
 
@@ -103,6 +110,7 @@ struct cache_block_t {
   cache_block_t() {
     m_tag = 0;
     m_block_addr = 0;
+    m_hits = 0;
     m_rt_permanent = false;
   }
 
@@ -138,10 +146,15 @@ struct cache_block_t {
   virtual bool is_readable(mem_access_sector_mask_t sector_mask) = 0;
   virtual void print_status() = 0;
   virtual ~cache_block_t() {}
+  
+  unsigned get_hits() { return m_hits; }
+  void inc_hits() { m_hits++; }
+  new_addr_type get_addr() { return m_block_addr; }
 
   new_addr_type m_tag;
   new_addr_type m_block_addr;
   bool m_rt_permanent;
+  unsigned m_hits;
 };
 
 struct line_cache_block : public cache_block_t {
@@ -164,10 +177,10 @@ struct line_cache_block : public cache_block_t {
     m_status = RESERVED;
     m_ignore_on_fill_status = false;
     m_set_modified_on_fill = false;
+    m_hits = 0;
   }
   void allocate(new_addr_type tag, new_addr_type block_addr, unsigned time,
                 mem_access_sector_mask_t sector_mask, bool rt_permanent) {
-    m_rt_permanent = rt_permanent;
     allocate(tag, block_addr, time, sector_mask);
   }
   void fill(unsigned time, mem_access_sector_mask_t sector_mask) {
@@ -248,6 +261,7 @@ struct sector_cache_block : public cache_block_t {
     m_line_last_access_time = 0;
     m_line_fill_time = 0;
     m_rt_permanent = false;
+    m_hits = 0;
   }
 
   virtual void allocate(new_addr_type tag, new_addr_type block_addr,
@@ -859,6 +873,7 @@ class tag_array {
   void update_cache_parameters(cache_config &config);
   void add_pending_line(mem_fetch *mf);
   void remove_pending_line(mem_fetch *mf);
+  std::pair<new_addr_type, unsigned> get_hits(unsigned index);
 
  protected:
   // This constructor is intended for use only from derived classes that wish to
@@ -1096,6 +1111,7 @@ class cache_stats {
   cache_stats operator+(const cache_stats &cs);
   cache_stats &operator+=(const cache_stats &cs);
   void print_stats(FILE *fout, const char *cache_name = "Cache_stats") const;
+  void print_rt_stats(FILE *fout) const;
   void print_fail_stats(FILE *fout,
                         const char *cache_name = "Cache_fail_stats") const;
 
@@ -1110,10 +1126,10 @@ class cache_stats {
 
   void sample_cache_port_utility(bool data_port_busy, bool fill_port_busy);
   
-  void add_block_addr(new_addr_type block_addr);
-  void remove_block_addr(new_addr_type block_addr);
-  void increment_block_addr(new_addr_type block_addr);
-
+  void add_block_addr_access(new_addr_type block_addr);
+  void mark_block_addr_hit(new_addr_type block_addr);
+  void inc_block_addr_access(std::pair<new_addr_type, unsigned> cache_hits);
+ 
  private:
   bool check_valid(int type, int status) const;
   bool check_fail_valid(int type, int fail) const;
@@ -1247,6 +1263,7 @@ class baseline_cache : public cache_t {
     m_tag_array->fill(addr, time, mask);
   }
 
+  bool get_bypass_rf_config() { return m_config.m_bypass_on_rf; }
  protected:
   // Constructor that can be used by derived classes with custom tag arrays
   baseline_cache(const char *name, cache_config &config, int core_id,

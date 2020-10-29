@@ -230,6 +230,12 @@ void tag_array::remove_pending_line(mem_fetch *mf) {
   }
 }
 
+std::pair<new_addr_type, unsigned> tag_array::get_hits(unsigned index) {
+  unsigned hits = m_lines[index]->get_hits();
+  new_addr_type addr = m_lines[index]->get_addr();
+  return std::pair<new_addr_type, unsigned>(addr, hits);
+}
+
 enum cache_request_status tag_array::probe(new_addr_type addr, unsigned &idx,
                                            mem_fetch *mf,
                                            bool probe_mode) const {
@@ -353,6 +359,7 @@ enum cache_request_status tag_array::access(new_addr_type addr, unsigned time,
       m_pending_hit++;
     case HIT:
       m_lines[idx]->set_last_access_time(time, mf->get_access_sector_mask());
+      m_lines[idx]->inc_hits();
       break;
     case MISS:
       m_miss++;
@@ -799,6 +806,34 @@ void cache_stats::print_stats(FILE *fout, const char *cache_name) const {
   }
 }
 
+void cache_stats::print_rt_stats(FILE *fout) const {
+  fprintf(fout, "Unused Cache Entries: \n");
+  unsigned counter = 0;
+  for (auto it=m_rt_cache_unused.begin(); it!=m_rt_cache_unused.end(); ++it) {
+    fprintf(fout, "0x%x\t", *it);
+    counter++;
+    if (counter > 10) {
+      fprintf(fout, "...");
+      break;
+    }
+  }
+  
+  fprintf(fout, "\nCache Hits: \n");
+  counter = 0;
+  for (auto it=m_rt_cache_usefulness.begin(); it!=m_rt_cache_usefulness.end(); ++it) {
+    if (it->second > 1) {
+      fprintf(fout, "[0x%x]: %d\t", it->first, it->second);
+      counter++;
+    }
+    if (counter > 10) {
+      fprintf(fout, "...");
+      break;
+    }
+  }
+  
+  fprintf(fout, "\n");
+}
+
 void cache_stats::print_fail_stats(FILE *fout, const char *cache_name) const {
   std::string m_cache_name = cache_name;
   for (unsigned type = 0; type < NUM_MEM_ACCESS_TYPE; ++type) {
@@ -960,22 +995,18 @@ void cache_stats::sample_cache_port_utility(bool data_port_busy,
   }
 }
 
-void cache_stats::add_block_addr(new_addr_type block_addr) {
+void cache_stats::add_block_addr_access(new_addr_type block_addr) {
   m_rt_cache_unused.insert(block_addr);
+  m_rt_cache_usefulness.insert(std::pair<new_addr_type, unsigned>(block_addr, 0));
 }
 
-void cache_stats::remove_block_addr(new_addr_type block_addr) {
+void cache_stats::mark_block_addr_hit(new_addr_type block_addr) {
   m_rt_cache_unused.erase(block_addr);
 }
 
-void cache_stats::increment_block_addr(new_addr_type block_addr) {
-  if (m_rt_cache_usefulness.find(block_addr) == m_rt_cache_usefulness.end()) {
-    m_rt_cache_usefulness.insert(std::pair<new_addr_type, unsigned>(block_addr, 0));
-  }
-  
-  m_rt_cache_usefulness[block_addr]++;
+void cache_stats::inc_block_addr_access(std::pair<new_addr_type, unsigned> cache_hits) {
+  m_rt_cache_usefulness[cache_hits.first] += cache_hits.second;
 }
-
 
 baseline_cache::bandwidth_management::bandwidth_management(cache_config &config)
     : m_config(config) {
@@ -1616,16 +1647,16 @@ enum cache_request_status read_only_cache::access(
   if (status == HIT) {
     cache_status = m_tag_array->access(block_addr, time, cache_index,
                                        mf);  // update LRU state
-    m_stats.increment_block_addr(block_addr);
-    m_stats.remove_block_addr(block_addr);
+    m_stats.mark_block_addr_hit(block_addr);
   } else if (status != RESERVATION_FAIL) {
     if (!miss_queue_full(0)) {
       bool do_miss = false;
+      m_stats.inc_block_addr_access(m_tag_array->get_hits(cache_index));
       send_read_request(addr, block_addr, cache_index, mf, time, do_miss,
                         events, true, false);
       if (do_miss) {
         cache_status = MISS;
-        m_stats.add_block_addr(block_addr);
+        m_stats.add_block_addr_access(block_addr);
       }
       else
         cache_status = RESERVATION_FAIL;
@@ -1643,7 +1674,7 @@ enum cache_request_status read_only_cache::access(
                           events, true, false);
         if (do_miss) {
           cache_status = MISS;
-          m_stats.add_block_addr(block_addr);
+          m_stats.add_block_addr_access(block_addr);
         }
         else
           cache_status = RESERVATION_FAIL;

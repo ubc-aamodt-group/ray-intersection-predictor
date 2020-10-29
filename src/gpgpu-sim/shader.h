@@ -1306,22 +1306,6 @@ class rt_unit : public pipelined_simd_unit {
       void track_warp_mem_accesses(warp_inst_t &inst);
       mem_access_t get_next_rt_mem_access(warp_inst_t &inst);
       
-      void add_block_addr(new_addr_type block_addr) {
-        m_rt_cache_unused.insert(block_addr);
-      }
-
-      void rm_block_addr(new_addr_type block_addr) {
-        m_rt_cache_unused.erase(block_addr);
-      }
-
-      void inc_block_addr(new_addr_type block_addr) {
-        if (m_rt_cache_usefulness.find(block_addr) == m_rt_cache_usefulness.end()) {
-          m_rt_cache_usefulness.insert(std::pair<new_addr_type, unsigned>(block_addr, 0));
-        }
-        
-        m_rt_cache_usefulness[block_addr]++;
-      }
-      
       const memory_config *m_memory_config;
       class mem_fetch_interface *m_icnt;
       shader_core_mem_fetch_allocator *m_mf_allocator;
@@ -1331,6 +1315,8 @@ class rt_unit : public pipelined_simd_unit {
       unsigned m_tpc;
       
       shader_core_stats *m_stats;
+      
+      // FILE * m_cache_reuse_log_file;
       
       read_only_cache *m_L0_complet;
       read_only_cache *m_L0_tri;
@@ -1352,6 +1338,8 @@ class rt_unit : public pipelined_simd_unit {
       std::set<new_addr_type> m_warppool_mem_accesses;
       std::set<new_addr_type> m_warppool_awaiting_response;
       std::set<new_addr_type> m_warppool_stalled_accesses;
+      std::map<new_addr_type, unsigned long long> m_warppool_stats;
+      std::map<new_addr_type, unsigned long long> m_warppool_access_stats;
       
       std::set<new_addr_type> m_reservation_fails;
       new_addr_type m_prev_reservation_fail;
@@ -1359,14 +1347,6 @@ class rt_unit : public pipelined_simd_unit {
       std::list<new_addr_type> m_warppool_fifo_list;
       
       std::set<new_addr_type> m_mem_access_list;
-      std::map<new_addr_type, unsigned> m_mem_access_heat_map;
-      std::map<new_addr_type, unsigned> m_reservation_fail_map;
-      std::map<new_addr_type, unsigned> m_reservation_fail_readded;
-      
-      std::set<new_addr_type> m_unique_accesses;
-      
-      std::set<new_addr_type> m_rt_cache_unused;
-      std::map<new_addr_type, unsigned> m_rt_cache_usefulness;
 };
 
 class ldst_unit : public pipelined_simd_unit {
@@ -1805,8 +1785,7 @@ struct shader_core_stats_pod {
   unsigned gpgpu_n_cache_bkconflict;
   int gpgpu_n_intrawarp_mshr_merge;
   unsigned gpgpu_n_cmem_portconflict;
-  unsigned gpu_stall_shd_mem_breakdown[N_MEM_STAGE_ACCESS_TYPE]
-                                      [N_MEM_STAGE_STALL_TYPE];
+  unsigned gpu_stall_shd_mem_breakdown[N_MEM_STAGE_ACCESS_TYPE][N_MEM_STAGE_STALL_TYPE];
   unsigned gpu_reg_bank_conflict_stalls;
   unsigned *shader_cycle_distro;
   unsigned *last_shader_cycle_distro;
@@ -1835,17 +1814,26 @@ struct shader_core_stats_pod {
   long *n_simt_to_mem;  // Interconnect power stats
   long *n_mem_to_simt;
   
-  unsigned rt_max_warps;
-  unsigned rt_max_mshr_entries;
+  unsigned* rt_max_warps;
+  unsigned* rt_cur_warps;
+  unsigned* rt_max_mshr_entries;
   unsigned rt_thread_coalesced_count;
   unsigned rt_warp_coalesced_count;
   unsigned rt_repeated_accesses;
   unsigned rt_consecutive_reservation_fails;
   unsigned rt_repeated_reservation_fails;
+  
+  unsigned* rt_warppool_size;
+  unsigned* rt_mshr_size;
+  
+  unsigned rt_warppool_potential_merge;
  
   std::map<new_addr_type, unsigned> rt_mem_access_heat_map;
   std::map<new_addr_type, unsigned> rt_reservation_fail_map;
   std::map<new_addr_type, unsigned> rt_readded_reservation_fails;
+  
+  unsigned rt_warppool_wait_time[200];
+  unsigned rt_mem_wait_time[200];
   
   std::set<new_addr_type> rt_unique_accesses;
   
@@ -1948,6 +1936,12 @@ class shader_core_stats : public shader_core_stats_pod {
 
     n_simt_to_mem = (long *)calloc(config->num_shader(), sizeof(long));
     n_mem_to_simt = (long *)calloc(config->num_shader(), sizeof(long));
+
+    rt_max_warps = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_cur_warps = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_max_mshr_entries = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_warppool_size = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_mshr_size = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
 
     m_outgoing_traffic_stats = new traffic_breakdown("coretomem");
     m_incoming_traffic_stats = new traffic_breakdown("memtocore");
