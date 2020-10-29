@@ -374,8 +374,6 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             mem->read(node_start + next_node + sizeof(float4), sizeof(float4), &n1xy);
             mem->read(node_start + next_node + 2*sizeof(float4), sizeof(float4), &n01z);
             
-<<<<<<< HEAD
-=======
             unsigned current_tree_level = tree_level_map[node_start + next_node];
             assert(current_tree_level > 0);
             
@@ -383,7 +381,6 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             thread->add_raytrace_mem_access(node_start + next_node);
             memory_accesses.push_back(node_start + next_node);
             
->>>>>>> timing-model
             #ifdef DEBUG_PRINT
             printf("Node data: \n");
             print_float4(n0xy);
@@ -411,22 +408,16 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             mem->read(node_start + next_node + 3*sizeof(float4), sizeof(addr_t), &child0_addr);
             mem->read(node_start + next_node + 3*sizeof(float4) + sizeof(addr_t), sizeof(addr_t), &child1_addr);
             
-<<<<<<< HEAD
-=======
             if ((int)child0_addr > 0)
                 tree_level_map.insert(std::pair<new_addr_type, unsigned>(node_start + child0_addr * 0x10, current_tree_level + 1));
             if ((int)child1_addr > 0)
                 tree_level_map.insert(std::pair<new_addr_type, unsigned>(node_start + child1_addr * 0x10, current_tree_level + 1));
             
->>>>>>> timing-model
             #ifdef DEBUG_PRINT
             printf("Child 0 offset: 0x%x \t", child0_addr);
             printf("Child 1 offset: 0x%x \n", child1_addr);
             #endif
-<<<<<<< HEAD
-=======
             
->>>>>>> timing-model
             
             // Miss
             if (!child0_hit && !child1_hit) {
@@ -439,10 +430,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 next_node = traversal_stack.back();
                 traversal_stack.pop_back();
                 #ifdef DEBUG_PRINT
-<<<<<<< HEAD
-=======
                 printf("Traversal Stack: \n");
->>>>>>> timing-model
                 print_stack(traversal_stack);
                 #endif
             }
@@ -453,15 +441,11 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 // Push extra node to stack
                 traversal_stack.push_back((thit0 < thit1) ? child1_addr : child0_addr);
                 #ifdef DEBUG_PRINT
-<<<<<<< HEAD
-=======
                 printf("Traversal Stack: \n");
->>>>>>> timing-model
                 print_stack(traversal_stack);
                 #endif
                 
                 if (traversal_stack.size() > MAX_TRAVERSAL_STACK_SIZE) printf("Short stack full!\n");
-                #endif
             }
             // Single hit
             else {
@@ -526,10 +510,6 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                     #ifdef DEBUG_PRINT
                     printf("HIT\t t: %f\n", thit);
                     #endif
-<<<<<<< HEAD
-                    ray_payload.t_triId_u_v.y = tri_addr >> 4;
-                }
-=======
                     *(int*) &ray_payload.t_triId_u_v.y = tri_addr >> 4;
                     
                     if (ray_properties.anyhit) {
@@ -538,7 +518,6 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                     }
                 }
                 
->>>>>>> timing-model
                 #ifdef DEBUG_PRINT
                 else
                     printf("MISS\n");
@@ -559,10 +538,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             next_node = traversal_stack.back();
             traversal_stack.pop_back();
             #ifdef DEBUG_PRINT
-<<<<<<< HEAD
-=======
             printf("Traversal Stack: \n");
->>>>>>> timing-model
             print_stack(traversal_stack);
             #endif
         }
