@@ -55,8 +55,8 @@ enum cache_request_status {
 enum cache_reservation_fail_reason {
   LINE_ALLOC_FAIL = 0,  // all line are reserved
   MISS_QUEUE_FULL,      // MISS queue (i.e. interconnect or DRAM) is full
-  MSHR_ENRTY_FAIL,
-  MSHR_MERGE_ENRTY_FAIL,
+  MSHR_ENTRY_FAIL,
+  MSHR_MERGE_ENTRY_FAIL,
   MSHR_RW_PENDING,
   NUM_CACHE_RESERVATION_FAIL_STATUS
 };
@@ -71,13 +71,20 @@ enum cache_event_type {
 struct evicted_block_info {
   new_addr_type m_block_addr;
   unsigned m_modified_size;
+  unsigned m_hits;
   evicted_block_info() {
     m_block_addr = 0;
     m_modified_size = 0;
+    m_hits = 0;
   }
   void set_info(new_addr_type block_addr, unsigned modified_size) {
     m_block_addr = block_addr;
     m_modified_size = modified_size;
+  }
+  void set_info(new_addr_type block_addr, unsigned modified_size, unsigned hits) {
+    m_block_addr = block_addr;
+    m_modified_size = modified_size;
+    m_hits = hits;
   }
 };
 
@@ -103,11 +110,16 @@ struct cache_block_t {
   cache_block_t() {
     m_tag = 0;
     m_block_addr = 0;
+    m_hits = 0;
+    m_rt_permanent = false;
   }
 
   virtual void allocate(new_addr_type tag, new_addr_type block_addr,
                         unsigned time,
                         mem_access_sector_mask_t sector_mask) = 0;
+  virtual void allocate(new_addr_type tag, new_addr_type block_addr,
+                        unsigned time,
+                        mem_access_sector_mask_t sector_mask, bool rt_permanent) = 0;
   virtual void fill(unsigned time, mem_access_sector_mask_t sector_mask) = 0;
 
   virtual bool is_invalid_line() = 0;
@@ -134,9 +146,15 @@ struct cache_block_t {
   virtual bool is_readable(mem_access_sector_mask_t sector_mask) = 0;
   virtual void print_status() = 0;
   virtual ~cache_block_t() {}
+  
+  unsigned get_hits() { return m_hits; }
+  void inc_hits() { m_hits++; }
+  new_addr_type get_addr() { return m_block_addr; }
 
   new_addr_type m_tag;
   new_addr_type m_block_addr;
+  bool m_rt_permanent;
+  unsigned m_hits;
 };
 
 struct line_cache_block : public cache_block_t {
@@ -159,6 +177,11 @@ struct line_cache_block : public cache_block_t {
     m_status = RESERVED;
     m_ignore_on_fill_status = false;
     m_set_modified_on_fill = false;
+    m_hits = 0;
+  }
+  void allocate(new_addr_type tag, new_addr_type block_addr, unsigned time,
+                mem_access_sector_mask_t sector_mask, bool rt_permanent) {
+    allocate(tag, block_addr, time, sector_mask);
   }
   void fill(unsigned time, mem_access_sector_mask_t sector_mask) {
     // if(!m_ignore_on_fill_status)
@@ -237,10 +260,17 @@ struct sector_cache_block : public cache_block_t {
     m_line_alloc_time = 0;
     m_line_last_access_time = 0;
     m_line_fill_time = 0;
+    m_rt_permanent = false;
+    m_hits = 0;
   }
 
   virtual void allocate(new_addr_type tag, new_addr_type block_addr,
                         unsigned time, mem_access_sector_mask_t sector_mask) {
+    allocate_line(tag, block_addr, time, sector_mask);
+  }
+  virtual void allocate(new_addr_type tag, new_addr_type block_addr,
+                        unsigned time, mem_access_sector_mask_t sector_mask, bool rt_permanent) {
+    m_rt_permanent = rt_permanent;
     allocate_line(tag, block_addr, time, sector_mask);
   }
 
@@ -410,7 +440,7 @@ struct sector_cache_block : public cache_block_t {
   }
 };
 
-enum replacement_policy_t { LRU, FIFO };
+enum replacement_policy_t { LRU, FIFO, RT_SPECIAL };
 
 enum write_policy_t {
   READ_ONLY,
@@ -470,10 +500,10 @@ class cache_config {
     char ct, rp, wp, ap, mshr_type, wap, sif;
 
     int ntok =
-        sscanf(config, "%c:%u:%u:%u,%c:%c:%c:%c:%c,%c:%u:%u,%u:%u,%u", &ct,
+        sscanf(config, "%c:%u:%u:%u,%c:%c:%c:%c:%c,%c:%u:%u,%u:%u,%u:%u", &ct,
                &m_nset, &m_line_sz, &m_assoc, &rp, &wp, &ap, &wap, &sif,
                &mshr_type, &m_mshr_entries, &m_mshr_max_merge,
-               &m_miss_queue_size, &m_result_fifo_entries, &m_data_port_width);
+               &m_miss_queue_size, &m_result_fifo_entries, &m_data_port_width, &m_bypass_on_rf);
 
     if (ntok < 12) {
       if (!strcmp(config, "none")) {
@@ -500,15 +530,8 @@ class cache_config {
       case 'F':
         m_replacement_policy = FIFO;
         break;
-      default:
-        exit_parse_error();
-    }
-    switch (rp) {
-      case 'L':
-        m_replacement_policy = LRU;
-        break;
-      case 'F':
-        m_replacement_policy = FIFO;
+      case 'R':
+        m_replacement_policy = RT_SPECIAL;
         break;
       default:
         exit_parse_error();
@@ -771,6 +794,7 @@ class cache_config {
   };
   unsigned m_result_fifo_entries;
   unsigned m_data_port_width;  //< number of byte the cache can access per cycle
+  bool m_bypass_on_rf;
   enum set_index_function
       m_set_index_function;  // Hash, linear, or custom set index function
 
@@ -849,6 +873,7 @@ class tag_array {
   void update_cache_parameters(cache_config &config);
   void add_pending_line(mem_fetch *mf);
   void remove_pending_line(mem_fetch *mf);
+  std::pair<new_addr_type, unsigned> get_hits(unsigned index);
 
  protected:
   // This constructor is intended for use only from derived classes that wish to
@@ -914,7 +939,9 @@ class mshr_table {
   void display(FILE *fp) const;
   // Returns true if there is a pending read after write
   bool is_read_after_write_pending(new_addr_type block_addr);
-
+  std::list<mem_fetch *> get_mf_list(new_addr_type block_addr);
+  unsigned num_entries() const { return m_data.size(); }
+  
   void check_mshr_parameters(unsigned num_entries, unsigned max_merged) {
     assert(m_num_entries == num_entries &&
            "Change of MSHR parameters between kernels is not allowed");
@@ -1084,6 +1111,7 @@ class cache_stats {
   cache_stats operator+(const cache_stats &cs);
   cache_stats &operator+=(const cache_stats &cs);
   void print_stats(FILE *fout, const char *cache_name = "Cache_stats") const;
+  void print_rt_stats(FILE *fout) const;
   void print_fail_stats(FILE *fout,
                         const char *cache_name = "Cache_fail_stats") const;
 
@@ -1097,7 +1125,11 @@ class cache_stats {
   void get_sub_stats_pw(struct cache_sub_stats_pw &css) const;
 
   void sample_cache_port_utility(bool data_port_busy, bool fill_port_busy);
-
+  
+  void add_block_addr_access(new_addr_type block_addr);
+  void mark_block_addr_hit(new_addr_type block_addr);
+  void inc_block_addr_access(std::pair<new_addr_type, unsigned> cache_hits);
+ 
  private:
   bool check_valid(int type, int status) const;
   bool check_fail_valid(int type, int fail) const;
@@ -1107,6 +1139,9 @@ class cache_stats {
   std::vector<std::vector<unsigned long long> > m_stats_pw;
   std::vector<std::vector<unsigned long long> > m_fail_stats;
 
+  std::set<new_addr_type> m_rt_cache_unused;
+  std::map<new_addr_type, unsigned> m_rt_cache_usefulness;
+  
   unsigned long long m_cache_port_available_cycles;
   unsigned long long m_cache_data_port_busy_cycles;
   unsigned long long m_cache_fill_port_busy_cycles;
@@ -1180,6 +1215,17 @@ class baseline_cache : public cache_t {
   void invalidate() { m_tag_array->invalidate(); }
   void print(FILE *fp, unsigned &accesses, unsigned &misses) const;
   void display_state(FILE *fp) const;
+  
+  std::list<mem_fetch*> probe_mshr(new_addr_type block_addr) { 
+    if (m_mshrs.probe(block_addr))
+      return m_mshrs.get_mf_list(block_addr);
+    else 
+      return {};
+  }
+  
+  unsigned num_mshr_entries() {
+    return m_mshrs.num_entries();
+  }
 
   // Stat collection
   const cache_stats &get_stats() const { return m_stats; }
@@ -1217,6 +1263,7 @@ class baseline_cache : public cache_t {
     m_tag_array->fill(addr, time, mask);
   }
 
+  bool get_bypass_rf_config() { return m_config.m_bypass_on_rf; }
  protected:
   // Constructor that can be used by derived classes with custom tag arrays
   baseline_cache(const char *name, cache_config &config, int core_id,

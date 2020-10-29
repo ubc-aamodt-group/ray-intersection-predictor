@@ -150,6 +150,7 @@ dram_t::dram_t(unsigned int partition_id, const memory_config *config,
   n_pre_partial = 0;
   n_req_partial = 0;
   ave_mrqs_partial = 0;
+  n_scheduled_requests = 0;
   bwutil_partial = 0;
 
   if (queue_limit())
@@ -355,6 +356,8 @@ void dram_t::cycle() {
   banks_1time += memory_pending;
   if (memory_pending > 0) banks_acess_total++;
 
+  n_scheduled_requests = memory_pending;
+  
   unsigned int memory_pending_rw = 0;
   unsigned read_blp_rw = 0;
   unsigned write_blp_rw = 0;
@@ -820,6 +823,8 @@ void dram_t::visualizer_print(gzFile visualizer_file) {
   gzprintf(visualizer_file, "dramavemrqs: %u %u\n", id,
            n_cmd_partial ? (ave_mrqs_partial / n_cmd_partial) : 0);
 
+  gzprintf(visualizer_file, "dramscheduled: %u %u\n", id, n_scheduled_requests);
+  gzprintf(visualizer_file, "drampending: %u %u\n", id, n_scheduled_requests + (n_cmd_partial ? (ave_mrqs_partial / n_cmd_partial) : 0));
   // utilization and efficiency
   gzprintf(visualizer_file, "dramutil: %u %u\n", id,
            n_cmd_partial ? 100 * bwutil_partial / n_cmd_partial : 0);
@@ -835,8 +840,10 @@ void dram_t::visualizer_print(gzFile visualizer_file) {
   n_act_partial = 0;
   n_pre_partial = 0;
   n_req_partial = 0;
+  n_scheduled_requests = 0;
 
   // dram access type classification
+  unsigned drammrq = 0;
   for (unsigned j = 0; j < m_config->nbk; j++) {
     gzprintf(visualizer_file, "dramglobal_acc_r: %u %u %u\n", id, j,
              m_stats->mem_access_type_stats[GLOBAL_ACC_R][id][j]);
@@ -850,7 +857,11 @@ void dram_t::visualizer_print(gzFile visualizer_file) {
              m_stats->mem_access_type_stats[CONST_ACC_R][id][j]);
     gzprintf(visualizer_file, "dramtexture_acc_r: %u %u %u\n", id, j,
              m_stats->mem_access_type_stats[TEXTURE_ACC_R][id][j]);
+    gzprintf(visualizer_file, "dram_acc: %u %u %u\n", id, j,
+             bk[j]->n_access);
+    drammrq += (bk[j]->mrq != NULL);
   }
+  gzprintf(visualizer_file, "drammrq: %u %u\n", id, drammrq);
 }
 
 void dram_t::set_dram_power_stats(unsigned &cmd, unsigned &activity,

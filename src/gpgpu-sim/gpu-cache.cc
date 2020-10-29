@@ -48,8 +48,8 @@ const char *cache_request_status_str(enum cache_request_status status) {
 
 const char *cache_fail_status_str(enum cache_reservation_fail_reason status) {
   static const char *static_cache_reservation_fail_reason_str[] = {
-      "LINE_ALLOC_FAIL", "MISS_QUEUE_FULL", "MSHR_ENRTY_FAIL",
-      "MSHR_MERGE_ENRTY_FAIL", "MSHR_RW_PENDING"};
+      "LINE_ALLOC_FAIL", "MISS_QUEUE_FULL", "MSHR_ENTRY_FAIL",
+      "MSHR_MERGE_ENTRY_FAIL", "MSHR_RW_PENDING"};
 
   assert(sizeof(static_cache_reservation_fail_reason_str) /
              sizeof(const char *) ==
@@ -230,6 +230,12 @@ void tag_array::remove_pending_line(mem_fetch *mf) {
   }
 }
 
+std::pair<new_addr_type, unsigned> tag_array::get_hits(unsigned index) {
+  unsigned hits = m_lines[index]->get_hits();
+  new_addr_type addr = m_lines[index]->get_addr();
+  return std::pair<new_addr_type, unsigned>(addr, hits);
+}
+
 enum cache_request_status tag_array::probe(new_addr_type addr, unsigned &idx,
                                            mem_fetch *mf,
                                            bool probe_mode) const {
@@ -248,6 +254,7 @@ enum cache_request_status tag_array::probe(new_addr_type addr, unsigned &idx,
   unsigned invalid_line = (unsigned)-1;
   unsigned valid_line = (unsigned)-1;
   unsigned long long valid_timestamp = (unsigned)-1;
+  unsigned valid_tree_level = 0;
 
   bool all_reserved = true;
 
@@ -294,6 +301,12 @@ enum cache_request_status tag_array::probe(new_addr_type addr, unsigned &idx,
             valid_timestamp = line->get_alloc_time();
             valid_line = index;
           }
+        } else if (m_config.m_replacement_policy == RT_SPECIAL) {
+           assert(mf->get_tree_level() != 0);
+           if (mf->get_tree_level() > valid_tree_level && !(line->m_rt_permanent)) {
+             valid_tree_level = mf->get_tree_level();
+             valid_line = index;
+           }
         }
       }
     }
@@ -346,6 +359,7 @@ enum cache_request_status tag_array::access(new_addr_type addr, unsigned time,
       m_pending_hit++;
     case HIT:
       m_lines[idx]->set_last_access_time(time, mf->get_access_sector_mask());
+      m_lines[idx]->inc_hits();
       break;
     case MISS:
       m_miss++;
@@ -356,8 +370,13 @@ enum cache_request_status tag_array::access(new_addr_type addr, unsigned time,
           evicted.set_info(m_lines[idx]->m_block_addr,
                            m_lines[idx]->get_modified_size());
         }
-        m_lines[idx]->allocate(m_config.tag(addr), m_config.block_addr(addr),
-                               time, mf->get_access_sector_mask());
+        if (mf->get_tree_level() < 4) {
+          m_lines[idx]->allocate(m_config.tag(addr), m_config.block_addr(addr),
+                                 time, mf->get_access_sector_mask(), true);
+        } else {
+          m_lines[idx]->allocate(m_config.tag(addr), m_config.block_addr(addr),
+                                 time, mf->get_access_sector_mask());
+        }
       }
       break;
     case SECTOR_MISS:
@@ -590,6 +609,10 @@ void mshr_table::display(FILE *fp) const {
     }
   }
 }
+
+std::list<mem_fetch*> mshr_table::get_mf_list(new_addr_type block_addr) {
+  return m_data[block_addr].m_list;
+}
 /***************************************************************** Caches
  * *****************************************************************/
 cache_stats::cache_stats() {
@@ -783,6 +806,34 @@ void cache_stats::print_stats(FILE *fout, const char *cache_name) const {
   }
 }
 
+void cache_stats::print_rt_stats(FILE *fout) const {
+  fprintf(fout, "Unused Cache Entries: \n");
+  unsigned counter = 0;
+  for (auto it=m_rt_cache_unused.begin(); it!=m_rt_cache_unused.end(); ++it) {
+    fprintf(fout, "0x%x\t", *it);
+    counter++;
+    if (counter > 10) {
+      fprintf(fout, "...");
+      break;
+    }
+  }
+  
+  fprintf(fout, "\nCache Hits: \n");
+  counter = 0;
+  for (auto it=m_rt_cache_usefulness.begin(); it!=m_rt_cache_usefulness.end(); ++it) {
+    if (it->second > 1) {
+      fprintf(fout, "[0x%x]: %d\t", it->first, it->second);
+      counter++;
+    }
+    if (counter > 10) {
+      fprintf(fout, "...");
+      break;
+    }
+  }
+  
+  fprintf(fout, "\n");
+}
+
 void cache_stats::print_fail_stats(FILE *fout, const char *cache_name) const {
   std::string m_cache_name = cache_name;
   for (unsigned type = 0; type < NUM_MEM_ACCESS_TYPE; ++type) {
@@ -944,6 +995,19 @@ void cache_stats::sample_cache_port_utility(bool data_port_busy,
   }
 }
 
+void cache_stats::add_block_addr_access(new_addr_type block_addr) {
+  m_rt_cache_unused.insert(block_addr);
+  m_rt_cache_usefulness.insert(std::pair<new_addr_type, unsigned>(block_addr, 0));
+}
+
+void cache_stats::mark_block_addr_hit(new_addr_type block_addr) {
+  m_rt_cache_unused.erase(block_addr);
+}
+
+void cache_stats::inc_block_addr_access(std::pair<new_addr_type, unsigned> cache_hits) {
+  m_rt_cache_usefulness[cache_hits.first] += cache_hits.second;
+}
+
 baseline_cache::bandwidth_management::bandwidth_management(cache_config &config)
     : m_config(config) {
   m_data_port_occupied_cycles = 0;
@@ -1054,13 +1118,18 @@ void baseline_cache::fill(mem_fetch *mf, unsigned time) {
   assert(e->second.m_valid);
   mf->set_data_size(e->second.m_data_size);
   mf->set_addr(e->second.m_addr);
-  if (m_config.m_alloc_policy == ON_MISS)
-    m_tag_array->fill(e->second.m_cache_index, time, mf);
-  else if (m_config.m_alloc_policy == ON_FILL) {
-    m_tag_array->fill(e->second.m_block_addr, time, mf);
-    if (m_config.is_streaming()) m_tag_array->remove_pending_line(mf);
-  } else
-    abort();
+  
+  // Skip cache fill if bypassing
+  if (!(m_config.m_bypass_on_rf && e->second.m_cache_index==0xffffffff)) {
+    if (m_config.m_alloc_policy == ON_MISS)
+      m_tag_array->fill(e->second.m_cache_index, time, mf);
+    else if (m_config.m_alloc_policy == ON_FILL) {
+      m_tag_array->fill(e->second.m_block_addr, time, mf);
+      if (m_config.is_streaming()) m_tag_array->remove_pending_line(mf);
+    } else
+      abort();
+  }
+    
   bool has_atomic = false;
   m_mshrs.mark_ready(e->second.m_block_addr, has_atomic);
   if (has_atomic) {
@@ -1146,9 +1215,9 @@ void baseline_cache::send_read_request(new_addr_type addr,
 
     do_miss = true;
   } else if (mshr_hit && !mshr_avail)
-    m_stats.inc_fail_stats(mf->get_access_type(), MSHR_MERGE_ENRTY_FAIL);
+    m_stats.inc_fail_stats(mf->get_access_type(), MSHR_MERGE_ENTRY_FAIL);
   else if (!mshr_hit && !mshr_avail)
-    m_stats.inc_fail_stats(mf->get_access_type(), MSHR_ENRTY_FAIL);
+    m_stats.inc_fail_stats(mf->get_access_type(), MSHR_ENTRY_FAIL);
   else
     assert(0);
 }
@@ -1259,9 +1328,9 @@ enum cache_request_status data_cache::wr_miss_wa_naive(
     if (miss_queue_full(2))
       m_stats.inc_fail_stats(mf->get_access_type(), MISS_QUEUE_FULL);
     else if (mshr_hit && !mshr_avail)
-      m_stats.inc_fail_stats(mf->get_access_type(), MSHR_MERGE_ENRTY_FAIL);
+      m_stats.inc_fail_stats(mf->get_access_type(), MSHR_MERGE_ENTRY_FAIL);
     else if (!mshr_hit && !mshr_avail)
-      m_stats.inc_fail_stats(mf->get_access_type(), MSHR_ENRTY_FAIL);
+      m_stats.inc_fail_stats(mf->get_access_type(), MSHR_ENTRY_FAIL);
     else
       assert(0);
 
@@ -1372,9 +1441,9 @@ enum cache_request_status data_cache::wr_miss_wa_fetch_on_write(
       if (miss_queue_full(1))
         m_stats.inc_fail_stats(mf->get_access_type(), MISS_QUEUE_FULL);
       else if (mshr_hit && !mshr_avail)
-        m_stats.inc_fail_stats(mf->get_access_type(), MSHR_MERGE_ENRTY_FAIL);
+        m_stats.inc_fail_stats(mf->get_access_type(), MSHR_MERGE_ENTRY_FAIL);
       else if (!mshr_hit && !mshr_avail)
-        m_stats.inc_fail_stats(mf->get_access_type(), MSHR_ENRTY_FAIL);
+        m_stats.inc_fail_stats(mf->get_access_type(), MSHR_ENTRY_FAIL);
       else
         assert(0);
 
@@ -1578,13 +1647,17 @@ enum cache_request_status read_only_cache::access(
   if (status == HIT) {
     cache_status = m_tag_array->access(block_addr, time, cache_index,
                                        mf);  // update LRU state
+    m_stats.mark_block_addr_hit(block_addr);
   } else if (status != RESERVATION_FAIL) {
     if (!miss_queue_full(0)) {
       bool do_miss = false;
+      m_stats.inc_block_addr_access(m_tag_array->get_hits(cache_index));
       send_read_request(addr, block_addr, cache_index, mf, time, do_miss,
                         events, true, false);
-      if (do_miss)
+      if (do_miss) {
         cache_status = MISS;
+        m_stats.add_block_addr_access(block_addr);
+      }
       else
         cache_status = RESERVATION_FAIL;
     } else {
@@ -1593,6 +1666,24 @@ enum cache_request_status read_only_cache::access(
     }
   } else {
     m_stats.inc_fail_stats(mf->get_access_type(), LINE_ALLOC_FAIL);
+    
+    if(m_config.m_bypass_on_rf) {
+      if (!miss_queue_full(0)) {
+        bool do_miss = false;
+        send_read_request(addr, block_addr, cache_index, mf, time, do_miss,
+                          events, true, false);
+        if (do_miss) {
+          cache_status = MISS;
+          m_stats.add_block_addr_access(block_addr);
+        }
+        else
+          cache_status = RESERVATION_FAIL;
+      } else {
+        cache_status = RESERVATION_FAIL;
+        m_stats.inc_fail_stats(mf->get_access_type(), MISS_QUEUE_FULL);
+      }
+    }
+    
   }
 
   m_stats.inc_stats(mf->get_access_type(),

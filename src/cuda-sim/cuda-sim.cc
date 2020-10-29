@@ -783,8 +783,11 @@ void ptx_instruction::set_opcode_and_latency() {
       op = MEMORY_BARRIER_OP;
       break;
     case CALL_OP: {
-      if (m_is_printf || m_is_cdp || m_is_raytrace) {
+      if (m_is_printf || m_is_cdp) {
         op = ALU_OP;
+      } else if (m_is_raytrace) {
+        // RT-CORE NOTE: Add latency 
+        op = RT_CORE_OP;
       } else
         op = CALL_OPS;
       break;
@@ -1077,6 +1080,8 @@ void ptx_instruction::pre_decode() {
         cache_op = CACHE_WRITE_BACK;
       else if (m_opcode == ATOM_OP)
         cache_op = CACHE_GLOBAL;
+      else if (m_is_raytrace)
+        cache_op = CACHE_ALL;
       break;
   }
 
@@ -1854,6 +1859,26 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
           this);  // texture obtain its data granularity from the texture info
     }
 
+    if (pI->m_is_raytrace) {
+      // RT-CORE NOTE
+      inst.set_rt_mem_accesses(lane_id, m_raytrace_mem_accesses);
+      insn_space.set_type(global_space);
+      inst.space = insn_space;
+      insn_data_size = 16;
+      inst.data_size = insn_data_size;
+      
+      m_gpu->gpgpu_ctx->func_sim->g_total_raytrace_mem_accesses += m_raytrace_mem_accesses.size();
+      if (m_raytrace_mem_accesses.size() < 49) m_gpu->gpgpu_ctx->func_sim->g_raytrace_mem_accesses[m_raytrace_mem_accesses.size()]++;
+      else m_gpu->gpgpu_ctx->func_sim->g_raytrace_mem_accesses[49]++;
+      m_gpu->gpgpu_ctx->func_sim->g_total_raytrace_hits += m_raytrace_hitcount;
+      
+      // Add tree level map
+      m_gpu->gpgpu_ctx->the_gpgpusim->g_the_gpu->rt_tree_level_map.insert(m_rt_tree_level_map.begin(), m_rt_tree_level_map.end());
+      
+      // insn_memaddr = m_raytrace_mem_accesses.front();
+      inst.set_addr(lane_id, m_raytrace_mem_accesses, MAX_ACCESSES_PER_INSN_PER_THREAD);
+    }
+    
     // Output register information to file and stdout
     if (config.get_ptx_inst_debug_to_file() != 0 &&
         (config.get_ptx_inst_debug_thread_uid() == 0 ||
@@ -1933,7 +1958,7 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
 
     // "Return values"
     if (!skip) {
-      if (!((inst_opcode == MMA_LD_OP || inst_opcode == MMA_ST_OP))) {
+      if (!((inst_opcode == MMA_LD_OP || inst_opcode == MMA_ST_OP || inst.m_is_raytrace))) {
         inst.space = insn_space;
         inst.set_addr(lane_id, insn_memaddr);
         inst.data_size = insn_data_size;  // simpleAtomicIntrinsics

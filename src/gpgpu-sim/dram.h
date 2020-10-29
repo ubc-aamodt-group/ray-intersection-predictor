@@ -237,6 +237,8 @@ class dram_t {
   unsigned int n_req_partial;
   unsigned int ave_mrqs_partial;
   unsigned int bwutil_partial;
+  unsigned int n_scheduled_requests;
+  
 
   class memory_stats_t *m_stats;
   class Stats *mrqq_Dist;  // memory request queue inside DRAM

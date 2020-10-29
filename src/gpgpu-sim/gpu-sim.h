@@ -352,7 +352,11 @@ class gpgpu_sim_config : public power_config,
       s++;
     }
     char buf[1024];
-    snprintf(buf, 1024, "gpgpusim_visualizer__%s.log.gz", date);
+    if (g_visualizer_filename == 0x0) {
+      snprintf(buf, 1024, "gpgpusim_visualizer__%s.log.gz", date);
+    } else {
+      snprintf(buf, 1024, "aerialvision__%s__%s.log.gz", g_visualizer_filename, date);
+    }
     g_visualizer_filename = strdup(buf);
 
     m_valid = true;
@@ -532,6 +536,7 @@ class gpgpu_sim : public gpgpu_t {
   const gpgpu_sim_config &get_config() const { return m_config; }
   void gpu_print_stat();
   void dump_pipeline(int mask, int s, int m) const;
+  void dump_rt_pipeline(int sid) const;
 
   void perf_memcpy_to_gpu(size_t dst_start_addr, size_t count);
 
@@ -657,6 +662,8 @@ class gpgpu_sim : public gpgpu_t {
   unsigned long long gpu_tot_sim_cycle_parition_util;
   unsigned long long partiton_replys_in_parallel;
   unsigned long long partiton_replys_in_parallel_total;
+  
+  std::map<new_addr_type, unsigned> rt_tree_level_map;
 
   FuncCache get_cache_config(std::string kernel_name);
   void set_cache_config(std::string kernel_name, FuncCache cacheConfig);

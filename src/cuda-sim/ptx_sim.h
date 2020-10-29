@@ -302,6 +302,7 @@ class ptx_thread_info {
     m_hw_wid = wid;
     m_hw_tid = tid;
     m_functionalSimulationMode = fsim;
+    m_raytrace_hitcount = 0;
   }
 
   void ptx_fetch_inst(inst_t &inst) const;
@@ -458,6 +459,10 @@ class ptx_thread_info {
 
   // Jin: get corresponding kernel grid for CDP purpose
   kernel_info_t &get_kernel() { return m_kernel; }
+  
+  void add_raytrace_mem_access(addr_t addr) { m_raytrace_mem_accesses.push_back(addr); }
+  void add_hit_count() { m_raytrace_hitcount++; }
+  void set_tree_level_map(std::map<new_addr_type, unsigned> tree_level) { m_rt_tree_level_map = tree_level; }
 
  public:
   addr_t m_last_effective_address;
@@ -513,6 +518,11 @@ class ptx_thread_info {
   bool m_enable_debug_trace;
 
   std::stack<class operand_info, std::vector<operand_info> > m_breakaddrs;
+  
+  // RT-CORE NOTE: Might want to track parent-child relations? not sure..
+  std::list<new_addr_type> m_raytrace_mem_accesses;
+  unsigned m_raytrace_hitcount;
+  std::map<new_addr_type, unsigned> m_rt_tree_level_map;
 };
 
 addr_t generic_to_local(unsigned smid, unsigned hwtid, addr_t addr);

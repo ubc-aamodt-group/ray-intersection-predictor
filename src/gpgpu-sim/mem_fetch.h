@@ -86,7 +86,9 @@ class mem_fetch {
   unsigned size() const { return m_data_size + m_ctrl_size; }
   bool is_write() { return m_access.is_write(); }
   void set_addr(new_addr_type addr) { m_access.set_addr(addr); }
+  void set_uncoalesced_addr(new_addr_type addr) { m_access.set_uncoalesced_addr(addr); }
   new_addr_type get_addr() const { return m_access.get_addr(); }
+  new_addr_type get_uncoalesced_addr() const { return m_access.get_uncoalesced_addr(); }
   unsigned get_access_size() const { return m_access.get_size(); }
   new_addr_type get_partition_addr() const { return m_partition_addr; }
   unsigned get_sub_partition_id() const { return m_raw_addr.sub_partition; }
@@ -99,6 +101,7 @@ class mem_fetch {
   bool isconst() const;
   enum mf_type get_type() const { return m_type; }
   bool isatomic() const;
+  bool israytrace() const { return m_inst.m_is_raytrace; }
 
   void set_return_timestamp(unsigned t) { m_timestamp2 = t; }
   void set_icnt_receive_time(unsigned t) { m_icnt_receive_time = t; }
@@ -127,6 +130,9 @@ class mem_fetch {
 
   mem_fetch *get_original_mf() { return original_mf; }
   mem_fetch *get_original_wr_mf() { return original_wr_mf; }
+  
+  void set_tree_level(unsigned tree_level) { m_rt_tree_level = tree_level; }
+  unsigned get_tree_level() { return m_rt_tree_level; }
 
  private:
   // request source information
@@ -174,6 +180,8 @@ class mem_fetch {
                      // size), so the pointer refers to the original request
   mem_fetch *original_wr_mf;  // this pointer refers to the original write req,
                               // when fetch-on-write policy is used
+                              
+  unsigned m_rt_tree_level;
 };
 
 #endif

@@ -237,6 +237,46 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       " {<nsets>:<bsize>:<assoc>,<rep>:<wr>:<alloc>:<wr_alloc>,<mshr>:<N>:<"
       "merge>,<mq>} ",
       "64:64:2,L:R:f:N,A:2:32,4");
+  // RT-CORE NOTE: Temporary (this section to be fixed..)
+  option_parser_register(
+      opp, "-gpgpu_rt_cache:l1", OPT_CSTR, &m_L0C_config.m_config_string,
+      "per-shader L1 constant memory cache  (READ-ONLY) config "
+      " {<nsets>:<bsize>:<assoc>,<rep>:<wr>:<alloc>:<wr_alloc>,<mshr>:<N>:<"
+      "merge>,<mq>} ",
+      "64:64:2,L:R:f:N,A:2:32,4");
+  m_L0T_config = m_L0C_config;
+  option_parser_register(
+      opp, "-gpgpu_rt_max_warps", OPT_UINT32, &m_rt_max_warps,
+      "max number of warps concurrently in one rt core ",
+      "0");
+  option_parser_register(
+      opp, "-gpgpu_rt_max_mshr_entries", OPT_UINT32, &m_rt_max_mshr_entries,
+      "max number of concurrent MSHR requests for the rt core ",
+      "0");
+  option_parser_register(
+      opp, "-gpgpu_rt_lock_threads", OPT_BOOL, &m_rt_lock_threads,
+      "wait for all threads in a warp to receive node information before continuing ",
+      "1");
+  option_parser_register(
+      opp, "-gpgpu_rt_coalesce_warps", OPT_BOOL, &m_rt_coalesce_warps,
+      "try to coalesce memory requests between warps ",
+      "0");
+  option_parser_register(
+      opp, "-gpgpu_rt_warppool", OPT_BOOL, &m_rt_warppool,
+      "manage memory of all warps in rt core as one set ",
+      "0");
+  option_parser_register(
+      opp, "-gpgpu_rt_warppool_order", OPT_CSTR, &m_rt_warppool_order,
+      "defines order of memory accesses from the warp pool ",
+      "s");
+  option_parser_register(
+      opp, "-gpgpu_rt_accumulate_stats", OPT_CSTR, &m_rt_accumulate_stats,
+      "accumulate stats between shaders ",
+      "s");
+  // option_parser_register(
+  //     opp, "-gpgpu_rt_warp_cycle", OPT_UINT32, &m_rt_warp_cycle,
+  //     "number of memory requests before switching warps ",
+  //     "4");
   option_parser_register(opp, "-gpgpu_cache:il1", OPT_CSTR,
                          &m_L1I_config.m_config_string,
                          "shader L1 instruction cache config "
@@ -262,6 +302,8 @@ void shader_core_config::reg_options(class OptionParser *opp) {
                          &m_L1D_config.l1_latency, "L1 Hit Latency", "1");
   option_parser_register(opp, "-gpgpu_smem_latency", OPT_UINT32, &smem_latency,
                          "smem Latency", "3");
+  option_parser_register(opp, "-gpgpu_rt_latency", OPT_UINT32, &rt_core_latency,
+                         "RT Core Latency", "3");
   option_parser_register(opp, "-gpgpu_cache:dl1PrefL1", OPT_CSTR,
                          &m_L1D_config.m_config_stringPrefL1,
                          "per-shader L1 data cache config "
@@ -328,6 +370,8 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "Size of shared memory per shader core (default 16kB)", "16384");
   option_parser_register(opp, "-gpgpu_adaptive_cache_config", OPT_UINT32,
                          &adaptive_cache_config, "adaptive_cache_config", "0");
+  // option_parser_register(opp, "-gpgpu_rt_warp_cycle", OPT_UINT32,
+  //                        &rt_warp_cycle, "rt_warp_cycle", "0");
   option_parser_register(
       opp, "-gpgpu_shmem_sizeDefault", OPT_UINT32, &gpgpu_shmem_sizeDefault,
       "Size of shared memory per shader core (default 16kB)", "16384");
@@ -486,8 +530,8 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       opp, "-gpgpu_pipeline_widths", OPT_CSTR, &pipeline_widths_string,
       "Pipeline widths "
       "ID_OC_SP,ID_OC_DP,ID_OC_INT,ID_OC_SFU,ID_OC_MEM,OC_EX_SP,OC_EX_DP,OC_EX_"
-      "INT,OC_EX_SFU,OC_EX_MEM,EX_WB,ID_OC_TENSOR_CORE,OC_EX_TENSOR_CORE",
-      "1,1,1,1,1,1,1,1,1,1,1,1,1");
+      "INT,OC_EX_SFU,OC_EX_MEM,EX_WB,ID_OC_TENSOR_CORE,OC_EX_TENSOR_CORE,ID_OC_RT,OC_EX_RT",
+      "1,1,1,1,1,1,1,1,1,1,1,1,1,1,1");
   option_parser_register(opp, "-gpgpu_tensor_core_avail", OPT_INT32,
                          &gpgpu_tensor_core_avail,
                          "Tensor Core Available (default=0)", "0");
@@ -506,6 +550,9 @@ void shader_core_config::reg_options(class OptionParser *opp) {
   option_parser_register(opp, "-gpgpu_num_tensor_core_units", OPT_INT32,
                          &gpgpu_num_tensor_core_units,
                          "Number of tensor_core units (default=1)", "0");
+  option_parser_register(opp, "-gpgpu_num_rt_core_units", OPT_INT32,
+                         &gpgpu_num_rt_core_units,
+                         "Number of rt core units (default=1)", "1");
   option_parser_register(
       opp, "-gpgpu_num_mem_units", OPT_INT32, &gpgpu_num_mem_units,
       "Number if ldst units (default=1) WARNING: not hooked up to anything",
@@ -1301,8 +1348,26 @@ void gpgpu_sim::gpu_print_stat() {
 
   // shader_print_l1_miss_stat( stdout );
   shader_print_cache_stats(stdout);
-
+  printf("rt_total_mem_access_count = %d\n", gpgpu_ctx->func_sim->g_total_raytrace_mem_accesses);
+  printf("accesses per thread (#accesses:#threads): ");
+  for (unsigned i=0; i<50; i++) {
+    printf("%d:%d\t", i, gpgpu_ctx->func_sim->g_raytrace_mem_accesses[i]);
+  }
+  printf("\nrt_total_hits = %d\n", gpgpu_ctx->func_sim->g_total_raytrace_hits);
+  
+  
   cache_stats core_cache_stats;
+  core_cache_stats.clear();
+  for (unsigned i=0; i<m_config.num_cluster(); i++) {
+    m_cluster[i]->get_rt_cache_stats(core_cache_stats);
+  }
+  printf("\nTotal_rt_cache_stats:\n");
+  core_cache_stats.print_stats(stdout, "Total_rt_cache_stats_breakdown");
+  printf("\nTotal_rt_cache_fail_stats:\n");
+  core_cache_stats.print_fail_stats(stdout,
+                                    "Total_rt_cache_fail_stats_breakdown");
+  
+  
   core_cache_stats.clear();
   for (unsigned i = 0; i < m_config.num_cluster(); i++) {
     m_cluster[i]->get_cache_stats(core_cache_stats);
@@ -1954,7 +2019,7 @@ void gpgpu_sim::cycle() {
       }
     }
 
-    if (!(gpu_sim_cycle % 50000)) {
+    if (!(gpu_sim_cycle % 100000)) {
       // deadlock detection
       if (m_config.gpu_deadlock_detect && gpu_sim_insn == last_gpu_sim_insn) {
         gpu_deadlock = true;
@@ -1999,6 +2064,12 @@ void gpgpu_sim::perf_memcpy_to_gpu(size_t dst_start_addr, size_t count) {
           wr_addr, raw_addr.sub_partition, mask);
     }
   }
+}
+
+void gpgpu_sim::dump_rt_pipeline(int sid) const {
+  printf("Dumping RT core pipeline state...\n");
+  m_cluster[m_shader_config->sid_to_cluster(sid)]->display_rt_pipeline(
+          sid, stdout, 0x40 & 0x2E);
 }
 
 void gpgpu_sim::dump_pipeline(int mask, int s, int m) const {

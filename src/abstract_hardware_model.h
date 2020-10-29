@@ -94,6 +94,7 @@ enum uarch_op_t {
   LOAD_OP,
   TENSOR_CORE_LOAD_OP,
   TENSOR_CORE_STORE_OP,
+  RT_CORE_OP,
   STORE_OP,
   BRANCH_OP,
   BARRIER_OP,
@@ -387,6 +388,7 @@ class core_config {
   bool gmem_skip_L1D;  // on = global memory access always skip the L1 cache
 
   bool adaptive_cache_config;
+  // unsigned rt_warp_cycle;
 };
 
 // bounded stack that implements simt reconvergence using pdom mechanism from
@@ -794,12 +796,16 @@ class mem_access_t {
 
   new_addr_type get_addr() const { return m_addr; }
   void set_addr(new_addr_type addr) { m_addr = addr; }
+  new_addr_type get_uncoalesced_addr() const { return m_uncoalesced_addr; }
+  void set_uncoalesced_addr(new_addr_type addr) { m_uncoalesced_addr = addr; }
   unsigned get_size() const { return m_req_size; }
   const active_mask_t &get_warp_mask() const { return m_warp_mask; }
   bool is_write() const { return m_write; }
   enum mem_access_type get_type() const { return m_type; }
   mem_access_byte_mask_t get_byte_mask() const { return m_byte_mask; }
   mem_access_sector_mask_t get_sector_mask() const { return m_sector_mask; }
+  unsigned get_tree_level() const { return m_rt_tree_level; }
+  void set_tree_level(unsigned tree_level) { m_rt_tree_level = tree_level; }
 
   void print(FILE *fp) const {
     fprintf(fp, "addr=0x%llx, %s, size=%u, ", m_addr,
@@ -851,6 +857,8 @@ class mem_access_t {
   active_mask_t m_warp_mask;
   mem_access_byte_mask_t m_byte_mask;
   mem_access_sector_mask_t m_sector_mask;
+  unsigned m_rt_tree_level;
+  new_addr_type m_uncoalesced_addr;
 };
 
 class mem_fetch;
@@ -924,6 +932,7 @@ class inst_t {
   }
   bool is_load() const {
     return (op == LOAD_OP || op == TENSOR_CORE_LOAD_OP ||
+            op == RT_CORE_OP ||
             memory_op == memory_load);
   }
   bool is_store() const {
@@ -1012,6 +1021,7 @@ class warp_inst_t : public inst_t {
     m_is_raytrace = false;
     m_is_cdp = 0;
     should_do_atomic = true;
+    // m_rt_warp_cycle = m_config->rt_warp_cycle;
   }
   virtual ~warp_inst_t() {}
 
@@ -1043,6 +1053,20 @@ class warp_inst_t : public inst_t {
     assert(num_addrs <= MAX_ACCESSES_PER_INSN_PER_THREAD);
     for (unsigned i = 0; i < num_addrs; i++)
       m_per_scalar_thread[n].memreqaddr[i] = addr[i];
+  }
+  
+  void set_addr(unsigned n, std::list<new_addr_type> addr, unsigned num_addrs) {
+    if (!m_per_scalar_thread_valid) {
+      m_per_scalar_thread.resize(m_config->warp_size);
+      m_per_scalar_thread_valid = true;
+    }
+    assert(num_addrs <= MAX_ACCESSES_PER_INSN_PER_THREAD);
+    assert(addr.size() > 0);
+    for (unsigned i = 0; i < num_addrs; i++) {
+      if (addr.size() == 0) return;
+      m_per_scalar_thread[n].memreqaddr[i] = addr.front();
+      addr.pop_front();
+    }
   }
   void print_m_accessq() {
     if (accessq_empty())
@@ -1152,6 +1176,48 @@ class warp_inst_t : public inst_t {
   unsigned get_uid() const { return m_uid; }
   unsigned get_schd_id() const { return m_scheduler_id; }
   active_mask_t get_warp_active_mask() const { return m_warp_active_mask; }
+  
+  // RT-CORE NOTE: Check that list assignments work like this.. or is there a better way?
+  void set_rt_mem_accesses(unsigned int tid, std::list<new_addr_type> mem_accesses);
+  void rt_mem_accesses_pop(new_addr_type addr);
+  bool rt_mem_accesses_empty();
+  
+  // RT-CORE NOTE: May need to update this logic for special node fetching? (i.e. vote on next mem access)
+  mem_access_t get_next_rt_mem_access(bool locked);
+  void fill_next_rt_mem_access(bool locked);
+  mem_access_t memory_coalescing_arch_rt(new_addr_type addr);
+  
+  bool mem_fetch_wait(bool locked);
+  
+  void clear_mem_fetch_wait(new_addr_type addr) { 
+    // printf("Clear Warp %d: 0x%x\t", m_warp_id, addr);
+    m_mf_awaiting_response.erase(addr);
+  }
+  void clear_rt_awaiting_threads(new_addr_type addr);
+  void clear_rt_access(new_addr_type addr) {
+    m_next_rt_accesses_set.erase(addr);
+  }
+  
+  void undo_rt_access(new_addr_type addr) { 
+    // printf("Undo Warp %d: 0x%x\t", m_warp_id, addr);
+    m_mf_awaiting_response.erase(addr);
+    assert (m_next_rt_accesses_set.find(m_current_rt_access) == m_next_rt_accesses_set.end());
+    m_next_rt_accesses.push_front(m_current_rt_access);
+    m_next_rt_accesses_set.insert(m_current_rt_access);
+
+  }
+  
+  void set_mem_fetch_wait(new_addr_type addr) {
+    m_mf_awaiting_response.insert(addr);
+  }
+  
+  std::set<new_addr_type> get_rt_accesses() { return m_next_rt_accesses_set; }
+  
+  unsigned get_coalesce_count() { return m_coalesce_count; }
+
+  // void dec_rt_warp_cycle() { m_rt_warp_cycle--; }
+  // void set_rt_warp_cycle() { m_rt_warp_cycle = m_config->rt_warp_cycle; }
+  // bool check_rt_warp_cycle() { return m_rt_warp_cycle <= 0; }
 
  protected:
   unsigned m_uid;
@@ -1162,7 +1228,7 @@ class warp_inst_t : public inst_t {
   bool m_isatomic;
   bool should_do_atomic;
   bool m_is_printf;
-  bool m_is_raytrace;
+  // bool m_is_raytrace;
   unsigned m_warp_id;
   unsigned m_dynamic_warp_id;
   const core_config *m_config;
@@ -1172,6 +1238,16 @@ class warp_inst_t : public inst_t {
       m_warp_issued_mask;  // active mask at issue (prior to predication test)
                            // -- for instruction counting
 
+   unsigned m_coalesce_count;
+
+  // Combined list + set to track insertion order with no duplicates (duplicates coalesced)
+  std::list<new_addr_type> m_next_rt_accesses;
+  std::set<new_addr_type> m_next_rt_accesses_set;
+  
+  new_addr_type m_current_rt_access;
+  
+  // List of current memory requests awaiting response
+  std::set<new_addr_type> m_mf_awaiting_response;
   struct per_thread_info {
     per_thread_info() {
       for (unsigned i = 0; i < MAX_ACCESSES_PER_INSN_PER_THREAD; i++)
@@ -1184,6 +1260,9 @@ class warp_inst_t : public inst_t {
                                                        // requests (to support
                                                        // 32B access in 8 chunks
                                                        // of 4B each)
+                                                       
+    // RT-CORE NOTE: Might need another variable to track depth of tree traversed?
+    std::list<new_addr_type> raytrace_mem_accesses;
   };
   bool m_per_scalar_thread_valid;
   std::vector<per_thread_info> m_per_scalar_thread;
@@ -1191,10 +1270,12 @@ class warp_inst_t : public inst_t {
   std::list<mem_access_t> m_accessq;
 
   unsigned m_scheduler_id;  // the scheduler that issues this inst
-
+  // unsigned m_rt_warp_cycle;
+  
   // Jin: cdp support
  public:
   int m_is_cdp;
+  bool m_is_raytrace;
 };
 
 void move_warp(warp_inst_t *&dst, warp_inst_t *&src);

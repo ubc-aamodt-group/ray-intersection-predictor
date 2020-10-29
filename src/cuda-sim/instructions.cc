@@ -2131,8 +2131,8 @@ void call_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   const symbol *func_addr = target.get_symbol();
   function_info *target_func = func_addr->get_pc();
   if (target_func->is_pdom_set()) {
-    printf("GPGPU-Sim PTX: PDOM analysis already done for %s \n",
-           target_func->get_name().c_str());
+    // printf("GPGPU-Sim PTX: PDOM analysis already done for %s \n",
+    //        target_func->get_name().c_str());
   } else {
     printf("GPGPU-Sim PTX: finding reconvergence points for \'%s\'...\n",
            target_func->get_name().c_str());
@@ -2171,13 +2171,18 @@ void call_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
     gpgpusim_cuda_vprintf(pI, thread, target_func);
     return;
   }   
-  // else if ( fname == "_Z7__magicv" || fname == "_Z10__traceRayv") {
-  //   trace_ray(pI, thread, target_func);
-  //   return;
-  // }
-  // else if ( fname == "_Z10__traceRay3Ray3HitPK6float4f" || fname == "_Z10__traceRay3RayP3HitPK6float4") {
   else if (fname.find("__traceRay") != std::string::npos) {
-    trace_ray(pI, thread, target_func);
+    // Track memory accesses for timing model
+    std::list<addr_t> mem_access_list;   
+    trace_ray(pI, thread, target_func, mem_access_list);
+    // printf("Trace Complete.\n");
+    return;
+  }
+  else if (fname.find("cwbvh") != std::string::npos) {
+    // Track memory accesses for timing model
+    std::list<addr_t> mem_access_list;   
+    trace_cwbvh(pI, thread, target_func, mem_access_list);
+    printf("Trace Complete.\n");
     return;
   }
 
