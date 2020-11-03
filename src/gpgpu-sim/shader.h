@@ -54,6 +54,7 @@
 #include "stack.h"
 #include "stats.h"
 #include "traffic_breakdown.h"
+#include "ray-predictor.h"
 
 #define NO_OP_FLAG 0xFF
 
@@ -1321,6 +1322,8 @@ class rt_unit : public pipelined_simd_unit {
       read_only_cache *m_L0_complet;
       read_only_cache *m_L0_tri;
       
+      ray_predictor *m_ray_predictor;
+      
       std::map<unsigned /*warp_id*/,
            std::map<unsigned /*regnum*/, unsigned /*count*/>>
            m_pending_writes;
@@ -1719,6 +1722,7 @@ class shader_core_config : public core_config {
   unsigned m_rt_max_mshr_entries;
   bool m_rt_lock_threads;
   bool m_rt_coalesce_warps;
+  bool m_rt_predictor;
   bool m_rt_warppool;
   char * m_rt_warppool_order;
   bool m_rt_warppool_fifo;

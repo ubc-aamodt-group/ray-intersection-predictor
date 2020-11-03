@@ -461,6 +461,9 @@ class ptx_thread_info {
   kernel_info_t &get_kernel() { return m_kernel; }
   
   void add_raytrace_mem_access(addr_t addr) { m_raytrace_mem_accesses.push_back(addr); }
+  void add_ray_hash(unsigned long long ray_hash) { m_ray_hash = ray_hash; }
+  void add_raytrace_prediction(addr_t addr) { m_raytrace_predictions.push_back(addr); }
+  void set_prediction_valid(bool valid) { m_raytrace_prediction_valid = valid; }
   void add_hit_count() { m_raytrace_hitcount++; }
   void set_tree_level_map(std::map<new_addr_type, unsigned> tree_level) { m_rt_tree_level_map = tree_level; }
 
@@ -522,6 +525,9 @@ class ptx_thread_info {
   // RT-CORE NOTE: Might want to track parent-child relations? not sure..
   std::list<new_addr_type> m_raytrace_mem_accesses;
   unsigned m_raytrace_hitcount;
+  unsigned long long m_ray_hash;
+  std::list<new_addr_type> m_raytrace_predictions;
+  bool m_raytrace_prediction_valid;
   std::map<new_addr_type, unsigned> m_rt_tree_level_map;
 };
 

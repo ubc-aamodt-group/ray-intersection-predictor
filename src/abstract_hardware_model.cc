@@ -755,6 +755,38 @@ void warp_inst_t::set_rt_mem_accesses(unsigned int tid, std::list<new_addr_type>
   m_per_scalar_thread[tid].raytrace_mem_accesses = mem_accesses; 
 }
 
+void warp_inst_t::set_rt_ray_hash(unsigned int tid, unsigned long long ray_hash) { 
+  if (!m_per_scalar_thread_valid) {
+    m_per_scalar_thread.resize(m_config->warp_size);
+    m_per_scalar_thread_valid = true;
+  }
+  
+  m_per_scalar_thread[tid].ray_hash = ray_hash; 
+}
+
+void warp_inst_t::set_rt_predictions(unsigned int tid, std::list<new_addr_type> predictions, bool prediction_valid) {
+  if (!m_per_scalar_thread_valid) {
+    m_per_scalar_thread.resize(m_config->warp_size);
+    m_per_scalar_thread_valid = true;
+  }
+  
+  m_per_scalar_thread[tid].raytrace_predictions = predictions;
+  m_per_scalar_thread[tid].raytrace_prediction_valid = prediction_valid;
+}
+
+void warp_inst_t::update_rt_mem_accesses(unsigned int tid, bool valid) {
+  if (valid) {
+    // Replace regular traversal accesses with prediction accesses
+    m_per_scalar_thread[tid].raytrace_mem_accesses = m_per_scalar_thread[tid].raytrace_predictions;
+  }
+  else {
+    // Add prediction accesses to the beginning of all mem accesses
+    for (auto it=m_per_scalar_thread[tid].raytrace_predictions.rbegin(); it!=m_per_scalar_thread[tid].raytrace_predictions.rend(); ++it) {
+      m_per_scalar_thread[tid].raytrace_mem_accesses.push_front(*it);
+    }
+  }
+}
+
 void warp_inst_t::rt_mem_accesses_pop(new_addr_type addr) {
   for (unsigned i = 0; i < m_config->warp_size; i++) {
     if (m_per_scalar_thread[i].raytrace_mem_accesses.front() == addr) 

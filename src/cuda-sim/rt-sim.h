@@ -17,7 +17,7 @@ void print_float4(float4 printVal);
 void print_stack(std::list<addr_t> &traversal_stack);
 
 // Trace Ray
-void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread, const class function_info * target_func, std::list<addr_t> & memory_accesses);
+void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread, const class function_info * target_func);
 void trace_cwbvh(const class ptx_instruction * pI, class ptx_thread_info * thread, const class function_info * target_func, std::list<addr_t> & memory_accesses);
 float magic_max7(float a0, float a1, float b0, float b1, float c0, float c1, float d);
 float magic_min7(float a0, float a1, float b0, float b1, float c0, float c1, float d);
@@ -40,6 +40,12 @@ struct Ray
   float3 get_direction() { return {dir_tmax.x, dir_tmax.y, dir_tmax.z}; }
   void set_direction(float4 new_dir) { dir_tmax = new_dir; }
 };
+
+// Predictor
+uint16_t hash_float(float x);
+unsigned long long compute_hash(Ray ray);
+void add_ray_prediction(ptx_thread_info * thread, unsigned long long ray_hash, new_addr_type prediction);
+std::list<new_addr_type> access_ray_predictor(class ptx_thread_info * thread, unsigned long long ray_hash);
 
 struct Hit
 {
@@ -71,6 +77,7 @@ bool ray_box_test(float3 low, float3 high, float3 direction, float3 origin, floa
 bool ray_box_test_cwbvh(float3 low, float3 high, float3 idir, float3 origin, float tmin, float tmax, float& thit);
 bool mt_ray_triangle_test(float3 p0, float3 p1, float3 p2, Ray ray_properties, float* thit);
 bool rtao_ray_triangle_test(float4 v00, float4 v11, float4 v22, Ray ray_properties, float* thit, Hit& ray_payload);
+Hit traverse_intersect(addr_t next_node, Ray ray_properties, addr_t node_start, addr_t tri_start, class ptx_thread_info * thread, memory_space * mem);
 
 unsigned bfind(unsigned a);
 unsigned popc(unsigned a);

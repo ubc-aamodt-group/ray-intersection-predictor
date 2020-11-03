@@ -1862,11 +1862,14 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
     if (pI->m_is_raytrace) {
       // RT-CORE NOTE
       inst.set_rt_mem_accesses(lane_id, m_raytrace_mem_accesses);
+      inst.set_rt_ray_hash(lane_id, m_ray_hash);
+      inst.set_rt_predictions(lane_id, m_raytrace_predictions, m_raytrace_prediction_valid);
       insn_space.set_type(global_space);
       inst.space = insn_space;
       insn_data_size = 16;
       inst.data_size = insn_data_size;
       
+      m_gpu->gpgpu_ctx->func_sim->g_total_valid_predictions += m_raytrace_prediction_valid;
       m_gpu->gpgpu_ctx->func_sim->g_total_raytrace_mem_accesses += m_raytrace_mem_accesses.size();
       if (m_raytrace_mem_accesses.size() < 49) m_gpu->gpgpu_ctx->func_sim->g_raytrace_mem_accesses[m_raytrace_mem_accesses.size()]++;
       else m_gpu->gpgpu_ctx->func_sim->g_raytrace_mem_accesses[49]++;

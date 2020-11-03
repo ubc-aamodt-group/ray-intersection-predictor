@@ -1179,8 +1179,15 @@ class warp_inst_t : public inst_t {
   
   // RT-CORE NOTE: Check that list assignments work like this.. or is there a better way?
   void set_rt_mem_accesses(unsigned int tid, std::list<new_addr_type> mem_accesses);
+  void set_rt_ray_hash(unsigned int tid, unsigned long long ray_hash);
+  void set_rt_predictions(unsigned int tid, std::list<new_addr_type> predictions, bool prediction_valid);
   void rt_mem_accesses_pop(new_addr_type addr);
   bool rt_mem_accesses_empty();
+  
+  bool rt_predicted(unsigned int tid) { return !(m_per_scalar_thread[tid].raytrace_predictions.empty()); }
+  bool rt_prediction_valid(unsigned int tid) { return m_per_scalar_thread[tid].raytrace_prediction_valid; };
+  
+  void update_rt_mem_accesses(unsigned int tid, bool valid);
   
   // RT-CORE NOTE: May need to update this logic for special node fetching? (i.e. vote on next mem access)
   mem_access_t get_next_rt_mem_access(bool locked);
@@ -1260,9 +1267,12 @@ class warp_inst_t : public inst_t {
                                                        // requests (to support
                                                        // 32B access in 8 chunks
                                                        // of 4B each)
-                                                       
-    // RT-CORE NOTE: Might need another variable to track depth of tree traversed?
+                                                   
+    // RT variables    
     std::list<new_addr_type> raytrace_mem_accesses;
+    std::list<new_addr_type> raytrace_predictions;
+    bool raytrace_prediction_valid;
+    unsigned long long ray_hash;
   };
   bool m_per_scalar_thread_valid;
   std::vector<per_thread_info> m_per_scalar_thread;
@@ -1354,6 +1364,25 @@ class core_t {
   unsigned get_reduction_value(unsigned ctaid, unsigned barid) {
     return reduction_storage[ctaid][barid];
   }
+  
+  void add_predictor_entry(unsigned long long hash, new_addr_type node) {
+    if (predictor_table.find(hash) != predictor_table.end()) {
+      predictor_table[hash].push_back(node);
+    } else {
+      std::list<new_addr_type> node_list;
+      node_list.push_back(node);
+      predictor_table.insert(std::pair<unsigned long long, std::list<new_addr_type> >(hash, node_list));
+    }
+  }
+  
+  std::list<new_addr_type> get_predictor_entry(unsigned long long hash) {
+    if (predictor_table.find(hash) != predictor_table.end()) {
+      return predictor_table[hash];
+    } else {
+      std::list<new_addr_type> empty_list;
+      return empty_list;
+    }
+  }
 
  protected:
   class gpgpu_sim *m_gpu;
@@ -1363,6 +1392,9 @@ class core_t {
   unsigned m_warp_size;
   unsigned m_warp_count;
   unsigned reduction_storage[MAX_CTA_PER_SHADER][MAX_BARRIERS_PER_CTA];
+  
+  // RT-CORE NOTE: Temporary
+  std::map<unsigned long long, std::list<new_addr_type> > predictor_table;
 };
 
 // register that can hold multiple instructions.

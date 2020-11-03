@@ -2520,6 +2520,9 @@ rt_unit::rt_unit(mem_fetch_interface *icnt,
   m_L0_tri = new read_only_cache( "L0Triangle", m_config->m_L0T_config, m_sid,
                                   get_shader_constant_cache_id(), icnt, 
                                   IN_L1C_MISS_QUEUE);
+                                
+  // TODO: Get the configurations from m_config 
+  m_ray_predictor = new ray_predictor(5, 5, true, 128, 2);
 
   // l0c_latency_queue.resize(m_config->m_L0C_config.)
 
@@ -2655,26 +2658,49 @@ void rt_unit::cycle() {
   // if (m_config->m_L0_complet_config.l1_latency > 0) l0c_latency_queue_cycle();
   // if (m_config->m_L0_tri_config.l1_latency > 0) l0t_latency_queue_cycle();
   
+  if (m_config->m_rt_predictor) {
+    // Move warp to ray predictor 
+    if (m_ray_predictor->empty()) {
+      // If predictor is not currently busy, get any previous warps out and add incoming warp
+      warp_inst_t predicted_inst = m_ray_predictor->lookup(pipe_reg);
+      
+      // If returned warp is non-empty, add it to warp pool
+      if (!predicted_inst.empty()) {
+        m_current_warps.insert(std::pair<unsigned,warp_inst_t>(predicted_inst.warp_id(), predicted_inst));
+      }
+      
+      // Move current warp out of rt-unit
+      m_dispatch_reg->clear();
+    }
+    
+    // For delay timing
+    m_ray_predictor->cycle();
+  }
+  
   bool done = true;
+  warp_inst_t rt_inst;
+  // If using predictor, only use m_current_warps for warp pool. Otherwise, add in pipe_reg
+  if (!(m_config->m_rt_predictor)) {
+    rt_inst = pipe_reg;
+    m_dispatch_reg->clear();
+  }
   // RT-CORE NOTE: How to cycle both complet cache and triangle cache?
-  done &= memory_cycle(pipe_reg, rc_fail, type);
+  done &= memory_cycle(rt_inst, rc_fail, type);
   m_mem_rc = rc_fail;
   
   if (!done) {  // log stall types and return
     // If coalescing warp requests, move unconditionally
-    if (m_config->m_rt_coalesce_warps && m_current_warps.size() < m_config->m_rt_max_warps && !pipe_reg.empty()) {
-      unsigned warp_id = pipe_reg.warp_id();
-      m_current_warps.insert(std::pair<unsigned,warp_inst_t>(pipe_reg.warp_id(), pipe_reg));
-      assert(warp_id == m_dispatch_reg->warp_id());
-      m_dispatch_reg->clear();
+    if (m_config->m_rt_coalesce_warps && m_current_warps.size() < m_config->m_rt_max_warps && !rt_inst.empty()) {
+      unsigned warp_id = rt_inst.warp_id();
+      m_current_warps.insert(std::pair<unsigned,warp_inst_t>(rt_inst.warp_id(), rt_inst));
+      rt_inst.clear();
     }
     // Otherwise wait until waiting for response
     else if (m_config->m_rt_max_warps > 0 && m_current_warps.size() < m_config->m_rt_max_warps) {
-      if (pipe_reg.mem_fetch_wait(m_config->m_rt_lock_threads) && !pipe_reg.empty()) {
-        unsigned warp_id = pipe_reg.warp_id();
-        m_current_warps.insert(std::pair<unsigned,warp_inst_t>(pipe_reg.warp_id(), pipe_reg));
-        assert(warp_id == m_dispatch_reg->warp_id());
-        m_dispatch_reg->clear();
+      if (rt_inst.mem_fetch_wait(m_config->m_rt_lock_threads) && !rt_inst.empty()) {
+        unsigned warp_id = rt_inst.warp_id();
+        m_current_warps.insert(std::pair<unsigned,warp_inst_t>(rt_inst.warp_id(), rt_inst));
+        rt_inst.clear();
       }
     }
 
@@ -2686,7 +2712,8 @@ void rt_unit::cycle() {
   }
 
   // If "done" (no more mem accesses)
-  if (!pipe_reg.empty() && !pipe_reg.mem_fetch_wait(m_config->m_rt_lock_threads)) {
+  if (!rt_inst.empty() && !rt_inst.mem_fetch_wait(m_config->m_rt_lock_threads)) {
+    pipe_reg = rt_inst;
     unsigned warp_id = pipe_reg.warp_id();
     assert(pipe_reg.is_load());
     assert(pipe_reg.space.get_type() == global_space);
@@ -3914,6 +3941,8 @@ void rt_unit::print(FILE *fout) const {
     fprintf(fout, "%d ", m_dispatch_reg->mem_fetch_wait(m_config->m_rt_lock_threads));
   }
   m_dispatch_reg->print(fout);
+  fprintf(fout, "Predictor warps: ");
+  m_ray_predictor->display_state(fout);  
   fprintf(fout, "Other awaiting warps:\n");
   for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
     warp_inst_t inst = it->second;
@@ -5368,4 +5397,60 @@ void exec_shader_core_ctx::checkExecutionStatusAndUpdate(warp_inst_t &inst,
       cflog_update_thread_pc(m_sid, tid, pc);
     }
   }
+}
+
+
+ray_predictor::ray_predictor(  unsigned go_up_level, unsigned number_of_entries_cap,
+                    bool use_replacement_policy, unsigned entry_threshold, unsigned cycle_delay ) {
+                      
+  m_predictor_table = {};
+  m_num_entries = 0;
+  m_busy = false;
+  
+  m_go_up_level = go_up_level;
+  m_number_of_entries_cap = number_of_entries_cap;
+  m_use_replacement_policy = use_replacement_policy;
+  m_entry_threshold = entry_threshold;
+  m_cycle_delay = cycle_delay;
+}
+                    
+                    
+warp_inst_t ray_predictor::lookup(warp_inst_t inst) {
+  if (inst.empty()) {
+    // Not a valid warp, return previous warp
+    warp_inst_t prev_warp = m_current_warp;
+    // Clear current warp
+    m_current_warp.clear();
+    return prev_warp;
+  }
+  
+  // Mark predictor busy
+  m_busy = true;
+  reset_cycle_delay();
+  warp_inst_t prev_warp = m_current_warp;
+  m_current_warp = inst;
+  
+  // TODO: Access predictor table (skip for infinite size table)
+  
+  
+  // Iterate through every thread
+  unsigned warp_size = inst.warp_size();
+  for (unsigned i=0; i<warp_size; i++) {
+    if (m_current_warp.rt_predicted(i)) {
+      m_current_warp.update_rt_mem_accesses(i, m_current_warp.rt_prediction_valid(i));
+    }
+    
+    // Otherwise no prediction made
+  }
+  return prev_warp;
+  
+}
+
+void ray_predictor::cycle() {
+  if (m_cycles == 0) m_busy = false;
+  else if (m_cycles > 0) m_cycles--;
+}
+
+void ray_predictor::display_state(FILE* fout) {
+  m_current_warp.print(fout);
 }

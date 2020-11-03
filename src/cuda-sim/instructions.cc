@@ -2173,8 +2173,7 @@ void call_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
   }   
   else if (fname.find("__traceRay") != std::string::npos) {
     // Track memory accesses for timing model
-    std::list<addr_t> mem_access_list;   
-    trace_ray(pI, thread, target_func, mem_access_list);
+    trace_ray(pI, thread, target_func);
     // printf("Trace Complete.\n");
     return;
   }
