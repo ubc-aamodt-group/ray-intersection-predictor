@@ -1,6 +1,7 @@
 #include "ptx_ir.h"
 #include "vector-math.h"
 #include "rt-sim.h"
+#include "../../libcuda/gpgpu_context.h"
 
 void decode_space( memory_space_t &space, ptx_thread_info *thread, const operand_info &op, memory_space *&mem, addr_t &addr);
 
@@ -563,9 +564,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
         *(int*) &ray_payload.t_triId_u_v.y = (int)-1;
         mem->write(ray_payload_addr, sizeof(Hit), &ray_payload, NULL, NULL);
     }
-    
-    thread->set_tree_level_map(tree_level_map);
-    
+        
     // PREDICTOR
     
     // Check predictor
@@ -579,7 +578,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
         Hit predictor_hit;
         for (auto node=predicted_nodes.begin(); node!=predicted_nodes.end(); ++node) {
             // printf("0x%x\n", *node);
-            predictor_hit = traverse_intersect(*node, ray_properties, node_start, tri_start, thread, mem);
+            predictor_hit = traverse_intersect(*node, ray_properties, node_start, tri_start, thread, mem, tree_level_map);
             // TODO: Add stats (compare predictor_hit to original ray_payload)
             
             if (ray_properties.anyhit && predictor_hit.t_triId_u_v.x > 0) {
@@ -597,9 +596,12 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     
     // Add entry if hit
     if (thit != ray_properties.get_tmax()) {
-        add_ray_prediction(thread, ray_hash, *(int *)&ray_payload.t_triId_u_v.y);
+        addr_t tri_addr = *(int *)&ray_payload.t_triId_u_v.y;
+        add_ray_prediction(thread, ray_hash, ~tri_addr);
         // TODO: Add this memory access to thread
     }
+    
+    thread->set_tree_level_map(tree_level_map);
 }
 
 bool ray_box_test_cwbvh(float3 low, float3 high, float3 idir, float3 origin, float tmin, float tmax, float& thit) 
@@ -857,7 +859,7 @@ std::list<new_addr_type> access_ray_predictor(class ptx_thread_info * thread, un
 }
 
 
-Hit traverse_intersect(addr_t next_node, Ray ray_properties, addr_t node_start, addr_t tri_start, class ptx_thread_info * thread, memory_space * mem) {
+Hit traverse_intersect(addr_t next_node, Ray ray_properties, addr_t node_start, addr_t tri_start, class ptx_thread_info * thread, memory_space * mem, std::map<new_addr_type, unsigned> &tree_level_map) {
     
     std::list<addr_t> traversal_stack;
     
@@ -889,6 +891,12 @@ Hit traverse_intersect(addr_t next_node, Ray ray_properties, addr_t node_start, 
             // TODO: Figure out if node_start + next_node + 2 also should be recorded
             thread->add_raytrace_prediction(node_start + next_node);
             
+            unsigned current_tree_level = tree_level_map[node_start + next_node];
+            if (current_tree_level <= 0) {
+                unsigned current_tree_level = GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[node_start + next_node];
+            }
+            assert(current_tree_level > 0);
+            
             #ifdef DEBUG_PRINT
             printf("Node data: \n");
             print_float4(n0xy);
@@ -916,6 +924,11 @@ Hit traverse_intersect(addr_t next_node, Ray ray_properties, addr_t node_start, 
             mem->read(node_start + next_node + 3*sizeof(float4), sizeof(addr_t), &child0_addr);
             mem->read(node_start + next_node + 3*sizeof(float4) + sizeof(addr_t), sizeof(addr_t), &child1_addr);
             
+            if ((int)child0_addr > 0)
+                tree_level_map.insert(std::pair<new_addr_type, unsigned>(node_start + child0_addr * 0x10, current_tree_level + 1));
+            if ((int)child1_addr > 0)
+                tree_level_map.insert(std::pair<new_addr_type, unsigned>(node_start + child1_addr * 0x10, current_tree_level + 1));
+                
             #ifdef DEBUG_PRINT
             printf("Child 0 offset: 0x%x \t", child0_addr);
             printf("Child 1 offset: 0x%x \n", child1_addr);
@@ -980,6 +993,9 @@ Hit traverse_intersect(addr_t next_node, Ray ray_properties, addr_t node_start, 
             mem->read(tri_start + tri_addr + 2*sizeof(float3), sizeof(float3), &p2);
             thread->add_raytrace_prediction(tri_start + tri_addr);
 
+            // RT-CORE NOTE: Fix for triangles
+            tree_level_map.insert(std::pair<new_addr_type, unsigned>(tri_start + tri_addr, 0xff));
+            
             // Triangle intersection algorithm
             hit = mt_ray_triangle_test(p0, p1, p2, ray_properties, &thit);
             
@@ -994,6 +1010,9 @@ Hit traverse_intersect(addr_t next_node, Ray ray_properties, addr_t node_start, 
                 mem->read(tri_start + tri_addr + sizeof(float4), sizeof(float4), &p1);
                 mem->read(tri_start + tri_addr + 2*sizeof(float4), sizeof(float4), &p2);
                 thread->add_raytrace_prediction(tri_start + tri_addr);
+                
+                // RT-CORE NOTE: Fix for triangles
+                tree_level_map.insert(std::pair<new_addr_type, unsigned>(tri_start + tri_addr, 0xff));
                 
                 // Check if triangle is valid (if (__float_as_int(v00.x) == 0x80000000))
                 if (*(int*)&p0.x ==  0x80000000) {

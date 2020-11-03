@@ -77,7 +77,7 @@ bool ray_box_test(float3 low, float3 high, float3 direction, float3 origin, floa
 bool ray_box_test_cwbvh(float3 low, float3 high, float3 idir, float3 origin, float tmin, float tmax, float& thit);
 bool mt_ray_triangle_test(float3 p0, float3 p1, float3 p2, Ray ray_properties, float* thit);
 bool rtao_ray_triangle_test(float4 v00, float4 v11, float4 v22, Ray ray_properties, float* thit, Hit& ray_payload);
-Hit traverse_intersect(addr_t next_node, Ray ray_properties, addr_t node_start, addr_t tri_start, class ptx_thread_info * thread, memory_space * mem);
+Hit traverse_intersect(addr_t next_node, Ray ray_properties, addr_t node_start, addr_t tri_start, class ptx_thread_info * thread, memory_space * mem, std::map<new_addr_type, unsigned> &tree_level_map);
 
 unsigned bfind(unsigned a);
 unsigned popc(unsigned a);
