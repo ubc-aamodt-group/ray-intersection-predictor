@@ -1353,7 +1353,9 @@ void gpgpu_sim::gpu_print_stat() {
   // shader_print_l1_miss_stat( stdout );
   shader_print_cache_stats(stdout);
   printf("rt_total_valid_predictions = %d\n", gpgpu_ctx->func_sim->g_total_valid_predictions);
+  printf("rt_total_predictor_table_hits = %d\n", gpgpu_ctx->func_sim->g_total_predictor_hits);
   printf("rt_total_mem_access_count = %d\n", gpgpu_ctx->func_sim->g_total_raytrace_mem_accesses);
+  printf("rt_additional_mem_accesses = %d\n", gpgpu_ctx->func_sim->g_additional_rt_mem_accesses);
   printf("accesses per thread (#accesses:#threads): ");
   for (unsigned i=0; i<50; i++) {
     printf("%d:%d\t", i, gpgpu_ctx->func_sim->g_raytrace_mem_accesses[i]);

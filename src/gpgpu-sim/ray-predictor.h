@@ -20,6 +20,8 @@ class ray_predictor {
     void cycle();
     void display_state(FILE* fout);
     
+    unsigned predictor_table_size() {return m_predictor_table.size(); }
+    
   private:
   
     // TODO:
@@ -27,8 +29,7 @@ class ray_predictor {
     void add_entry();
     void reset_cycle_delay() { m_cycles = m_cycle_delay; };
     
-    unsigned int m_num_entries;
-    std::set<unsigned long long> m_predictor_table;
+    std::map<unsigned long long, unsigned long long> m_predictor_table;
     
     warp_inst_t m_current_warp;
     

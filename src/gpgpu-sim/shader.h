@@ -1830,6 +1830,8 @@ struct shader_core_stats_pod {
   unsigned* rt_warppool_size;
   unsigned* rt_mshr_size;
   
+  unsigned* rt_predictor_size;
+  
   unsigned rt_warppool_potential_merge;
  
   std::map<new_addr_type, unsigned> rt_mem_access_heat_map;
@@ -1946,6 +1948,7 @@ class shader_core_stats : public shader_core_stats_pod {
     rt_max_mshr_entries = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_warppool_size = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_mshr_size = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_predictor_size = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
 
     m_outgoing_traffic_stats = new traffic_breakdown("coretomem");
     m_incoming_traffic_stats = new traffic_breakdown("memtocore");

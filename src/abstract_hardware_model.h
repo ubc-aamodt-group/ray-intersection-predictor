@@ -1186,6 +1186,7 @@ class warp_inst_t : public inst_t {
   
   bool rt_predicted(unsigned int tid) { return !(m_per_scalar_thread[tid].raytrace_predictions.empty()); }
   bool rt_prediction_valid(unsigned int tid) { return m_per_scalar_thread[tid].raytrace_prediction_valid; };
+  unsigned long long rt_ray_hash(unsigned int tid) { return m_per_scalar_thread[tid].ray_hash; }
   
   void update_rt_mem_accesses(unsigned int tid, bool valid);
   
@@ -1367,6 +1368,9 @@ class core_t {
   
   void add_predictor_entry(unsigned long long hash, new_addr_type node) {
     if (predictor_table.find(hash) != predictor_table.end()) {
+      for (std::list<new_addr_type>::iterator n=predictor_table[hash].begin(); n!=predictor_table[hash].end(); ++n) {
+        if (*n == node) return;
+      }
       predictor_table[hash].push_back(node);
     } else {
       std::list<new_addr_type> node_list;

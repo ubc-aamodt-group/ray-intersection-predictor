@@ -953,6 +953,14 @@ void shader_core_stats::visualizer_print(gzFile visualizer_file) {
   for (unsigned i = 0; i < m_config->num_shader(); i++)
     gzprintf(visualizer_file, "%u ", rt_mshr_size[i]);
   gzprintf(visualizer_file, "\n");
+  
+  // Predictor Stats
+  gzprintf(visualizer_file, "rtpredict:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_predictor_size[i]);
+  gzprintf(visualizer_file, "\n");
+  
+  
 
   // instruction count per shader core
   gzprintf(visualizer_file, "shaderinsncount:  ");
@@ -2573,7 +2581,7 @@ void rt_unit::cycle() {
   m_stats->rt_cur_warps[m_sid] = m_current_warps.size();
   if (m_config->m_rt_warppool) m_stats->rt_warppool_size[m_sid] = m_warppool_mem_accesses.size();
   m_stats->rt_mshr_size[m_sid] = m_L0_complet->num_mshr_entries();
-  
+  m_stats->rt_predictor_size[m_sid] = m_ray_predictor->predictor_table_size();
   
   
   if (!m_response_fifo.empty()) {
@@ -5404,7 +5412,6 @@ ray_predictor::ray_predictor(  unsigned go_up_level, unsigned number_of_entries_
                     bool use_replacement_policy, unsigned entry_threshold, unsigned cycle_delay ) {
                       
   m_predictor_table = {};
-  m_num_entries = 0;
   m_busy = false;
   
   m_go_up_level = go_up_level;
@@ -5430,8 +5437,7 @@ warp_inst_t ray_predictor::lookup(warp_inst_t inst) {
   warp_inst_t prev_warp = m_current_warp;
   m_current_warp = inst;
   
-  // TODO: Access predictor table (skip for infinite size table)
-  
+  unsigned long long accessed_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
   
   // Iterate through every thread
   unsigned warp_size = inst.warp_size();
@@ -5439,8 +5445,14 @@ warp_inst_t ray_predictor::lookup(warp_inst_t inst) {
     if (m_current_warp.rt_predicted(i)) {
       m_current_warp.update_rt_mem_accesses(i, m_current_warp.rt_prediction_valid(i));
     }
-    
     // Otherwise no prediction made
+    
+    // TODO: Access predictor table (skip for infinite size table)
+    if (m_predictor_table.find(m_current_warp.rt_ray_hash(i)) == m_predictor_table.end()) {
+      m_predictor_table.insert(std::pair<unsigned long long, unsigned long long>(m_current_warp.rt_ray_hash(i), accessed_timestamp));
+    } else {
+      m_predictor_table[m_current_warp.rt_ray_hash(i)] = accessed_timestamp;
+    }
   }
   return prev_warp;
   
