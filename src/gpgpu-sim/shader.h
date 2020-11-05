@@ -1723,6 +1723,7 @@ class shader_core_config : public core_config {
   bool m_rt_lock_threads;
   bool m_rt_coalesce_warps;
   bool m_rt_predictor;
+  char * m_rt_hash;
   bool m_rt_warppool;
   char * m_rt_warppool_order;
   bool m_rt_warppool_fifo;

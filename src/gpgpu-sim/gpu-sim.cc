@@ -270,6 +270,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "model ray predictor unit ",
       "0");
   option_parser_register(
+      opp, "-gpgpu_rt_predictor_hash", OPT_CSTR, &m_rt_hash,
+      "ray hash type ",
+      "0");
+  option_parser_register(
       opp, "-gpgpu_rt_warppool_order", OPT_CSTR, &m_rt_warppool_order,
       "defines order of memory accesses from the warp pool ",
       "s");

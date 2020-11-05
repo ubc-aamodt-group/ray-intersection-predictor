@@ -42,7 +42,9 @@ struct Ray
 };
 
 // Predictor
-uint16_t hash_float(float x);
+// uint16_t hash_float(float x);
+uint32_t hash_comp(float x, uint32_t num_bits);
+void hash_comp(float x, uint32_t num_bits, uint32_t& sign, uint32_t& exp, uint32_t& mant);
 unsigned long long compute_hash(Ray ray);
 void add_ray_prediction(ptx_thread_info * thread, unsigned long long ray_hash, new_addr_type prediction);
 std::list<new_addr_type> access_ray_predictor(class ptx_thread_info * thread, unsigned long long ray_hash);

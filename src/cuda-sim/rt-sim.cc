@@ -596,7 +596,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
         }
         else {
             // Prediction did not help
-            GPGPU_Context()->func_sim->g_additional_rt_mem_accesses += predicted_nodes.size();
+            GPGPU_Context()->func_sim->g_additional_rt_mem_accesses += thread->raytrace_prediction_size();
         }
         
     }
@@ -795,80 +795,93 @@ float3 calculate_idir(float3 direction) {
 
 
 
-uint16_t hash_float(float x) {
-  uint32_t o_x = *( (uint32_t*) &x );
+uint32_t hash_comp(float x, uint32_t num_bits) {
+    uint32_t mask = UINT32_MAX >> (32 - num_bits);
 
-  // take most significant num_digits of position
-  bool sign_bit_x = (o_x >> 31) & 0x1;
+    uint32_t o_x = *((uint32_t*) &x);
 
-  // 30, 0x1 = 1 bit
-  // 29, 0x3 = 2 bits
-  // 28, 0x7 = 3 bits
-  // 27, 0xf = 4 bits
+    uint32_t sign_bit_x = o_x >> 31;
+    uint32_t exp_x = (o_x >> (31 - num_bits)) & mask;
+    uint32_t mant_x = (o_x >> (23 - num_bits)) & mask;
 
-  // won't fit into long
-  // 26, 0x1f = 5 bits
-  // 25, 0x3f = 6 bits
-  // 24, 0x7f = 7 bits
-  uint16_t exp_x = ((o_x >> 26) & 0x1f);
-
-  // 22, 0x1 = 1 bit
-  // 21, 0x3 = 2 bits
-  // 20, 0x7 = 3 bits
-  // 19, 0xf = 4 bits
-
-  // won't fit into long
-  // 18, 0x1f = 5 bits
-  // 17, 0x3f = 6 bits
-  // 16, 0x7f = 7 bits
-  // 15, 0xff = 8 bits
-  uint16_t mant_x = ((o_x >> 18) & 0x1f);
-
-  // make sure it all fits!
-  uint16_t hash_x = (sign_bit_x << 15) | (exp_x << 7) |  mant_x;
-
-  return hash_x;
-  // return 0;
+    return (sign_bit_x << (2 * num_bits)) | (exp_x << num_bits) | mant_x;
 }
 
+// Overload of `hash_comp` to extract each part individually
+void hash_comp(float x, uint32_t num_bits, uint32_t& sign, uint32_t& exp, uint32_t& mant) {
+    uint32_t mask = UINT32_MAX >> (32 - num_bits);
+
+    uint32_t o_x = *((uint32_t*) &x);
+
+    sign = o_x >> 31;
+    exp = (o_x >> (31 - num_bits)) & mask;
+    mant = (o_x >> (23 - num_bits)) & mask;
+}
   
 unsigned long long compute_hash(Ray ray) { 
-
-  // ProfilePhase p(Prof::PredictorHash);
-
-  unsigned long long hash_o_x = static_cast<unsigned long long>(hash_float(ray.get_origin().x));
-  unsigned long long hash_o_y = static_cast<unsigned long long>(hash_float(ray.get_origin().y));
-  unsigned long long hash_o_z = static_cast<unsigned long long>(hash_float(ray.get_origin().z));
-  unsigned long long hash_d_x = static_cast<unsigned long long>(hash_float(ray.get_direction().x));
-  unsigned long long hash_d_y = static_cast<unsigned long long>(hash_float(ray.get_direction().y));
-  unsigned long long hash_d_z = static_cast<unsigned long long>(hash_float(ray.get_direction().z));
-
-  // unsigned long long can fit 8 bytes = 8 * uint8_t = 4 * uint16_t
-
-  unsigned long long hash_0 = hash_o_x ^ hash_d_z;
-  unsigned long long hash_1 = hash_o_y ^ hash_d_y;
-  unsigned long long hash_2 = hash_o_z ^ hash_d_x;
-
-  unsigned long long hash = (hash_0 << 0) |
-                            (hash_1 << 16) |
-                            (hash_2 << 32);
-
-
-//   // Debugging hash
-//   unsigned long long hash_o_x = (int)std::floor(ray.get_origin().x) & 0xF;
-//   unsigned long long hash_o_y = (int)std::floor(ray.get_origin().y) & 0xF;
-//   unsigned long long hash_o_z = (int)std::floor(ray.get_origin().z) & 0xF;
-//   unsigned long long hash_d_x = (int)std::floor(ray.get_direction().x) & 0xF;
-//   unsigned long long hash_d_y = (int)std::floor(ray.get_direction().y) & 0xF;
-//   unsigned long long hash_d_z = (int)std::floor(ray.get_direction().z) & 0xF;
+    
+  // Hash type
+  char * hash_type = GPGPU_Context()->the_gpgpusim->g_the_gpu->get_config().get_ray_hash_type();
+  unsigned long long hash;
   
-//   unsigned long long hash = (hash_o_x << 0) |
-//                             (hash_o_y << 4) |
-//                             (hash_o_z << 8) |
-//                             (hash_d_x << 12) |
-//                             (hash_d_y << 16) |
-//                             (hash_d_z << 20);
+  switch (*hash_type) {
+    case 'f': {
+        unsigned num_bits = 2;
+        uint32_t num_comp_bits = 2 * num_bits + 1;
+        uint32_t hash_d =
+          (hash_comp(ray.get_direction().z, num_bits) << (2 * num_comp_bits)) |
+          (hash_comp(ray.get_direction().y, num_bits) << num_comp_bits) |
+           hash_comp(ray.get_direction().x, num_bits);
+        uint32_t hash_o =
+          (hash_comp(ray.get_origin().x, num_bits) << (2 * num_comp_bits)) |
+          (hash_comp(ray.get_origin().y, num_bits) << num_comp_bits) |
+           hash_comp(ray.get_origin().z, num_bits);
+        hash = hash_o ^ hash_d;
+        break;
+    }
+    
+    case 'x': {
+      // ProfilePhase p(Prof::PredictorHash);
 
+      unsigned long long hash_o_x = static_cast<unsigned long long>(hash_comp(ray.get_origin().x, 2));
+      unsigned long long hash_o_y = static_cast<unsigned long long>(hash_comp(ray.get_origin().y, 2));
+      unsigned long long hash_o_z = static_cast<unsigned long long>(hash_comp(ray.get_origin().z, 2));
+      unsigned long long hash_d_x = static_cast<unsigned long long>(hash_comp(ray.get_direction().x, 2));
+      unsigned long long hash_d_y = static_cast<unsigned long long>(hash_comp(ray.get_direction().y, 2));
+      unsigned long long hash_d_z = static_cast<unsigned long long>(hash_comp(ray.get_direction().z, 2));
+
+      // unsigned long long can fit 8 bytes = 8 * uint8_t = 4 * uint16_t
+
+      unsigned long long hash_0 = hash_o_x ^ hash_d_z;
+      unsigned long long hash_1 = hash_o_y ^ hash_d_y;
+      unsigned long long hash_2 = hash_o_z ^ hash_d_x;
+
+      hash = (hash_0 << 0) |
+            (hash_1 << 16) |
+            (hash_2 << 32);
+      break;
+    }
+      
+    default: {
+
+      // Debugging hash
+      unsigned long long hash_o_x = (int)std::floor(ray.get_origin().x) & 0xF;
+      unsigned long long hash_o_y = (int)std::floor(ray.get_origin().y) & 0xF;
+      unsigned long long hash_o_z = (int)std::floor(ray.get_origin().z) & 0xF;
+      unsigned long long hash_d_x = (int)std::floor(ray.get_direction().x) & 0xF;
+      unsigned long long hash_d_y = (int)std::floor(ray.get_direction().y) & 0xF;
+      unsigned long long hash_d_z = (int)std::floor(ray.get_direction().z) & 0xF;
+      
+      hash = (hash_o_x << 0) |
+                                (hash_o_y << 4) |
+                                (hash_o_z << 8) |
+                                (hash_d_x << 12) |
+                                (hash_d_y << 16) |
+                                (hash_d_z << 20);
+      break;
+    }
+
+  }
   return hash; 
 }
  

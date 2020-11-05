@@ -173,6 +173,10 @@ void gpgpu_functional_sim_config::ptx_set_tex_cache_linesize(
   m_texcache_linesize = linesize;
 }
 
+void gpgpu_functional_sim_config::ptx_set_predictor_config(char *hash_type) {
+  m_ray_hash_type = hash_type;
+}
+
 gpgpu_t::gpgpu_t(const gpgpu_functional_sim_config &config, gpgpu_context *ctx)
     : m_function_model_config(config) {
   gpgpu_ctx = ctx;
