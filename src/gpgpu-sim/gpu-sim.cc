@@ -270,9 +270,9 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "model ray predictor unit ",
       "0");
   option_parser_register(
-      opp, "-gpgpu_rt_predictor_hash", OPT_CSTR, &m_rt_hash,
-      "ray hash type ",
-      "0");
+      opp, "-gpgpu_rt_predictor_config", OPT_CSTR, &m_rt_predictor_config_string,
+      "ray predictor config: latency,max_table_size,hash_type,go_up_level,max_entry_cap,replacement_policy ",
+      "2,1024,f,0,10,n");
   option_parser_register(
       opp, "-gpgpu_rt_warppool_order", OPT_CSTR, &m_rt_warppool_order,
       "defines order of memory accesses from the warp pool ",
@@ -1391,6 +1391,11 @@ void gpgpu_sim::gpu_print_stat() {
   shader_print_scheduler_stat(stdout, false);
 
   m_shader_stats->print(stdout);
+  for (unsigned i = 0; i < m_config.num_cluster(); i++) {
+    m_cluster[i]->print_predictor_stats(stdout);
+  }
+  
+  
 #ifdef GPGPUSIM_POWER_MODEL
   if (m_config.g_power_simulation_enabled) {
     m_gpgpusim_wrapper->print_power_kernel_stats(

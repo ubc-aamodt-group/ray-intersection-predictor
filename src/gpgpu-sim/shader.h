@@ -1289,6 +1289,7 @@ class rt_unit : public pipelined_simd_unit {
         
         void get_L0C_sub_stats(struct cache_sub_stats &css) const;
         void get_cache_stats(cache_stats &cs);
+        void print_predictor_stats(FILE *fp);
         
     protected:
       bool memory_cycle(  warp_inst_t &inst, 
@@ -1511,6 +1512,15 @@ struct specialized_unit_params {
   unsigned OC_EX_SPEC_ID;
 };
 
+struct ray_predictor_config {
+  unsigned latency;
+  unsigned max_size;
+  char hash_type[1];
+  unsigned go_up_level;
+  unsigned entry_cap;
+  char replacement_policy[1];
+};
+
 class shader_core_config : public core_config {
  public:
   shader_core_config(gpgpu_context *ctx) : core_config(ctx) {
@@ -1593,6 +1603,11 @@ class shader_core_config : public core_config {
       } else
         break;  // we only accept continuous specialized_units, i.e., 1,2,3,4
     }
+    
+    sscanf(m_rt_predictor_config_string, "%u,%u,%s,%u,%u,%s", &m_rt_predictor_config.latency,
+            &m_rt_predictor_config.max_size, m_rt_predictor_config.hash_type,
+            &m_rt_predictor_config.go_up_level, &m_rt_predictor_config.entry_cap,
+            m_rt_predictor_config.replacement_policy);
   }
   void reg_options(class OptionParser *opp);
   unsigned max_cta(const kernel_info_t &k) const;
@@ -1723,13 +1738,13 @@ class shader_core_config : public core_config {
   bool m_rt_lock_threads;
   bool m_rt_coalesce_warps;
   bool m_rt_predictor;
-  char * m_rt_hash;
   bool m_rt_warppool;
   char * m_rt_warppool_order;
   bool m_rt_warppool_fifo;
   bool m_rt_warppool_tree;
   bool m_rt_accumulate_stats;
-  // bool m_rt_warp_cycle;
+  struct ray_predictor_config m_rt_predictor_config;
+  char * m_rt_predictor_config_string;
 };
 
 struct shader_core_stats_pod {
@@ -2107,7 +2122,7 @@ class shader_core_ctx : public core_t {
   const shader_core_config *get_config() const { return m_config; }
   void print_cache_stats(FILE *fp, unsigned &dl1_accesses,
                          unsigned &dl1_misses);
-
+  void print_predictor_stats(FILE *fp);
   void get_cache_stats(cache_stats &cs);
   void get_rt_cache_stats(cache_stats &cs);
   void get_L1I_sub_stats(struct cache_sub_stats &css) const;
@@ -2503,6 +2518,7 @@ class simt_core_cluster {
   void display_rt_pipeline(unsigned sid, FILE *fout, int mask) const;
   void print_cache_stats(FILE *fp, unsigned &dl1_accesses,
                          unsigned &dl1_misses) const;
+  void print_predictor_stats(FILE *fp) const;
 
   void get_cache_stats(cache_stats &cs) const;
   void get_rt_cache_stats(cache_stats &cs) const;

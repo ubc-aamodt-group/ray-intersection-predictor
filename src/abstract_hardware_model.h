@@ -1189,6 +1189,7 @@ class warp_inst_t : public inst_t {
   
   bool rt_predicted(unsigned int tid) { return !(m_per_scalar_thread[tid].raytrace_predictions.empty()); }
   bool rt_prediction_valid(unsigned int tid) { return m_per_scalar_thread[tid].raytrace_prediction_valid; };
+  int rt_mem_savings(unsigned int tid);
   unsigned long long rt_ray_hash(unsigned int tid) { return m_per_scalar_thread[tid].ray_hash; }
   
   void update_rt_mem_accesses(unsigned int tid, bool valid);

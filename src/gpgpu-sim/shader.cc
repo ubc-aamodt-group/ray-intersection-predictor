@@ -1872,6 +1872,10 @@ void rt_unit::get_cache_stats(cache_stats &cs) {
   m_L0_complet->get_stats().print_rt_stats(stdout);
 }
 
+void rt_unit::print_predictor_stats(FILE *fp) {
+  m_ray_predictor->print_stats(fp);
+}
+
 void ldst_unit::get_L1D_sub_stats(struct cache_sub_stats &css) const {
   if (m_L1D) m_L1D->get_sub_stats(css);
 }
@@ -2530,7 +2534,7 @@ rt_unit::rt_unit(mem_fetch_interface *icnt,
                                   IN_L1C_MISS_QUEUE);
                                 
   // TODO: Get the configurations from m_config 
-  m_ray_predictor = new ray_predictor(5, 5, true, 128, 2);
+  m_ray_predictor = new ray_predictor(m_sid, m_config->m_rt_predictor_config);
 
   // l0c_latency_queue.resize(m_config->m_L0C_config.)
 
@@ -4655,6 +4659,10 @@ void shader_core_ctx::get_rt_cache_stats(cache_stats &cs) {
   m_rt_unit->get_cache_stats(cs);
 }
 
+void shader_core_ctx::print_predictor_stats(FILE *fp) {
+  m_rt_unit->print_predictor_stats(fp);
+}
+
 void shader_core_ctx::get_L1I_sub_stats(struct cache_sub_stats &css) const {
   if (m_L1I) m_L1I->get_sub_stats(css);
 }
@@ -5299,6 +5307,12 @@ void simt_core_cluster::print_cache_stats(FILE *fp, unsigned &dl1_accesses,
   }
 }
 
+void simt_core_cluster::print_predictor_stats(FILE *fp) const {
+  for (unsigned i = 0; i < m_config->n_simt_cores_per_cluster; ++i) {
+    m_core[i]->print_predictor_stats(fp);
+  }
+}
+
 void simt_core_cluster::get_icnt_stats(long &n_simt_to_mem,
                                        long &n_mem_to_simt) const {
   long simt_to_mem = 0;
@@ -5408,17 +5422,23 @@ void exec_shader_core_ctx::checkExecutionStatusAndUpdate(warp_inst_t &inst,
 }
 
 
-ray_predictor::ray_predictor(  unsigned go_up_level, unsigned number_of_entries_cap,
-                    bool use_replacement_policy, unsigned entry_threshold, unsigned cycle_delay ) {
+ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config ) {
                       
   m_predictor_table = {};
   m_busy = false;
   
-  m_go_up_level = go_up_level;
-  m_number_of_entries_cap = number_of_entries_cap;
-  m_use_replacement_policy = use_replacement_policy;
-  m_entry_threshold = entry_threshold;
-  m_cycle_delay = cycle_delay;
+  m_go_up_level = config.go_up_level;
+  m_number_of_entries_cap = config.entry_cap;
+  m_replacement_policy = config.replacement_policy;
+  m_entry_threshold = config.max_size;
+  m_cycle_delay = config.latency;
+  
+  m_sid = sid;
+  
+  num_predicted = 0;
+  num_valid = 0;
+  mem_access_saved = 0;
+  capacity_miss = 0;
 }
                     
                     
@@ -5442,20 +5462,79 @@ warp_inst_t ray_predictor::lookup(warp_inst_t inst) {
   // Iterate through every thread
   unsigned warp_size = inst.warp_size();
   for (unsigned i=0; i<warp_size; i++) {
+    
+    // Check if marked as predicted in functional sim
     if (m_current_warp.rt_predicted(i)) {
-      m_current_warp.update_rt_mem_accesses(i, m_current_warp.rt_prediction_valid(i));
+      
+      // Check actual predictor table (with size cap)
+      if (check_table(m_current_warp.rt_ray_hash(i))) {
+        num_predicted++;
+        if (m_current_warp.rt_prediction_valid(i)) {
+          num_valid++;
+        } 
+        mem_access_saved += m_current_warp.rt_mem_savings(i);
+        m_current_warp.update_rt_mem_accesses(i, m_current_warp.rt_prediction_valid(i));
+      }
     }
     // Otherwise no prediction made
     
-    // TODO: Access predictor table (skip for infinite size table)
-    if (m_predictor_table.find(m_current_warp.rt_ray_hash(i)) == m_predictor_table.end()) {
-      m_predictor_table.insert(std::pair<unsigned long long, unsigned long long>(m_current_warp.rt_ray_hash(i), accessed_timestamp));
-    } else {
-      m_predictor_table[m_current_warp.rt_ray_hash(i)] = accessed_timestamp;
-    }
   }
   return prev_warp;
   
+}
+
+bool ray_predictor::check_table(unsigned long long hash) {
+  // if no replacement policy, assume unlimited size table
+  if (*m_replacement_policy == 'n') return true;
+  
+  // If table is not full, add to table
+  if (m_predictor_table.size() < m_entry_threshold) {
+    add_entry(hash);
+    return true;
+  }
+  
+  else {
+    // Check if entry is in the table
+    if (m_predictor_table.find(hash) != m_predictor_table.end()) {
+      if (*m_replacement_policy == 'l') update_LRU(hash);
+      return true;
+    }
+    // Otherwise, replace an existing entry
+    else {
+      evict_entry(hash);
+      return false;
+    }
+  }
+  
+}
+
+void ray_predictor::add_entry(unsigned long long hash) {
+  predictor_entry new_entry;
+  new_entry.m_tag = hash;
+  new_entry.m_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
+  m_predictor_table.insert(std::pair<unsigned long long, predictor_entry>(hash, new_entry));
+}
+
+void ray_predictor::evict_entry(unsigned long long hash) {
+  // LRU
+  if (*m_replacement_policy == 'l') {
+    unsigned long long lru = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
+    unsigned long long evicted_hash;
+    for (auto it=m_predictor_table.begin(); it!=m_predictor_table.end(); ++it) {
+      if (it->second.m_timestamp < lru) {
+        evicted_hash = it->first;
+        lru = it->second.m_timestamp;
+      }
+    }
+    assert(lru != GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
+    m_predictor_table.erase(evicted_hash);
+    add_entry(hash);
+  }
+}
+
+void ray_predictor::update_LRU(unsigned long long hash) {
+  assert(m_predictor_table.find(hash) != m_predictor_table.end());
+  m_predictor_table[hash].m_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
 }
 
 void ray_predictor::cycle() {
@@ -5465,4 +5544,12 @@ void ray_predictor::cycle() {
 
 void ray_predictor::display_state(FILE* fout) {
   m_current_warp.print(fout);
+}
+
+void ray_predictor::print_stats(FILE* fout) {
+  fprintf(fout, "Shader Core %d Predictor Stats:\n", m_sid);
+  fprintf(fout, "Total ray predictor hits: %d\n", num_predicted);
+  fprintf(fout, "Total number of valid predictions: %d\n", num_valid);
+  fprintf(fout, "Total memory access savings: %d\n", mem_access_saved);
+  fprintf(fout, "Conflict misses: %d\n", capacity_miss);
 }
