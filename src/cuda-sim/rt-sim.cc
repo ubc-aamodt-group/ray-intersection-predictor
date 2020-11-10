@@ -602,7 +602,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     }
     
     // Add entry if hit
-    if (thit != ray_properties.get_tmax()) {
+    if (hit) {
         // addr_t tri_addr = *(int *)&ray_payload.t_triId_u_v.y;
         add_ray_prediction(thread, ray_hash, predict_node);
         // TODO: Add this memory access to thread
