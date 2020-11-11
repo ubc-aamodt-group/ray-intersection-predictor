@@ -20,6 +20,7 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   
   m_sid = sid;
   
+  num_rays = 0;
   num_predicted = 0;
   num_miss = 0;
   num_valid = 0;
@@ -51,6 +52,7 @@ warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
   
   // Iterate through every thread
   unsigned warp_size = inst.warp_size();
+  num_rays += warp_size;
   for (unsigned i=0; i<warp_size; i++) {
     unsigned long long ray_hash = m_current_warp.rt_ray_hash(i);
     

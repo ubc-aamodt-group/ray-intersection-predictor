@@ -1856,6 +1856,11 @@ struct shader_core_stats_pod {
   unsigned* rt_mshr_size;
   
   unsigned* rt_predictor_size;
+  float* rt_predictor_prediction_rate;
+  float* rt_predictor_verification_rate;
+  unsigned* rt_predictor_predicted_count;
+  unsigned* rt_predictor_verified_count;
+  unsigned* rt_predictor_ray_count;
   
   unsigned rt_warppool_potential_merge;
  
@@ -1974,6 +1979,11 @@ class shader_core_stats : public shader_core_stats_pod {
     rt_warppool_size = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_mshr_size = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_predictor_size = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_predictor_prediction_rate = (float *)calloc(config->num_shader(), sizeof(float));
+    rt_predictor_verification_rate = (float *)calloc(config->num_shader(), sizeof(float));
+    rt_predictor_predicted_count = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_predictor_verified_count = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_predictor_ray_count = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
 
     m_outgoing_traffic_stats = new traffic_breakdown("coretomem");
     m_incoming_traffic_stats = new traffic_breakdown("memtocore");

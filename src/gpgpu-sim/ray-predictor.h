@@ -41,6 +41,11 @@ class ray_predictor {
     void print_stats(FILE* fout);
     
     unsigned predictor_table_size() {return m_predictor_table.size(); }
+    float predictor_prediction_rate() {return (float) num_predicted / num_rays; }
+    float predictor_verification_rate() {return (float) num_valid / num_rays; }
+    unsigned predictor_num_predicted() {return num_predicted; }
+    unsigned predictor_num_verified() {return num_valid; }
+    unsigned predictor_num_rays() {return num_rays; }
     
   private:
   
@@ -67,6 +72,7 @@ class ray_predictor {
     unsigned num_virtual_predicted;
     unsigned num_virtual_miss;
     unsigned num_virtual_valid;
+    unsigned num_rays;
     int mem_access_saved;
 };
 

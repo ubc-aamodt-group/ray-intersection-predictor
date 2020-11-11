@@ -201,6 +201,11 @@ def parseMe(filename):
         'cacheMissRate_globalL1_noMgHt' :vc.variable('cachemissrate_globallocall1_nomght', 2, 0, 'impVec', float),
         'cacheMissRate_textureL1_noMgHt':vc.variable('cachemissrate_texturel1_nomght',     2, 0, 'impVec', float),
         'cacheMissRate_constL1_noMgHt'  :vc.variable('cachemissrate_constl1_nomght',       2, 0, 'impVec', float),
+        'rt_predictor_prediction_rate'  :vc.variable('rt_predictor_prediction_rate',       2, 0, 'impVec', float),
+        'rt_predictor_verification_rate':vc.variable('rt_predictor_verification_rate',     2, 0, 'impVec', float),
+        'rt_predictor_predicted_count'  :vc.variable('rt_predictor_predicted_count',       2, 0, 'impVec'),
+        'rt_predictor_verified_count'   :vc.variable('rt_predictor_verified_count',        2, 0, 'impVec'),
+        'rt_predictor_ray_count'        :vc.variable('rt_predictor_ray_count',             2, 0, 'impVec'),
         'shdrctacount': vc.variable('shdrctacount', 2, 0, 'impVec'),
         'CFLOG' : CFLOG 
     }

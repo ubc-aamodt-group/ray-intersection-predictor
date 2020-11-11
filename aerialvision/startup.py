@@ -70,6 +70,7 @@ import tkFileDialog as Fd
 import organizedata
 import os
 import os.path
+import numpy as np
 
 
 global TabsForGraphs
@@ -90,17 +91,17 @@ def checkEmpty(list):
         if type(list[0]).__name__ == 'list':
             for iter in list:
                 for x in iter:
-                    if ((int(x) != 0) and (x != 'NULL')):
+                    if ((x != 'NULL') and (not np.isnan(x)) and (float(x) != 0)):
                         bool = 1
             return bool
         else:
             for x in list:
-                if ((x != 'NULL') and (int(x) != 0)):
+                if ((x != 'NULL') and (not np.isnan(x)) and (float(x) != 0)):
                     bool = 1
             return bool
     except:
         for x in list:
-            if ((int(x) != 0) and (x != 'NULL')):
+            if ((x != 'NULL') and (not np.isnan(x)) and (float(x) != 0)):
                 bool = 1
         return bool
 

@@ -959,9 +959,32 @@ void shader_core_stats::visualizer_print(gzFile visualizer_file) {
   for (unsigned i = 0; i < m_config->num_shader(); i++)
     gzprintf(visualizer_file, "%u ", rt_predictor_size[i]);
   gzprintf(visualizer_file, "\n");
-  
-  
 
+  gzprintf(visualizer_file, "rt_predictor_prediction_rate:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%f ", rt_predictor_prediction_rate[i]);
+  gzprintf(visualizer_file, "\n");
+
+  gzprintf(visualizer_file, "rt_predictor_verification_rate:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%f ", rt_predictor_verification_rate[i]);
+  gzprintf(visualizer_file, "\n");
+
+  gzprintf(visualizer_file, "rt_predictor_predicted_count:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_predictor_predicted_count[i]);
+  gzprintf(visualizer_file, "\n");
+
+  gzprintf(visualizer_file, "rt_predictor_verified_count:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_predictor_verified_count[i]);
+  gzprintf(visualizer_file, "\n");
+
+  gzprintf(visualizer_file, "rt_predictor_ray_count:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_predictor_ray_count[i]);
+  gzprintf(visualizer_file, "\n");
+  
   // instruction count per shader core
   gzprintf(visualizer_file, "shaderinsncount:  ");
   for (unsigned i = 0; i < m_config->num_shader(); i++)
@@ -2586,7 +2609,11 @@ void rt_unit::cycle() {
   if (m_config->m_rt_warppool) m_stats->rt_warppool_size[m_sid] = m_warppool_mem_accesses.size();
   m_stats->rt_mshr_size[m_sid] = m_L0_complet->num_mshr_entries();
   m_stats->rt_predictor_size[m_sid] = m_ray_predictor->predictor_table_size();
-  
+  m_stats->rt_predictor_prediction_rate[m_sid] = m_ray_predictor->predictor_prediction_rate();
+  m_stats->rt_predictor_verification_rate[m_sid] = m_ray_predictor->predictor_verification_rate();
+  m_stats->rt_predictor_predicted_count[m_sid] = m_ray_predictor->predictor_num_predicted();
+  m_stats->rt_predictor_verified_count[m_sid] = m_ray_predictor->predictor_num_verified();
+  m_stats->rt_predictor_ray_count[m_sid] = m_ray_predictor->predictor_num_rays();
   
   if (!m_response_fifo.empty()) {
     
