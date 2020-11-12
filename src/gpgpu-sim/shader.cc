@@ -3106,7 +3106,7 @@ mem_stage_stall_type rt_unit::process_cache_access(
         }
         m_warppool_access_stats.erase(address);
       }
-      
+      delete mf;
     } else if (status == RESERVATION_FAIL) {
       result = BK_CONF;
       delete mf;
