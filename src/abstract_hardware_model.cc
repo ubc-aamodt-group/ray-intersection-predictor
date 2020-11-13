@@ -750,7 +750,7 @@ void warp_inst_t::completed(unsigned long long cycle) const {
       pc, latency * active_count());
 }
 
-void warp_inst_t::set_rt_mem_accesses(unsigned int tid, std::list<new_addr_type> mem_accesses) { 
+void warp_inst_t::set_rt_mem_accesses(unsigned int tid, const std::deque<new_addr_type>& mem_accesses) { 
   if (!m_per_scalar_thread_valid) {
     m_per_scalar_thread.resize(m_config->warp_size);
     m_per_scalar_thread_valid = true;
@@ -768,7 +768,7 @@ void warp_inst_t::set_rt_ray_hash(unsigned int tid, unsigned long long ray_hash)
   m_per_scalar_thread[tid].ray_hash = ray_hash; 
 }
 
-void warp_inst_t::set_rt_predictions(unsigned int tid, std::list<new_addr_type> predictions, bool prediction_valid) {
+void warp_inst_t::set_rt_predictions(unsigned int tid, const std::deque<new_addr_type>& predictions, bool prediction_valid) {
   if (!m_per_scalar_thread_valid) {
     m_per_scalar_thread.resize(m_config->warp_size);
     m_per_scalar_thread_valid = true;

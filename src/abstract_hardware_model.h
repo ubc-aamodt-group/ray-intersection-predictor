@@ -1181,9 +1181,9 @@ class warp_inst_t : public inst_t {
   active_mask_t get_warp_active_mask() const { return m_warp_active_mask; }
   
   // RT-CORE NOTE: Check that list assignments work like this.. or is there a better way?
-  void set_rt_mem_accesses(unsigned int tid, std::list<new_addr_type> mem_accesses);
+  void set_rt_mem_accesses(unsigned int tid, const std::deque<new_addr_type>& mem_accesses);
   void set_rt_ray_hash(unsigned int tid, unsigned long long ray_hash);
-  void set_rt_predictions(unsigned int tid, std::list<new_addr_type> predictions, bool prediction_valid);
+  void set_rt_predictions(unsigned int tid, const std::deque<new_addr_type>& predictions, bool prediction_valid);
   void rt_mem_accesses_pop(new_addr_type addr);
   bool rt_mem_accesses_empty();
   
@@ -1253,7 +1253,7 @@ class warp_inst_t : public inst_t {
    unsigned m_coalesce_count;
 
   // Combined list + set to track insertion order with no duplicates (duplicates coalesced)
-  std::list<new_addr_type> m_next_rt_accesses;
+  std::deque<new_addr_type> m_next_rt_accesses;
   std::set<new_addr_type> m_next_rt_accesses_set;
   
   new_addr_type m_current_rt_access;
@@ -1274,8 +1274,8 @@ class warp_inst_t : public inst_t {
                                                        // of 4B each)
                                                    
     // RT variables    
-    std::list<new_addr_type> raytrace_mem_accesses;
-    std::list<new_addr_type> raytrace_predictions;
+    std::deque<new_addr_type> raytrace_mem_accesses;
+    std::deque<new_addr_type> raytrace_predictions;
     bool raytrace_prediction_valid;
     unsigned long long ray_hash;
   };
@@ -1379,7 +1379,7 @@ class core_t {
     } else {
       std::list<new_addr_type> node_list;
       node_list.push_back(node);
-      predictor_table.insert(std::pair<unsigned long long, std::list<new_addr_type> >(hash, node_list));
+      predictor_table[hash] = node_list;
     }
   }
   
