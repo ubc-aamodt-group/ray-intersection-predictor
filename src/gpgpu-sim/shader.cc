@@ -2678,7 +2678,7 @@ void rt_unit::cycle() {
       
       // If returned warp is non-empty, add it to warp pool
       if (!predicted_inst.empty()) {
-        m_current_warps.insert(std::pair<unsigned,warp_inst_t>(predicted_inst.warp_id(), predicted_inst));
+        m_current_warps[predicted_inst.warp_id()] = predicted_inst;
       }
       
       // Move current warp out of rt-unit
@@ -2704,14 +2704,14 @@ void rt_unit::cycle() {
     // If coalescing warp requests, move unconditionally
     if (m_config->m_rt_coalesce_warps && m_current_warps.size() < m_config->m_rt_max_warps && !rt_inst.empty()) {
       unsigned warp_id = rt_inst.warp_id();
-      m_current_warps.insert(std::pair<unsigned,warp_inst_t>(rt_inst.warp_id(), rt_inst));
+      m_current_warps[rt_inst.warp_id()] = rt_inst;
       rt_inst.clear();
     }
     // Otherwise wait until waiting for response
     else if (m_config->m_rt_max_warps > 0 && m_current_warps.size() < m_config->m_rt_max_warps) {
       if (rt_inst.mem_fetch_wait(m_config->m_rt_lock_threads) && !rt_inst.empty()) {
         unsigned warp_id = rt_inst.warp_id();
-        m_current_warps.insert(std::pair<unsigned,warp_inst_t>(rt_inst.warp_id(), rt_inst));
+        m_current_warps[rt_inst.warp_id()] = rt_inst;
         rt_inst.clear();
       }
     }
@@ -2884,11 +2884,11 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
       m_warppool_mem_accesses.insert(addr);
       if (m_warppool_stats.find(block_addr) == m_warppool_stats.end()) {
         unsigned long long current_cycle = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle;
-        m_warppool_stats.insert(std::pair<new_addr_type, unsigned long long>(block_addr, current_cycle));
+        m_warppool_stats[block_addr] = current_cycle;
         
         // If still in warp pool, it should still be waiting for the memory response (since it hasn't been sent yet)
         if (m_warppool_access_stats.find(block_addr) == m_warppool_access_stats.end()) {
-          m_warppool_access_stats.insert(std::pair<new_addr_type, unsigned long long>(block_addr, current_cycle));
+          m_warppool_access_stats[block_addr] = current_cycle;
         }
         else {
           m_stats->rt_warppool_potential_merge++;
@@ -2919,11 +2919,11 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
         m_warppool_mem_accesses.insert(addr);
         if (m_warppool_stats.find(block_addr) == m_warppool_stats.end()) {
           unsigned long long current_cycle = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle;
-          m_warppool_stats.insert(std::pair<new_addr_type, unsigned long long>(block_addr, current_cycle));
+          m_warppool_stats[block_addr] = current_cycle;
           
           // If still in warp pool, it should still be waiting for the memory response (since it hasn't been sent yet)
           if (m_warppool_access_stats.find(block_addr) == m_warppool_access_stats.end()) {
-            m_warppool_access_stats.insert(std::pair<new_addr_type, unsigned long long>(block_addr, current_cycle));
+            m_warppool_access_stats[block_addr] = current_cycle;
           }
           else {
             m_stats->rt_warppool_potential_merge++;
@@ -5442,7 +5442,7 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config ) {
 }
                     
                     
-warp_inst_t ray_predictor::lookup(warp_inst_t inst) {
+warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
   if (inst.empty()) {
     // Not a valid warp, return previous warp
     warp_inst_t prev_warp = m_current_warp;
@@ -5512,7 +5512,7 @@ void ray_predictor::add_entry(unsigned long long hash) {
   predictor_entry new_entry;
   new_entry.m_tag = hash;
   new_entry.m_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
-  m_predictor_table.insert(std::pair<unsigned long long, predictor_entry>(hash, new_entry));
+  m_predictor_table[hash] = new_entry;
 }
 
 void ray_predictor::evict_entry(unsigned long long hash) {

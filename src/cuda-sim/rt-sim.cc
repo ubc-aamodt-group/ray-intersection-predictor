@@ -364,7 +364,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     
     // Map of address to tree level
     std::map<new_addr_type, unsigned> tree_level_map;
-    tree_level_map.insert(std::pair<new_addr_type, unsigned>(node_start, 1));
+    tree_level_map[node_start] = 1;
         
     do {
 
@@ -415,9 +415,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             mem->read(node_start + next_node + 3*sizeof(float4) + sizeof(addr_t), sizeof(addr_t), &child1_addr);
             
             if ((int)child0_addr > 0)
-                tree_level_map.insert(std::pair<new_addr_type, unsigned>(node_start + child0_addr * 0x10, current_tree_level + 1));
+                tree_level_map[node_start + child0_addr * 0x10] = current_tree_level + 1;
             if ((int)child1_addr > 0)
-                tree_level_map.insert(std::pair<new_addr_type, unsigned>(node_start + child1_addr * 0x10, current_tree_level + 1));
+                tree_level_map[node_start + child1_addr * 0x10] = current_tree_level + 1;
             
             #ifdef DEBUG_PRINT
             printf("Child 0 offset: 0x%x \t", child0_addr);
@@ -499,7 +499,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 thread->add_raytrace_mem_access(tri_start + tri_addr);
                 
                 // RT-CORE NOTE: Fix for triangles
-                tree_level_map.insert(std::pair<new_addr_type, unsigned>(tri_start + tri_addr, 0xff));
+                tree_level_map[tri_start + tri_addr] = 0xff;
                 
                 // Check if triangle is valid (if (__float_as_int(v00.x) == 0x80000000))
                 if (*(int*)&p0.x ==  0x80000000) {
@@ -961,9 +961,9 @@ Hit traverse_intersect(addr_t next_node, Ray ray_properties, addr_t node_start, 
             mem->read(node_start + next_node + 3*sizeof(float4) + sizeof(addr_t), sizeof(addr_t), &child1_addr);
             
             if ((int)child0_addr > 0)
-                tree_level_map.insert(std::pair<new_addr_type, unsigned>(node_start + child0_addr * 0x10, current_tree_level + 1));
+                tree_level_map[node_start + child0_addr * 0x10] = current_tree_level + 1;
             if ((int)child1_addr > 0)
-                tree_level_map.insert(std::pair<new_addr_type, unsigned>(node_start + child1_addr * 0x10, current_tree_level + 1));
+                tree_level_map[node_start + child1_addr * 0x10] = current_tree_level + 1;
                 
             #ifdef DEBUG_PRINT
             printf("Child 0 offset: 0x%x \t", child0_addr);
@@ -1039,7 +1039,7 @@ Hit traverse_intersect(addr_t next_node, Ray ray_properties, addr_t node_start, 
                 thread->add_raytrace_prediction(tri_start + tri_addr);
                 
                 // RT-CORE NOTE: Fix for triangles
-                tree_level_map.insert(std::pair<new_addr_type, unsigned>(tri_start + tri_addr, 0xff));
+                tree_level_map[tri_start + tri_addr] = 0xff;
                 
                 hit = rtao_ray_triangle_test(p0, p1, p2, ray_properties, &thit, ray_payload);
                 if (hit) {

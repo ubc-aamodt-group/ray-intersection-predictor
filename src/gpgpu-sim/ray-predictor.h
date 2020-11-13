@@ -25,7 +25,7 @@ class ray_predictor {
     unsigned m_sid;
     
     bool empty() { return !m_busy; }
-    warp_inst_t lookup(warp_inst_t inst);
+    warp_inst_t lookup(const warp_inst_t& inst);
     void cycle();
     void display_state(FILE* fout);
     void print_stats(FILE* fout);

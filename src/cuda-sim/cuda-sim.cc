@@ -1879,7 +1879,9 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
       m_gpu->gpgpu_ctx->the_gpgpusim->g_the_gpu->rt_tree_level_map.insert(m_rt_tree_level_map.begin(), m_rt_tree_level_map.end());
       
       // insn_memaddr = m_raytrace_mem_accesses.front();
-      inst.set_addr(lane_id, m_raytrace_mem_accesses, MAX_ACCESSES_PER_INSN_PER_THREAD);
+      inst.set_addr(lane_id,
+        std::list<new_addr_type>(m_raytrace_mem_accesses.begin(), m_raytrace_mem_accesses.end()), 
+        MAX_ACCESSES_PER_INSN_PER_THREAD);
     }
     
     // Output register information to file and stdout
