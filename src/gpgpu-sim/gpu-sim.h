@@ -336,7 +336,7 @@ class gpgpu_sim_config : public power_config,
            &gpu_runtime_stat_flag);
     m_shader_config.init();
     ptx_set_tex_cache_linesize(m_shader_config.m_L1T_config.get_line_sz());
-    ptx_set_predictor_config(m_shader_config.m_rt_predictor_config.hash_type);
+    ptx_set_predictor_config(m_shader_config.m_rt_predictor_config);
     m_memory_config.init();
     init_clock_domains();
     power_config::init();

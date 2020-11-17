@@ -5430,7 +5430,8 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config ) {
   m_go_up_level = config.go_up_level;
   m_number_of_entries_cap = config.entry_cap;
   m_replacement_policy = config.replacement_policy;
-  m_entry_threshold = config.max_size;
+  m_placement_policy = config.placement_policy;
+  m_table_size = config.max_size;
   m_cycle_delay = config.latency;
   
   m_sid = sid;
@@ -5438,7 +5439,7 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config ) {
   num_predicted = 0;
   num_valid = 0;
   mem_access_saved = 0;
-  capacity_miss = 0;
+  num_evicted = 0;
 }
                     
                     
@@ -5485,24 +5486,27 @@ warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
 
 bool ray_predictor::check_table(unsigned long long hash) {
   // if no replacement policy, assume unlimited size table
-  if (*m_replacement_policy == 'n') return true;
+  if (m_replacement_policy == 'n') return true;
   
-  // If table is not full, add to table
-  if (m_predictor_table.size() < m_entry_threshold) {
-    add_entry(hash);
-    return true;
-  }
-  
-  else {
-    // Check if entry is in the table
-    if (m_predictor_table.find(hash) != m_predictor_table.end()) {
-      if (*m_replacement_policy == 'l') update_LRU(hash);
+  // Fully associative table
+  if (m_placement_policy == 'a') {
+    // If table is not full, add to table
+    if (m_predictor_table.size() < m_table_size) {
+      add_entry(hash);
       return true;
     }
-    // Otherwise, replace an existing entry
+    
     else {
-      evict_entry(hash);
-      return false;
+      // Check if entry is in the table
+      if (m_predictor_table.find(hash) != m_predictor_table.end()) {
+        if (m_replacement_policy == 'l') update_LRU(hash);
+        return true;
+      }
+      // Otherwise, replace an existing entry
+      else {
+        evict_entry(hash);
+        return false;
+      }
     }
   }
   
@@ -5517,7 +5521,7 @@ void ray_predictor::add_entry(unsigned long long hash) {
 
 void ray_predictor::evict_entry(unsigned long long hash) {
   // LRU
-  if (*m_replacement_policy == 'l') {
+  if (m_replacement_policy == 'l') {
     unsigned long long lru = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
     unsigned long long evicted_hash;
     for (auto it=m_predictor_table.begin(); it!=m_predictor_table.end(); ++it) {
@@ -5530,6 +5534,7 @@ void ray_predictor::evict_entry(unsigned long long hash) {
     m_predictor_table.erase(evicted_hash);
     add_entry(hash);
   }
+  num_evicted++;
 }
 
 void ray_predictor::update_LRU(unsigned long long hash) {
@@ -5551,5 +5556,5 @@ void ray_predictor::print_stats(FILE* fout) {
   fprintf(fout, "Total ray predictor hits: %d\n", num_predicted);
   fprintf(fout, "Total number of valid predictions: %d\n", num_valid);
   fprintf(fout, "Total memory access savings: %d\n", mem_access_saved);
-  fprintf(fout, "Conflict misses: %d\n", capacity_miss);
+  fprintf(fout, "Evicted entries: %d\n", num_evicted);
 }

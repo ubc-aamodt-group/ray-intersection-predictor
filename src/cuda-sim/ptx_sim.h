@@ -465,6 +465,7 @@ class ptx_thread_info {
   void add_raytrace_prediction(addr_t addr) { m_raytrace_predictions.push_back(addr); }
   unsigned raytrace_prediction_size() { return m_raytrace_predictions.size(); }
   void set_prediction_valid(bool valid) { m_raytrace_prediction_valid = valid; }
+  bool get_prediction_valid() { return m_raytrace_prediction_valid; }
   void add_hit_count() { m_raytrace_hitcount++; }
   void set_tree_level_map(std::map<new_addr_type, unsigned> tree_level) { m_rt_tree_level_map = tree_level; }
 

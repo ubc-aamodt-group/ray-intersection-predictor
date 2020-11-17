@@ -1512,14 +1512,6 @@ struct specialized_unit_params {
   unsigned OC_EX_SPEC_ID;
 };
 
-struct ray_predictor_config {
-  unsigned latency;
-  unsigned max_size;
-  char hash_type[1];
-  unsigned go_up_level;
-  unsigned entry_cap;
-  char replacement_policy[1];
-};
 
 class shader_core_config : public core_config {
  public:
@@ -1604,10 +1596,26 @@ class shader_core_config : public core_config {
         break;  // we only accept continuous specialized_units, i.e., 1,2,3,4
     }
     
-    sscanf(m_rt_predictor_config_string, "%u,%u,%s,%u,%u,%s", &m_rt_predictor_config.latency,
-            &m_rt_predictor_config.max_size, m_rt_predictor_config.hash_type,
+    
+    bool print_ray_predictor_settings;
+    sscanf(m_rt_predictor_config_string, "%u,%u,%u,%c,%u,%u,%c,%c,%u,%u", &print_ray_predictor_settings, &m_rt_predictor_config.latency,
+            &m_rt_predictor_config.max_size, &m_rt_predictor_config.hash_type,
             &m_rt_predictor_config.go_up_level, &m_rt_predictor_config.entry_cap,
-            m_rt_predictor_config.replacement_policy);
+            &m_rt_predictor_config.replacement_policy, &m_rt_predictor_config.placement_policy,
+            &m_rt_predictor_config.virtualize, &m_rt_predictor_config.virtualize_delay);
+    if (print_ray_predictor_settings) {
+      // Print options into output for readability:
+      printf("GPGPU-Sim: Ray Predictor Settings:\n");
+      printf("\tLatency: %d\n", m_rt_predictor_config.latency);
+      printf("\tTable size: %d\n", m_rt_predictor_config.max_size);
+      printf("\tHash type: %c\n", m_rt_predictor_config.hash_type);
+      printf("\tGo up level: %d\n", m_rt_predictor_config.go_up_level);
+      printf("\tMax nodes per entry: %d\n", m_rt_predictor_config.entry_cap);
+      printf("\tReplacement policy: %c\n", m_rt_predictor_config.replacement_policy);
+      printf("\tPlacement policy: %c\n", m_rt_predictor_config.placement_policy);
+      printf("\tUse virtual table: %d\n", m_rt_predictor_config.virtualize);
+      printf("\tVirtual table latency: %d\n", m_rt_predictor_config.virtualize_delay);
+    }
   }
   void reg_options(class OptionParser *opp);
   unsigned max_cta(const kernel_info_t &k) const;

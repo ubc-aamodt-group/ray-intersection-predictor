@@ -362,6 +362,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     bool hit = false;
     addr_t hit_addr;
     
+    // Get predictor config
+    ray_predictor_config predictor_config = GPGPU_Context()->the_gpgpusim->g_the_gpu->get_config().get_ray_predictor_config();
+    
     // Map of address to tree level
     std::map<new_addr_type, unsigned> tree_level_map;
     tree_level_map[node_start] = 1;
@@ -579,12 +582,19 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     if (!predicted_nodes.empty()) {
         GPGPU_Context()->func_sim->g_total_predictor_hits++;
         Hit predictor_hit;
+        unsigned nodes_per_entry = 1;
         for (auto node=predicted_nodes.begin(); node!=predicted_nodes.end(); ++node) {
             // printf("0x%x\n", *node);
             predictor_hit = traverse_intersect(*node, ray_properties, node_start, tri_start, thread, mem, tree_level_map);
             // TODO: Add stats (compare predictor_hit to original ray_payload)
             
             if (ray_properties.anyhit && predictor_hit.t_triId_u_v.x > 0) {
+                break;
+            }
+            
+            // Check if max nodes per entry has been hit
+            nodes_per_entry++;
+            if (nodes_per_entry > predictor_config.entry_cap) {
                 break;
             }
         }
@@ -821,10 +831,10 @@ void hash_comp(float x, uint32_t num_bits, uint32_t& sign, uint32_t& exp, uint32
 unsigned long long compute_hash(Ray ray) { 
     
   // Hash type
-  char * hash_type = GPGPU_Context()->the_gpgpusim->g_the_gpu->get_config().get_ray_hash_type();
+  char hash_type = GPGPU_Context()->the_gpgpusim->g_the_gpu->get_config().get_ray_predictor_config().hash_type;
   unsigned long long hash;
   
-  switch (*hash_type) {
+  switch (hash_type) {
     case 'f': {
         unsigned num_bits = 2;
         uint32_t num_comp_bits = 2 * num_bits + 1;

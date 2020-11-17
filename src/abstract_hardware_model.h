@@ -498,12 +498,24 @@ struct textureReferenceAttr {
       : m_texref(texref), m_dim(dim), m_readmode(readmode), m_ext(ext) {}
 };
 
+struct ray_predictor_config {
+  unsigned latency;
+  unsigned max_size;
+  char hash_type;
+  unsigned go_up_level;
+  unsigned entry_cap;
+  char replacement_policy;
+  char placement_policy;
+  unsigned virtualize;
+  unsigned virtualize_delay;
+};
+
 class gpgpu_functional_sim_config {
  public:
   void reg_options(class OptionParser *opp);
 
   void ptx_set_tex_cache_linesize(unsigned linesize);
-  void ptx_set_predictor_config(char *hash_type);
+  void ptx_set_predictor_config(ray_predictor_config predictor_config);
 
   unsigned get_forced_max_capability() const {
     return m_ptx_force_max_capability;
@@ -518,7 +530,7 @@ class gpgpu_functional_sim_config {
     return g_ptx_inst_debug_thread_uid;
   }
   unsigned get_texcache_linesize() const { return m_texcache_linesize; }
-  char * get_ray_hash_type() const { return m_ray_hash_type; }
+  ray_predictor_config get_ray_predictor_config() const { return m_predictor_config; }
   int get_checkpoint_option() const { return checkpoint_option; }
   int get_checkpoint_kernel() const { return checkpoint_kernel; }
   int get_checkpoint_CTA() const { return checkpoint_CTA; }
@@ -547,7 +559,7 @@ class gpgpu_functional_sim_config {
   int g_ptx_inst_debug_thread_uid;
 
   unsigned m_texcache_linesize;
-  char * m_ray_hash_type;
+  ray_predictor_config m_predictor_config;
 };
 
 class gpgpu_t {

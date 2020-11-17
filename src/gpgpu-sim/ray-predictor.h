@@ -18,8 +18,9 @@ class ray_predictor {
     // TODO: Implement these parameters
     unsigned m_go_up_level;
     unsigned m_number_of_entries_cap;
-    char * m_replacement_policy;
-    unsigned m_entry_threshold;
+    char m_replacement_policy;
+    char m_placement_policy;
+    unsigned m_table_size;
     unsigned m_cycle_delay;
     
     unsigned m_sid;
@@ -50,7 +51,7 @@ class ray_predictor {
     // Stats
     unsigned num_predicted;
     unsigned num_valid;
-    unsigned capacity_miss;
+    unsigned num_evicted;
     int mem_access_saved;
 };
 
