@@ -11,11 +11,16 @@ struct {
     std::deque<new_addr_type> m_nodes;
 } typedef predictor_entry;
 
+class shader_core_ctx;
+
 class ray_predictor {
   public:
-    ray_predictor(unsigned sid, struct ray_predictor_config config);
+    ray_predictor(unsigned sid, struct ray_predictor_config config, shader_core_ctx *core);
     ~ray_predictor();
     
+    
+    // Backwards pointer
+    shader_core_ctx *m_core;
     
     // TODO: Implement these parameters
     unsigned m_go_up_level;
@@ -24,6 +29,8 @@ class ray_predictor {
     char m_placement_policy;
     unsigned m_table_size;
     unsigned m_cycle_delay;
+    bool m_virtualize;
+    unsigned m_virtualize_delay;
     
     unsigned m_sid;
     
@@ -41,8 +48,8 @@ class ray_predictor {
     void evict_entry();
     void add_entry(unsigned long long hash, new_addr_type prediction);
     bool check_table(unsigned long long hash);
-    void reset_cycle_delay() { m_cycles = m_cycle_delay; };
-    bool validate_prediction(unsigned long long hash, const Ray ray_properties, unsigned tid);
+    void reset_cycle_delay(unsigned delay) { m_cycles = delay; };
+    bool validate_prediction(const std::deque<new_addr_type> prediction_list, const Ray ray_properties, unsigned tid);
     bool traverse_intersect(const new_addr_type prediction, const Ray ray_properties, std::deque<new_addr_type> &mem_accesses);
     
     std::map<unsigned long long, predictor_entry> m_predictor_table;
@@ -57,6 +64,9 @@ class ray_predictor {
     unsigned num_valid;
     unsigned num_evicted;
     unsigned num_entry_overflow;
+    unsigned num_virtual_predicted;
+    unsigned num_virtual_miss;
+    unsigned num_virtual_valid;
     int mem_access_saved;
 };
 

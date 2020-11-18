@@ -2300,6 +2300,8 @@ class shader_core_ctx : public core_t {
     m_stats->n_simt_to_mem[m_sid] += n_flits;
   }
   bool check_if_non_released_reduction_barrier(warp_inst_t &inst);
+  
+  simt_core_cluster * get_cluster() { return m_cluster; }
 
  protected:
   unsigned inactive_lanes_accesses_sfu(unsigned active_count, double latency) {
@@ -2541,6 +2543,9 @@ class simt_core_cluster {
   float get_current_occupancy(unsigned long long &active,
                               unsigned long long &total) const;
   virtual void create_shader_core_ctx() = 0;
+  
+  void add_ray_predictor_entry(unsigned long long hash, new_addr_type predicted_node);
+  predictor_entry check_ray_predictor_table(unsigned long long hash);
 
  protected:
   unsigned m_cluster_id;
@@ -2554,6 +2559,9 @@ class simt_core_cluster {
   unsigned m_cta_issue_next_core;
   std::list<unsigned> m_core_sim_order;
   std::list<mem_fetch *> m_response_fifo;
+  
+  // Ray predictor table
+  std::map<unsigned long long, predictor_entry> m_predictor_table;
 };
 
 class exec_simt_core_cluster : public simt_core_cluster {

@@ -1,8 +1,11 @@
 #include "ray-predictor.h"
 #include "../../libcuda/gpgpu_context.h"
+#include "shader.h"
 
-ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config ) {
+ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_core_ctx *core ) {
                       
+  m_core = core;
+  
   m_predictor_table = {};
   m_busy = false;
   
@@ -12,6 +15,8 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config ) {
   m_placement_policy = config.placement_policy;
   m_table_size = config.max_size;
   m_cycle_delay = config.latency;
+  m_virtualize = config.virtualize;
+  m_virtualize_delay = config.virtualize_delay;
   
   m_sid = sid;
   
@@ -20,6 +25,9 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config ) {
   num_valid = 0;
   num_evicted = 0;
   num_entry_overflow = 0;
+  num_virtual_predicted = 0;
+  num_virtual_miss = 0;
+  num_virtual_valid = 0;
   mem_access_saved = 0;
 }
                     
@@ -35,7 +43,7 @@ warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
   
   // Mark predictor busy
   m_busy = true;
-  reset_cycle_delay();
+  reset_cycle_delay(m_cycle_delay);
   warp_inst_t prev_warp = m_current_warp;
   m_current_warp = inst;
   
@@ -54,25 +62,55 @@ warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
       if (m_placement_policy == 'd') index = ray_hash & (m_table_size - 1);
       else if (m_placement_policy == 'a') index = ray_hash;
       
+      // Read list of predictions from predictor table
+      std::deque<new_addr_type> &prediction_list = m_predictor_table[index].m_nodes;
       // Validate prediction
-      bool valid = validate_prediction(index, m_current_warp.rt_ray_properties(i), i);
+      bool valid = validate_prediction(prediction_list, m_current_warp.rt_ray_properties(i), i);
       if (valid) {
         num_valid++;
       }
       
       // If invalid, regular traversal
       else {
-        num_miss++;
         // Add to table if ray intersects with something
         if (m_current_warp.rt_ray_intersect(i)) {
           new_addr_type predict_node = m_current_warp.rt_ray_prediction(i);
           add_entry(ray_hash, predict_node);
+          
+          if (m_virtualize) {
+            m_core->get_cluster()->add_ray_predictor_entry(ray_hash, predict_node);
+          }
         }
       }
     }
     
     // Regular traversal.
     else {
+      num_miss++;
+      
+      if (m_virtualize) {
+        // Check second level table
+        reset_cycle_delay(m_cycle_delay + m_virtualize_delay);
+        predictor_entry virtual_entry = m_core->get_cluster()->check_ray_predictor_table(ray_hash);
+        bool valid;
+        
+        // If hit in virtual table, validate
+        if (virtual_entry.m_valid) {
+          num_virtual_predicted++;
+          valid = validate_prediction(virtual_entry.m_nodes, m_current_warp.rt_ray_properties(i), i);
+          if (valid) num_virtual_valid++;
+        }
+        
+        // If miss in table or invalid predictions, perform regular traversal
+        if (!virtual_entry.m_valid || !valid) {
+          if (!virtual_entry.m_valid) num_virtual_miss++;
+          if (m_current_warp.rt_ray_intersect(i)) {
+            new_addr_type predict_node = m_current_warp.rt_ray_prediction(i);
+            m_core->get_cluster()->add_ray_predictor_entry(ray_hash, predict_node);
+          }
+        }
+      }
+      
       // Add to table if ray intersects with something
       if (m_current_warp.rt_ray_intersect(i)) {
         new_addr_type predict_node = m_current_warp.rt_ray_prediction(i);
@@ -186,20 +224,20 @@ void ray_predictor::display_state(FILE* fout) {
 
 void ray_predictor::print_stats(FILE* fout) {
   fprintf(fout, "Shader Core %d Predictor Stats:\n", m_sid);
-  fprintf(fout, "Total ray predictor hits: %d (%.3f)\n", num_predicted, (float)num_predicted / (num_predicted + num_miss));
-  fprintf(fout, "Total ray predictor misses: %d (%.3f)\n", num_miss, (float)num_miss / (num_predicted + num_miss));
-  fprintf(fout, "Total number of valid predictions: %d (%.3f)\n", num_valid, (float)num_valid / (num_predicted + num_miss));
+  fprintf(fout, "Total ray predictor hits: %d (%.3f) + virtual: %d\n", 
+          num_predicted, (float)num_predicted / (num_predicted + num_miss), num_virtual_predicted);
+  fprintf(fout, "Total ray predictor misses: %d (%.3f) + virtual: %d\n", 
+          num_miss, (float)num_miss / (num_predicted + num_miss), num_virtual_miss);
+  fprintf(fout, "Total number of valid predictions: %d (%.3f) + virtual: %d\n", 
+          num_valid, (float)num_valid / (num_predicted + num_miss), num_virtual_valid);
   fprintf(fout, "Total memory access savings: %d\n", mem_access_saved);
   fprintf(fout, "Evicted entries: %d\n", num_evicted);
   fprintf(fout, "Per entry overflow: %d\n", num_entry_overflow);
   fprintf(fout, "--------------------------------------------\n");
 }
 
-bool ray_predictor::validate_prediction(unsigned long long hash, const Ray ray_properties, unsigned tid) {
+bool ray_predictor::validate_prediction(const std::deque<new_addr_type> prediction_list, const Ray ray_properties, unsigned tid) {
   bool valid;
-  
-  // Read list of predictions from predictor table
-  std::deque<new_addr_type> &prediction_list = m_predictor_table[hash].m_nodes;
   
   // Save list of memory requests required to validate prediction
   std::deque<new_addr_type> predictor_mem_accesses;

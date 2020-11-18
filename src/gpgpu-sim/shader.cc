@@ -2534,7 +2534,7 @@ rt_unit::rt_unit(mem_fetch_interface *icnt,
                                   IN_L1C_MISS_QUEUE);
                                 
   // TODO: Get the configurations from m_config 
-  m_ray_predictor = new ray_predictor(m_sid, m_config->m_rt_predictor_config);
+  m_ray_predictor = new ray_predictor(m_sid, m_config->m_rt_predictor_config, m_core);
 
   // l0c_latency_queue.resize(m_config->m_L0C_config.)
 
@@ -5390,6 +5390,30 @@ void simt_core_cluster::get_L0C_sub_stats(struct cache_sub_stats &css) const {
     total_css += temp_css;
   }
   css = total_css;
+}
+
+void simt_core_cluster::add_ray_predictor_entry(unsigned long long hash, new_addr_type predicted_node) {
+  if (m_predictor_table.find(hash) != m_predictor_table.end()) {
+    m_predictor_table[hash].m_nodes.push_back(predicted_node);
+  }
+  else {
+    predictor_entry new_entry;
+    new_entry.m_valid = true;
+    new_entry.m_tag = hash;
+    new_entry.m_nodes.push_back(predicted_node);
+    m_predictor_table[hash] = new_entry;
+  }
+}
+
+predictor_entry simt_core_cluster::check_ray_predictor_table(unsigned long long hash) {
+  if (m_predictor_table.find(hash) != m_predictor_table.end()) {
+    return m_predictor_table[hash];
+  }
+  else {
+    predictor_entry dummy_entry;
+    dummy_entry.m_valid = false;
+    return dummy_entry;
+  }
 }
 
 void exec_shader_core_ctx::checkExecutionStatusAndUpdate(warp_inst_t &inst,
