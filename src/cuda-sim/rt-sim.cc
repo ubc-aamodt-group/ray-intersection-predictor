@@ -341,7 +341,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     unsigned long long ray_hash;
     ray_hash = compute_hash(ray_properties);
     thread->add_ray_hash(ray_hash);
-        
+    thread->add_ray_properties(ray_properties);
     
     // Traversal stack
     // const int STACK_SIZE = 32;
@@ -499,10 +499,6 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 mem->read(tri_start + tri_addr, sizeof(float4), &p0);
                 mem->read(tri_start + tri_addr + sizeof(float4), sizeof(float4), &p1);
                 mem->read(tri_start + tri_addr + 2*sizeof(float4), sizeof(float4), &p2);
-                thread->add_raytrace_mem_access(tri_start + tri_addr);
-                
-                // RT-CORE NOTE: Fix for triangles
-                tree_level_map[tri_start + tri_addr] = 0xff;
                 
                 // Check if triangle is valid (if (__float_as_int(v00.x) == 0x80000000))
                 if (*(int*)&p0.x ==  0x80000000) {
@@ -512,6 +508,11 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                     break;
                 }
                 
+                thread->add_raytrace_mem_access(tri_start + tri_addr);
+                
+                // RT-CORE NOTE: Fix for triangles
+                tree_level_map[tri_start + tri_addr] = 0xff;
+                
                 hit = rtao_ray_triangle_test(p0, p1, p2, ray_properties, &thit, ray_payload);
                 if (hit) {
                     #ifdef DEBUG_PRINT
@@ -519,8 +520,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                     #endif
                     *(int*) &ray_payload.t_triId_u_v.y = tri_addr >> 4;
                     
+                    predict_node = tri_start + (~next_node << 4);
                     if (ray_properties.anyhit) {
-                        predict_node = next_node;
+                        traversal_stack.clear();
                         next_node = EMPTY_STACK;
                         break;
                     }
@@ -561,7 +563,8 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
         
         mem->write(ray_payload_addr, sizeof(Hit), &ray_payload, NULL, NULL);
         
-        thread->add_hit_count();
+        thread->add_ray_intersect();
+        thread->add_ray_prediction(predict_node);
         
         // TODO: Keep this separate from read accesses
         // thread->add_raytrace_mem_access(ray_payload_addr);
@@ -569,55 +572,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
         *(int*) &ray_payload.t_triId_u_v.y = (int)-1;
         mem->write(ray_payload_addr, sizeof(Hit), &ray_payload, NULL, NULL);
     }
-        
-    // PREDICTOR
-    
-    // Check predictor
-    std::list<new_addr_type> predicted_nodes = access_ray_predictor(thread, ray_hash);
-    
-    // TODO: Add stats (if predicted_nodes is non-empty -> predictor hit)
-    
-    // Iterate through predictions (generalized for future go-up implementation?)
-    thread->set_prediction_valid(false);
-    if (!predicted_nodes.empty()) {
-        GPGPU_Context()->func_sim->g_total_predictor_hits++;
-        Hit predictor_hit;
-        unsigned nodes_per_entry = 1;
-        for (auto node=predicted_nodes.begin(); node!=predicted_nodes.end(); ++node) {
-            // printf("0x%x\n", *node);
-            predictor_hit = traverse_intersect(*node, ray_properties, node_start, tri_start, thread, mem, tree_level_map);
-            // TODO: Add stats (compare predictor_hit to original ray_payload)
-            
-            if (ray_properties.anyhit && predictor_hit.t_triId_u_v.x > 0) {
-                break;
-            }
-            
-            // Check if max nodes per entry has been hit
-            nodes_per_entry++;
-            if (nodes_per_entry > predictor_config.entry_cap) {
-                break;
-            }
-        }
-        
-        // Update ray payload with predictor hit
-        if (predictor_hit.t_triId_u_v.x > 0) {
-            mem->write(ray_payload_addr, sizeof(Hit), &predictor_hit, NULL, NULL);
-            thread->set_prediction_valid(true);
-        }
-        else {
-            // Prediction did not help
-            GPGPU_Context()->func_sim->g_additional_rt_mem_accesses += thread->raytrace_prediction_size();
-        }
-        
-    }
-    
-    // Add entry if hit
-    if (hit) {
-        // addr_t tri_addr = *(int *)&ray_payload.t_triId_u_v.y;
-        add_ray_prediction(thread, ray_hash, predict_node);
-        // TODO: Add this memory access to thread
-    }
-    
+
     thread->set_tree_level_map(tree_level_map);
 }
 
@@ -685,6 +640,11 @@ bool mt_ray_triangle_test(float3 p0, float3 p1, float3 p2, Ray ray_properties, f
     
     *thit = dot(v0v2, qvec) * idet;
     return true;
+}
+
+bool rtao_ray_triangle_test(float4 v00, float4 v11, float4 v22, Ray ray_properties, float* thit) {
+    Hit ray_payload;
+    return rtao_ray_triangle_test(v00, v11, v22, ray_properties, thit, ray_payload);    
 }
 
 bool rtao_ray_triangle_test(float4 v00, float4 v11, float4 v22, Ray ray_properties, float* thit, Hit &ray_payload)
@@ -832,11 +792,12 @@ unsigned long long compute_hash(Ray ray) {
     
   // Hash type
   char hash_type = GPGPU_Context()->the_gpgpusim->g_the_gpu->get_config().get_ray_predictor_config().hash_type;
+  unsigned hash_bits = GPGPU_Context()->the_gpgpusim->g_the_gpu->get_config().get_ray_predictor_config().hash_bits;
   unsigned long long hash;
   
   switch (hash_type) {
     case 'f': {
-        unsigned num_bits = 2;
+        unsigned num_bits = hash_bits;
         uint32_t num_comp_bits = 2 * num_bits + 1;
         uint32_t hash_d =
           (hash_comp(ray.get_direction().z, num_bits) << (2 * num_comp_bits)) |
@@ -895,199 +856,3 @@ unsigned long long compute_hash(Ray ray) {
   return hash; 
 }
  
-void add_ray_prediction(ptx_thread_info * thread, unsigned long long ray_hash, new_addr_type prediction) {
-    thread->get_core()->add_predictor_entry(ray_hash, prediction);
-}
-
-
-std::list<new_addr_type> access_ray_predictor(class ptx_thread_info * thread, unsigned long long ray_hash) {
-    return thread->get_core()->get_predictor_entry(ray_hash);
-}
-
-
-Hit traverse_intersect(addr_t next_node, Ray ray_properties, addr_t node_start, addr_t tri_start, class ptx_thread_info * thread, memory_space * mem, std::map<new_addr_type, unsigned> &tree_level_map) {
-    
-    std::list<addr_t> traversal_stack;
-    
-    // Initialize
-    addr_t child0_addr = 0;
-    addr_t child1_addr = 0;
-    
-    // Set thit to max
-    float thit = ray_properties.dir_tmax.w;
-    bool hit = false;
-    addr_t hit_addr;
-    Hit ray_payload;
-    
-    do {
-
-        // Check not a leaf node and not empty traversal stack (Leaf nodes start with 0xf...)
-        while ((int)next_node >= 0)
-        {
-            if (next_node != 0) next_node *= 0x10;
-            // Get top node data
-            // const float4 n0xy = __ldg(localBVHTreeNodes + nodeAddr + 0); // (c0.lo.x, c0.hi.x, c0.lo.y, c0.hi.y)
-            // const float4 n1xy = __ldg(localBVHTreeNodes + nodeAddr + 1); // (c1.lo.x, c1.hi.x, c1.lo.y, c1.hi.y)
-            // const float4 n01z = __ldg(localBVHTreeNodes + nodeAddr + 2); // (c0.lo.z, c0.hi.z, c1.lo.z, c1.hi.z)
-            float4 n0xy, n1xy, n01z;
-            mem->read(node_start + next_node, sizeof(float4), &n0xy);
-            mem->read(node_start + next_node + sizeof(float4), sizeof(float4), &n1xy);
-            mem->read(node_start + next_node + 2*sizeof(float4), sizeof(float4), &n01z);
-            
-            // TODO: Figure out if node_start + next_node + 2 also should be recorded
-            thread->add_raytrace_prediction(node_start + next_node);
-            
-            unsigned current_tree_level = tree_level_map[node_start + next_node];
-            if (current_tree_level <= 0) {
-                unsigned current_tree_level = GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[node_start + next_node];
-            }
-            assert(current_tree_level > 0);
-            
-            #ifdef DEBUG_PRINT
-            printf("Node data: \n");
-            print_float4(n0xy);
-            print_float4(n1xy);
-            print_float4(n01z);
-            #endif
-            
-            // Reorganize
-            float3 n0lo, n0hi, n1lo, n1hi;
-            n0lo = {n0xy.x, n0xy.z, n01z.x};
-            n0hi = {n0xy.y, n0xy.w, n01z.y};
-            n1lo = {n1xy.x, n1xy.z, n01z.z};
-            n1hi = {n1xy.y, n1xy.w, n01z.w};
-            
-            float thit0, thit1;
-            float3 idir = calculate_idir(ray_properties.get_direction());
-            bool child0_hit = ray_box_test(n0lo, n0hi, idir, ray_properties.get_origin(), ray_properties.get_tmin(), ray_properties.get_tmax(), thit0);
-            bool child1_hit = ray_box_test(n1lo, n1hi, idir, ray_properties.get_origin(), ray_properties.get_tmin(), ray_properties.get_tmax(), thit1);
-            
-            #ifdef DEBUG_PRINT
-            printf("Child 0 hit: %d \t", child0_hit);
-            printf("Child 1 hit: %d \n", child1_hit);
-            #endif
-            
-            mem->read(node_start + next_node + 3*sizeof(float4), sizeof(addr_t), &child0_addr);
-            mem->read(node_start + next_node + 3*sizeof(float4) + sizeof(addr_t), sizeof(addr_t), &child1_addr);
-            
-            if ((int)child0_addr > 0)
-                tree_level_map[node_start + child0_addr * 0x10] = current_tree_level + 1;
-            if ((int)child1_addr > 0)
-                tree_level_map[node_start + child1_addr * 0x10] = current_tree_level + 1;
-                
-            #ifdef DEBUG_PRINT
-            printf("Child 0 offset: 0x%x \t", child0_addr);
-            printf("Child 1 offset: 0x%x \n", child1_addr);
-            #endif
-            
-            
-            // Miss
-            if (!child0_hit && !child1_hit) {
-                if (traversal_stack.empty()) {
-                    next_node = EMPTY_STACK;
-                    break;
-                }
-                
-                // Pop next node from stack
-                next_node = traversal_stack.back();
-                traversal_stack.pop_back();
-                #ifdef DEBUG_PRINT
-                printf("Traversal Stack: \n");
-                print_stack(traversal_stack);
-                #endif
-            }
-            // Both hit
-            else if (child0_hit && child1_hit) {
-                next_node = (thit0 < thit1) ? child0_addr : child1_addr;
-                
-                // Push extra node to stack
-                traversal_stack.push_back((thit0 < thit1) ? child1_addr : child0_addr);
-                #ifdef DEBUG_PRINT
-                printf("Traversal Stack: \n");
-                print_stack(traversal_stack);
-                #endif
-                
-                if (traversal_stack.size() > MAX_TRAVERSAL_STACK_SIZE) printf("Short stack full!\n");
-            }
-            // Single hit
-            else {
-                assert(child0_hit ^ child1_hit);
-                next_node = (child0_hit) ? child0_addr : child1_addr;
-            }
-            
-        }
-        #ifdef DEBUG_PRINT
-        printf("Transition to leaf nodes.\n");
-        #endif
-        
-        addr_t tri_addr;
-
-        
-        while ((int)next_node < 0) {
-            
-            // Convert to triangle offset
-            tri_addr = ~next_node;
-            tri_addr *= 0x10;
-            
-            // while triangle address is within triangle primitive range
-            while (1) {
-                
-                // Matches rtao Woopify triangle
-                float4 p0, p1, p2;
-                mem->read(tri_start + tri_addr, sizeof(float4), &p0);
-                mem->read(tri_start + tri_addr + sizeof(float4), sizeof(float4), &p1);
-                mem->read(tri_start + tri_addr + 2*sizeof(float4), sizeof(float4), &p2);
-                
-                // Check if triangle is valid (if (__float_as_int(v00.x) == 0x80000000))
-                if (*(int*)&p0.x ==  0x80000000) {
-                    #ifdef DEBUG_PRINT
-                    printf("End of primitives in leaf node. \n");
-                    #endif
-                    break;
-                }
-                
-                thread->add_raytrace_prediction(tri_start + tri_addr);
-                
-                // RT-CORE NOTE: Fix for triangles
-                tree_level_map[tri_start + tri_addr] = 0xff;
-                
-                hit = rtao_ray_triangle_test(p0, p1, p2, ray_properties, &thit, ray_payload);
-                if (hit) {
-                    #ifdef DEBUG_PRINT
-                    printf("HIT\t t: %f\n", thit);
-                    #endif
-                    *(int*) &ray_payload.t_triId_u_v.y = tri_addr >> 4;
-                    
-                    if (ray_properties.anyhit) {
-                        next_node = EMPTY_STACK;
-                        break;
-                    }
-                }
-                
-                #ifdef DEBUG_PRINT
-                else
-                    printf("MISS\n");
-                #endif
-                    
-                // Go to next triangle
-                tri_addr += 0x30;
-            
-            }
-            
-            if (traversal_stack.empty()) {
-                next_node = EMPTY_STACK;
-                break;
-            }
-            // Pop next node off stack
-            next_node = traversal_stack.back();
-            traversal_stack.pop_back();
-            #ifdef DEBUG_PRINT
-            printf("Traversal Stack: \n");
-            print_stack(traversal_stack);
-            #endif
-        }
-        
-    }  while (next_node != EMPTY_STACK);
-    
-    return ray_payload;
-}

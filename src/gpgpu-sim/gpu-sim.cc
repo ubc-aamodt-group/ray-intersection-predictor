@@ -271,8 +271,8 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "0");
   option_parser_register(
       opp, "-gpgpu_rt_predictor_config", OPT_CSTR, &m_rt_predictor_config_string,
-      "ray predictor config: debug_print,latency,max_table_size,hash_type,go_up_level,max_entry_cap,replacement_policy,placement_policy,virtual,virtual_access_latency ",
-      "1,2,1024,f,0,10,n,a,0,0");
+      "ray predictor config: debug_print,latency,max_table_size,hash_type,hash_bits,go_up_level,max_entry_cap,replacement_policy,placement_policy,virtual,virtual_access_latency ",
+      "1,2,1024,f,2,0,10,n,a,0,0");
   option_parser_register(
       opp, "-gpgpu_rt_warppool_order", OPT_CSTR, &m_rt_warppool_order,
       "defines order of memory accesses from the warp pool ",
@@ -1356,10 +1356,7 @@ void gpgpu_sim::gpu_print_stat() {
 
   // shader_print_l1_miss_stat( stdout );
   shader_print_cache_stats(stdout);
-  printf("rt_total_valid_predictions = %d\n", gpgpu_ctx->func_sim->g_total_valid_predictions);
-  printf("rt_total_predictor_table_hits = %d\n", gpgpu_ctx->func_sim->g_total_predictor_hits);
   printf("rt_total_mem_access_count = %d\n", gpgpu_ctx->func_sim->g_total_raytrace_mem_accesses);
-  printf("rt_additional_mem_accesses = %d\n", gpgpu_ctx->func_sim->g_additional_rt_mem_accesses);
   printf("accesses per thread (#accesses:#threads): ");
   for (unsigned i=0; i<50; i++) {
     printf("%d:%d\t", i, gpgpu_ctx->func_sim->g_raytrace_mem_accesses[i]);

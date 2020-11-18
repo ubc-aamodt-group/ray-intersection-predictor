@@ -179,6 +179,22 @@ struct dim3comp {
       return false;
   }
 };
+struct Ray
+{
+	float4 origin_tmin;
+	float4 dir_tmax;
+	
+	bool anyhit;
+
+  float3 get_origin() { return {origin_tmin.x, origin_tmin.y, origin_tmin.z}; }
+  void set_origin(float3 new_origin) { origin_tmin = {new_origin.x, new_origin.y, new_origin.z, origin_tmin.w}; }
+  
+  float get_tmin() const { return origin_tmin.w; }
+  float get_tmax() const { return dir_tmax.w; }
+
+  float3 get_direction() { return {dir_tmax.x, dir_tmax.y, dir_tmax.z}; }
+  void set_direction(float4 new_dir) { dir_tmax = new_dir; }
+};
 
 void increment_x_then_y_then_z(dim3 &i, const dim3 &bound);
 
@@ -502,6 +518,7 @@ struct ray_predictor_config {
   unsigned latency;
   unsigned max_size;
   char hash_type;
+  unsigned hash_bits;
   unsigned go_up_level;
   unsigned entry_cap;
   char replacement_policy;
@@ -1192,19 +1209,15 @@ class warp_inst_t : public inst_t {
   unsigned get_schd_id() const { return m_scheduler_id; }
   active_mask_t get_warp_active_mask() const { return m_warp_active_mask; }
   
-  // RT-CORE NOTE: Check that list assignments work like this.. or is there a better way?
   void set_rt_mem_accesses(unsigned int tid, const std::deque<new_addr_type>& mem_accesses);
-  void set_rt_ray_hash(unsigned int tid, unsigned long long ray_hash);
-  void set_rt_predictions(unsigned int tid, const std::deque<new_addr_type>& predictions, bool prediction_valid);
+  int update_rt_mem_accesses(unsigned int tid, bool valid, const std::deque<new_addr_type> &mem_accesses);
+  void set_rt_ray_properties(unsigned int tid, Ray ray, unsigned long long hash, new_addr_type prediction, bool intersect);
+  unsigned long long rt_ray_hash(unsigned int tid) const { return m_per_scalar_thread[tid].ray_hash; }
+  bool rt_ray_intersect(unsigned int tid) const { return m_per_scalar_thread[tid].ray_intersect; }
+  Ray rt_ray_properties(unsigned int tid) const { return m_per_scalar_thread[tid].ray_properties; }
+  new_addr_type rt_ray_prediction(unsigned int tid) const { return m_per_scalar_thread[tid].ray_prediction; }
   void rt_mem_accesses_pop(new_addr_type addr);
   bool rt_mem_accesses_empty();
-  
-  bool rt_predicted(unsigned int tid) { return !(m_per_scalar_thread[tid].raytrace_predictions.empty()); }
-  bool rt_prediction_valid(unsigned int tid) { return m_per_scalar_thread[tid].raytrace_prediction_valid; };
-  int rt_mem_savings(unsigned int tid);
-  unsigned long long rt_ray_hash(unsigned int tid) { return m_per_scalar_thread[tid].ray_hash; }
-  
-  void update_rt_mem_accesses(unsigned int tid, bool valid);
   
   // RT-CORE NOTE: May need to update this logic for special node fetching? (i.e. vote on next mem access)
   mem_access_t get_next_rt_mem_access(bool locked);
@@ -1287,9 +1300,10 @@ class warp_inst_t : public inst_t {
                                                    
     // RT variables    
     std::deque<new_addr_type> raytrace_mem_accesses;
-    std::deque<new_addr_type> raytrace_predictions;
-    bool raytrace_prediction_valid;
+    bool ray_intersect;
+    new_addr_type ray_prediction;
     unsigned long long ray_hash;
+    Ray ray_properties;
   };
   bool m_per_scalar_thread_valid;
   std::vector<per_thread_info> m_per_scalar_thread;
@@ -1381,28 +1395,6 @@ class core_t {
   unsigned get_reduction_value(unsigned ctaid, unsigned barid) {
     return reduction_storage[ctaid][barid];
   }
-  
-  void add_predictor_entry(unsigned long long hash, new_addr_type node) {
-    if (predictor_table.find(hash) != predictor_table.end()) {
-      for (std::list<new_addr_type>::iterator n=predictor_table[hash].begin(); n!=predictor_table[hash].end(); ++n) {
-        if (*n == node) return;
-      }
-      predictor_table[hash].push_back(node);
-    } else {
-      std::list<new_addr_type> node_list;
-      node_list.push_back(node);
-      predictor_table[hash] = node_list;
-    }
-  }
-  
-  std::list<new_addr_type> get_predictor_entry(unsigned long long hash) {
-    if (predictor_table.find(hash) != predictor_table.end()) {
-      return predictor_table[hash];
-    } else {
-      std::list<new_addr_type> empty_list;
-      return empty_list;
-    }
-  }
 
  protected:
   class gpgpu_sim *m_gpu;
@@ -1413,8 +1405,6 @@ class core_t {
   unsigned m_warp_count;
   unsigned reduction_storage[MAX_CTA_PER_SHADER][MAX_BARRIERS_PER_CTA];
   
-  // RT-CORE NOTE: Temporary
-  std::map<unsigned long long, std::list<new_addr_type> > predictor_table;
 };
 
 // register that can hold multiple instructions.

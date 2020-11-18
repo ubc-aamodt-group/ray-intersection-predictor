@@ -119,8 +119,6 @@ class cuda_sim {
  public:
   cuda_sim(gpgpu_context *ctx) {
     g_ptx_sim_num_insn = 0;
-    g_total_valid_predictions = 0;
-    g_total_predictor_hits = 0;
     g_additional_rt_mem_accesses = 0;
     g_total_raytrace_mem_accesses = 0;
     g_total_raytrace_hits = 0;
@@ -157,8 +155,6 @@ class cuda_sim {
   unsigned g_total_raytrace_mem_accesses;
   unsigned g_raytrace_mem_accesses[50];
   unsigned g_total_raytrace_hits;
-  unsigned g_total_valid_predictions;
-  unsigned g_total_predictor_hits;
   unsigned g_additional_rt_mem_accesses;
   char *cdp_latency_str;
   int g_ptx_kernel_count;  // used for classification stat collection purposes

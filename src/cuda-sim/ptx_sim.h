@@ -42,6 +42,7 @@
 #include <string>
 
 #include "memory.h"
+#include "rt-sim.h"
 
 #define GCC_VERSION \
   (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
@@ -302,7 +303,7 @@ class ptx_thread_info {
     m_hw_wid = wid;
     m_hw_tid = tid;
     m_functionalSimulationMode = fsim;
-    m_raytrace_hitcount = 0;
+    m_raytrace_intersect = 0;
   }
 
   void ptx_fetch_inst(inst_t &inst) const;
@@ -462,11 +463,9 @@ class ptx_thread_info {
   
   void add_raytrace_mem_access(addr_t addr) { m_raytrace_mem_accesses.push_back(addr); }
   void add_ray_hash(unsigned long long ray_hash) { m_ray_hash = ray_hash; }
-  void add_raytrace_prediction(addr_t addr) { m_raytrace_predictions.push_back(addr); }
-  unsigned raytrace_prediction_size() { return m_raytrace_predictions.size(); }
-  void set_prediction_valid(bool valid) { m_raytrace_prediction_valid = valid; }
-  bool get_prediction_valid() { return m_raytrace_prediction_valid; }
-  void add_hit_count() { m_raytrace_hitcount++; }
+  void add_ray_intersect() { m_raytrace_intersect++; }
+  void add_ray_prediction(addr_t prediction) { m_raytrace_prediction = prediction; }
+  void add_ray_properties(Ray ray) { m_ray = ray; }
   void set_tree_level_map(std::map<new_addr_type, unsigned> tree_level) { m_rt_tree_level_map = tree_level; }
 
  public:
@@ -526,10 +525,10 @@ class ptx_thread_info {
   
   // RT-CORE NOTE: Might want to track parent-child relations? not sure..
   std::deque<new_addr_type> m_raytrace_mem_accesses;
-  unsigned m_raytrace_hitcount;
+  unsigned m_raytrace_intersect;
   unsigned long long m_ray_hash;
-  std::deque<new_addr_type> m_raytrace_predictions;
-  bool m_raytrace_prediction_valid;
+  addr_t m_raytrace_prediction;
+  Ray m_ray;
   std::map<new_addr_type, unsigned> m_rt_tree_level_map;
 };
 

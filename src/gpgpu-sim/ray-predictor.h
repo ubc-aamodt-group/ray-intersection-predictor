@@ -1,12 +1,14 @@
 #ifndef RAY_PREDICTOR_FUNCTION_INCLUDED
 #define RAY_PREDICTOR_FUNCTION_INCLUDED
 
-#include "shader.h"
+#include "../abstract_hardware_model.h"
 
 
 struct {
+    bool m_valid;
     unsigned long long m_tag;
     unsigned long long m_timestamp;
+    std::deque<new_addr_type> m_nodes;
 } typedef predictor_entry;
 
 class ray_predictor {
@@ -36,11 +38,12 @@ class ray_predictor {
   private:
   
     // TODO:
-    void evict_entry(unsigned long long hash);
-    void add_entry(unsigned long long hash);
+    void evict_entry();
+    void add_entry(unsigned long long hash, new_addr_type prediction);
     bool check_table(unsigned long long hash);
-    void update_LRU(unsigned long long hash);
     void reset_cycle_delay() { m_cycles = m_cycle_delay; };
+    bool validate_prediction(unsigned long long hash, const Ray ray_properties, unsigned tid);
+    bool traverse_intersect(const new_addr_type prediction, const Ray ray_properties, std::deque<new_addr_type> &mem_accesses);
     
     std::map<unsigned long long, predictor_entry> m_predictor_table;
     warp_inst_t m_current_warp;
@@ -50,8 +53,10 @@ class ray_predictor {
     
     // Stats
     unsigned num_predicted;
+    unsigned num_miss;
     unsigned num_valid;
     unsigned num_evicted;
+    unsigned num_entry_overflow;
     int mem_access_saved;
 };
 

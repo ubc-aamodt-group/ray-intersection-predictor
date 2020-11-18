@@ -759,43 +759,31 @@ void warp_inst_t::set_rt_mem_accesses(unsigned int tid, const std::deque<new_add
   m_per_scalar_thread[tid].raytrace_mem_accesses = mem_accesses; 
 }
 
-void warp_inst_t::set_rt_ray_hash(unsigned int tid, unsigned long long ray_hash) { 
-  if (!m_per_scalar_thread_valid) {
-    m_per_scalar_thread.resize(m_config->warp_size);
-    m_per_scalar_thread_valid = true;
-  }
-  
-  m_per_scalar_thread[tid].ray_hash = ray_hash; 
+void warp_inst_t::set_rt_ray_properties(unsigned int tid, Ray ray, unsigned long long hash, new_addr_type prediction, bool intersect) {
+  assert(m_per_scalar_thread_valid);
+  m_per_scalar_thread[tid].ray_properties = ray;
+  m_per_scalar_thread[tid].ray_hash = hash; 
+  m_per_scalar_thread[tid].ray_intersect = intersect;
+  if (intersect) m_per_scalar_thread[tid].ray_prediction = prediction;
+  else m_per_scalar_thread[tid].ray_prediction = 0x0;
 }
 
-void warp_inst_t::set_rt_predictions(unsigned int tid, const std::deque<new_addr_type>& predictions, bool prediction_valid) {
-  if (!m_per_scalar_thread_valid) {
-    m_per_scalar_thread.resize(m_config->warp_size);
-    m_per_scalar_thread_valid = true;
-  }
-  
-  m_per_scalar_thread[tid].raytrace_predictions = predictions;
-  m_per_scalar_thread[tid].raytrace_prediction_valid = prediction_valid;
-}
-
-void warp_inst_t::update_rt_mem_accesses(unsigned int tid, bool valid) {
+int warp_inst_t::update_rt_mem_accesses(unsigned int tid, bool valid, const std::deque<new_addr_type> &mem_accesses) {
+  int saved_accesses;
   if (valid) {
+    saved_accesses = m_per_scalar_thread[tid].raytrace_mem_accesses.size() - mem_accesses.size();
     // Replace regular traversal accesses with prediction accesses
-    m_per_scalar_thread[tid].raytrace_mem_accesses = m_per_scalar_thread[tid].raytrace_predictions;
+    m_per_scalar_thread[tid].raytrace_mem_accesses = mem_accesses;
   }
   else {
+    saved_accesses = (-1) * mem_accesses.size();
     // Add prediction accesses to the beginning of all mem accesses
-    for (auto it=m_per_scalar_thread[tid].raytrace_predictions.rbegin(); it!=m_per_scalar_thread[tid].raytrace_predictions.rend(); ++it) {
+    for (auto it=mem_accesses.rbegin(); it!=mem_accesses.rend(); ++it) {
       m_per_scalar_thread[tid].raytrace_mem_accesses.push_front(*it);
     }
   }
-}
-
-int warp_inst_t::rt_mem_savings(unsigned int tid) {
-  if (m_per_scalar_thread[tid].raytrace_prediction_valid) 
-    return m_per_scalar_thread[tid].raytrace_mem_accesses.size() - m_per_scalar_thread[tid].raytrace_predictions.size();
-  else 
-    return (-1) * m_per_scalar_thread[tid].raytrace_predictions.size();
+  
+  return saved_accesses;
 }
 
 void warp_inst_t::rt_mem_accesses_pop(new_addr_type addr) {
