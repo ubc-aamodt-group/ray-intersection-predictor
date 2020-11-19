@@ -31,6 +31,7 @@ class ray_predictor {
     unsigned m_cycle_delay;
     bool m_virtualize;
     unsigned m_virtualize_delay;
+    unsigned m_ways;
     
     unsigned m_sid;
     
@@ -52,7 +53,7 @@ class ray_predictor {
     // TODO:
     void evict_entry();
     void add_entry(unsigned long long hash, new_addr_type prediction);
-    bool check_table(unsigned long long hash);
+    bool check_table(unsigned long long hash, unsigned long long &index);
     void reset_cycle_delay(unsigned delay) { m_cycles = delay; };
     bool validate_prediction(const std::deque<new_addr_type> prediction_list, const Ray ray_properties, unsigned tid);
     bool traverse_intersect(const new_addr_type prediction, const Ray ray_properties, std::deque<new_addr_type> &mem_accesses);

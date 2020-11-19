@@ -1601,7 +1601,7 @@ class shader_core_config : public core_config {
     sscanf(m_rt_predictor_config_string, "%u,%u,%u,%c,%u,%u,%u,%c,%c,%u,%u", &print_ray_predictor_settings, &m_rt_predictor_config.latency,
             &m_rt_predictor_config.max_size, &m_rt_predictor_config.hash_type, &m_rt_predictor_config.hash_bits,
             &m_rt_predictor_config.go_up_level, &m_rt_predictor_config.entry_cap,
-            &m_rt_predictor_config.replacement_policy, &m_rt_predictor_config.placement_policy,
+            &m_rt_predictor_config.replacement_policy, &m_rt_predictor_config.placement_policy, &m_rt_predictor_config.n_ways,
             &m_rt_predictor_config.virtualize, &m_rt_predictor_config.virtualize_delay);
     if (print_ray_predictor_settings) {
       // Print options into output for readability:
@@ -1614,8 +1614,12 @@ class shader_core_config : public core_config {
       printf("\tMax nodes per entry: %d\n", m_rt_predictor_config.entry_cap);
       printf("\tReplacement policy: %c\n", m_rt_predictor_config.replacement_policy);
       printf("\tPlacement policy: %c\n", m_rt_predictor_config.placement_policy);
+      if (m_rt_predictor_config.placement_policy == 's') {
+        printf("\tNumber of ways: %d\n", m_rt_predictor_config.n_ways);
+        assert(m_rt_predictor_config.n_ways > 0);
+      }
       printf("\tUse virtual table: %d\n", m_rt_predictor_config.virtualize);
-      printf("\tVirtual table latency: %d\n", m_rt_predictor_config.virtualize_delay);
+      if (m_rt_predictor_config.virtualize) printf("\tVirtual table latency: %d\n", m_rt_predictor_config.virtualize_delay);
     }
   }
   void reg_options(class OptionParser *opp);

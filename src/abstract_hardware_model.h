@@ -523,6 +523,7 @@ struct ray_predictor_config {
   unsigned entry_cap;
   char replacement_policy;
   char placement_policy;
+  unsigned n_ways;
   unsigned virtualize;
   unsigned virtualize_delay;
 };

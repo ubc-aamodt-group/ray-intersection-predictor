@@ -13,6 +13,7 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   m_number_of_entries_cap = config.entry_cap;
   m_replacement_policy = config.replacement_policy;
   m_placement_policy = config.placement_policy;
+  m_ways = config.n_ways;
   m_table_size = config.max_size;
   m_cycle_delay = config.latency;
   m_virtualize = config.virtualize;
@@ -59,13 +60,11 @@ warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
     // Check if valid ray
     if (ray_hash == 0) continue;
     
+    unsigned long long index;
     // Check predictor table
-    if (check_table(ray_hash)) {
-      num_predicted++;
+    if (check_table(ray_hash, index)) {
       // If predictor hit, iterate through predictions
-      unsigned long long index;
-      if (m_placement_policy == 'd') index = ray_hash & (m_table_size - 1);
-      else if (m_placement_policy == 'a') index = ray_hash;
+      num_predicted++;
       
       // Read list of predictions from predictor table
       std::deque<new_addr_type> &prediction_list = m_predictor_table[index].m_nodes;
@@ -127,16 +126,19 @@ warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
   
 }
 
-bool ray_predictor::check_table(unsigned long long hash) {
+bool ray_predictor::check_table(unsigned long long hash, unsigned long long &index) {
+  // Direct mapped predictor
   if (m_placement_policy == 'd') {
-    unsigned index = hash & (m_table_size - 1);
+    index = hash & (m_table_size - 1);
     if (m_predictor_table.find(index) != m_predictor_table.end())
       return (m_predictor_table[index].m_tag == hash);
     else
       return false;
   }
   
+  // Fully associative predictor
   else if (m_placement_policy == 'a') {
+    index = hash;
     bool hit = (m_predictor_table.find(hash) != m_predictor_table.end());
     
     // Update LRU
@@ -145,6 +147,26 @@ bool ray_predictor::check_table(unsigned long long hash) {
     }
     
     return hit;
+  }
+  
+  // Set associative predictor
+  else if (m_placement_policy == 's') {
+    unsigned i = hash & (m_table_size/m_ways - 1);
+    
+    // Check each way
+    for (unsigned way=0; way<m_ways; way++) {
+      if (m_predictor_table[i + way*m_table_size/m_ways].m_tag == hash) {
+        // Update LRU
+        if (m_replacement_policy == 'l') {
+          m_predictor_table[i + way*m_table_size/m_ways].m_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
+        }
+        // Update index
+        index = i + way*m_table_size/m_ways;
+        return true;
+      }
+    }
+    // Otherwise miss
+    return false;
   }
   
   assert(0);
@@ -185,6 +207,23 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
       return;
     }
   }
+  // Set Associative
+  else if (m_placement_policy == 's') {
+    // Check if hash is already in the predictor table
+    unsigned index = hash & (m_table_size/m_ways - 1);
+    for (unsigned way=0; way<m_ways; way++) {
+      if (m_predictor_table[index + way*m_table_size/m_ways].m_tag == hash) {
+        if (m_predictor_table[index + way*m_table_size/m_ways].m_nodes.size() < m_number_of_entries_cap) {
+          m_predictor_table[index + way*m_table_size/m_ways].m_nodes.push_back(predict_node);
+        }
+        else {
+          num_entry_overflow++;
+        }
+        m_predictor_table[index + way*m_table_size/m_ways].m_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
+        return;
+      }
+    }
+  }
   
   // Otherwise, create new entry
   predictor_entry new_entry;
@@ -204,9 +243,32 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
     }
     m_predictor_table[hash] = new_entry;
   }
+  else if (m_placement_policy == 's') {
+    unsigned index = hash & (m_table_size/m_ways - 1);
+    // Choose way
+    unsigned w;
+    unsigned long long lru = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle + 1;
+    bool evict = true;
+    for (unsigned way=0; way<m_ways; way++) {
+      if (!m_predictor_table[index + way*m_table_size/m_ways].m_valid) {
+        evict = false;
+        w = way;
+        break;
+      }
+      else if (m_predictor_table[index + way*m_table_size/m_ways].m_timestamp < lru) {
+        w = way;
+        lru = m_predictor_table[index + way*m_table_size/m_ways].m_timestamp;
+      }
+    }
+    
+    if (evict) num_evicted++;
+    m_predictor_table[index + w*m_table_size/m_ways] = new_entry;
+  }
   else {
     assert(0);
   }
+  
+  assert(m_predictor_table.size() <= m_table_size);
 }
 
 void ray_predictor::evict_entry() {
