@@ -130,7 +130,10 @@ warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
 bool ray_predictor::check_table(unsigned long long hash) {
   if (m_placement_policy == 'd') {
     unsigned index = hash & (m_table_size - 1);
-    return (m_predictor_table[index].m_tag == hash);
+    if (m_predictor_table.find(index) != m_predictor_table.end())
+      return (m_predictor_table[index].m_tag == hash);
+    else
+      return false;
   }
   
   else if (m_placement_policy == 'a') {
@@ -154,13 +157,18 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
     // Check if hash is already in the predictor table
     unsigned index = hash & (m_table_size - 1);
     if (m_predictor_table.find(index) != m_predictor_table.end()) {
-      if (m_predictor_table[index].m_nodes.size() < m_number_of_entries_cap) {
-        m_predictor_table[index].m_nodes.push_back(predict_node);
+      if (m_predictor_table[index].m_tag == hash) {
+        if (m_predictor_table[index].m_nodes.size() < m_number_of_entries_cap) {
+          m_predictor_table[index].m_nodes.push_back(predict_node);
+        }
+        else {
+          num_entry_overflow++;
+        }  
+        return;
       }
       else {
-        num_entry_overflow++;
-      }  
-      return;
+        num_evicted++;
+      }
     }
   }
   // Fully associative
