@@ -56,6 +56,9 @@ warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
   for (unsigned i=0; i<warp_size; i++) {
     unsigned long long ray_hash = m_current_warp.rt_ray_hash(i);
     
+    // Check if valid ray
+    if (ray_hash == 0) continue;
+    
     // Check predictor table
     if (check_table(ray_hash)) {
       num_predicted++;
