@@ -1598,9 +1598,9 @@ class shader_core_config : public core_config {
     
     
     bool print_ray_predictor_settings;
-    sscanf(m_rt_predictor_config_string, "%u,%u,%u,%c,%u,%u,%u,%c,%c,%u,%u", &print_ray_predictor_settings, &m_rt_predictor_config.latency,
+    sscanf(m_rt_predictor_config_string, "%u,%u,%u,%c,%u,%u,%u,%c,%c,%c,%u,%u", &print_ray_predictor_settings, &m_rt_predictor_config.latency,
             &m_rt_predictor_config.max_size, &m_rt_predictor_config.hash_type, &m_rt_predictor_config.hash_bits,
-            &m_rt_predictor_config.go_up_level, &m_rt_predictor_config.entry_cap,
+            &m_rt_predictor_config.go_up_level, &m_rt_predictor_config.entry_cap, &m_rt_predictor_config.entry_replacement_policy,
             &m_rt_predictor_config.replacement_policy, &m_rt_predictor_config.placement_policy, &m_rt_predictor_config.n_ways,
             &m_rt_predictor_config.virtualize, &m_rt_predictor_config.virtualize_delay);
     if (print_ray_predictor_settings) {
@@ -1612,6 +1612,7 @@ class shader_core_config : public core_config {
       printf("\tHash bits (loose vs. tight): %d\n", m_rt_predictor_config.hash_bits);
       printf("\tGo up level: %d\n", m_rt_predictor_config.go_up_level);
       printf("\tMax nodes per entry: %d\n", m_rt_predictor_config.entry_cap);
+      printf("\tNode replacement policy: %c\n", m_rt_predictor_config.entry_replacement_policy);
       printf("\tReplacement policy: %c\n", m_rt_predictor_config.replacement_policy);
       printf("\tPlacement policy: %c\n", m_rt_predictor_config.placement_policy);
       if (m_rt_predictor_config.placement_policy == 's') {

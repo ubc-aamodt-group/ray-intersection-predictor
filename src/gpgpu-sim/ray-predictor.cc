@@ -18,6 +18,7 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   m_cycle_delay = config.latency;
   m_virtualize = config.virtualize;
   m_virtualize_delay = config.virtualize_delay;
+  m_node_replacement_policy = config.entry_replacement_policy;
   
   m_sid = sid;
   
@@ -184,6 +185,13 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
           m_predictor_table[index].m_nodes.push_back(predict_node);
         }
         else {
+          // If FIFO, remove oldest node, add new node
+          if (m_node_replacement_policy == 'f') {
+            m_predictor_table[index].m_nodes.pop_front();
+            m_predictor_table[index].m_nodes.push_back(predict_node);
+          }
+          // Otherwise, leave as is
+          
           num_entry_overflow++;
         }  
         return;
@@ -201,6 +209,10 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
         m_predictor_table[hash].m_nodes.push_back(predict_node);
       }
       else {
+        if (m_node_replacement_policy == 'f') {
+          m_predictor_table[hash].m_nodes.pop_front();
+          m_predictor_table[hash].m_nodes.push_back(predict_node);
+        }
         num_entry_overflow++;
       }
       m_predictor_table[hash].m_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
@@ -217,6 +229,10 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
           m_predictor_table[index + way*m_table_size/m_ways].m_nodes.push_back(predict_node);
         }
         else {
+          if (m_node_replacement_policy == 'f') {
+            m_predictor_table[index + way*m_table_size/m_ways].m_nodes.pop_front();
+            m_predictor_table[index + way*m_table_size/m_ways].m_nodes.push_back(predict_node);
+          }
           num_entry_overflow++;
         }
         m_predictor_table[index + way*m_table_size/m_ways].m_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;

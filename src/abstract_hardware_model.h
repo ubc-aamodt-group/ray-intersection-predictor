@@ -194,6 +194,10 @@ struct Ray
 
   float3 get_direction() { return {dir_tmax.x, dir_tmax.y, dir_tmax.z}; }
   void set_direction(float4 new_dir) { dir_tmax = new_dir; }
+  
+  void print() const {
+    printf("Direction: %f %f %f \tOrigin: %f %f %f\tTmin: %f\tTmax: %f\n", dir_tmax.x, dir_tmax.y, dir_tmax.z, origin_tmin.x, origin_tmin.y, origin_tmin.z, origin_tmin.w, dir_tmax.w);
+  }
 };
 
 void increment_x_then_y_then_z(dim3 &i, const dim3 &bound);
@@ -521,6 +525,7 @@ struct ray_predictor_config {
   unsigned hash_bits;
   unsigned go_up_level;
   unsigned entry_cap;
+  char entry_replacement_policy;
   char replacement_policy;
   char placement_policy;
   unsigned n_ways;

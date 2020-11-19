@@ -25,6 +25,7 @@ class ray_predictor {
     // TODO: Implement these parameters
     unsigned m_go_up_level;
     unsigned m_number_of_entries_cap;
+    char m_node_replacement_policy;
     char m_replacement_policy;
     char m_placement_policy;
     unsigned m_table_size;
