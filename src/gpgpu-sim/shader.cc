@@ -5420,27 +5420,58 @@ void simt_core_cluster::get_L0C_sub_stats(struct cache_sub_stats &css) const {
 }
 
 void simt_core_cluster::add_ray_predictor_entry(unsigned long long hash, new_addr_type predicted_node) {
-  if (m_predictor_table.find(hash) != m_predictor_table.end()) {
-    m_predictor_table[hash].m_nodes.push_back(predicted_node);
+  unsigned long long index;
+  if (m_config->m_rt_predictor_config.virtual_placement_policy == 'a')
+    index = hash;
+  else if (m_config->m_rt_predictor_config.virtual_placement_policy == 'd') 
+    index = hash & (m_config->m_rt_predictor_config.virtual_table_size - 1);
+  else
+    assert(0);
+  
+  // Add node if prediction already in table
+  if (m_predictor_table.find(index) != m_predictor_table.end()) {
+    if (m_predictor_table[index].m_tag == hash) {
+      m_predictor_table[index].m_nodes.push_back(predicted_node);
+      
+      // If too many nodes in entry, pop oldest
+      if (m_predictor_table[index].m_nodes.size() > m_config->m_rt_predictor_config.virtual_entry_cap) {
+        m_predictor_table[index].m_nodes.pop_front();
+      }
+    }
   }
+  
+  // Otherwise make new entry
   else {
     predictor_entry new_entry;
     new_entry.m_valid = true;
     new_entry.m_tag = hash;
     new_entry.m_nodes.push_back(predicted_node);
-    m_predictor_table[hash] = new_entry;
+    m_predictor_table[index] = new_entry;
+    
+    // Evict if full
+    if (m_config->m_rt_predictor_config.virtual_placement_policy == 'a') {
+      // To be added...
+    }
   }
 }
 
 predictor_entry simt_core_cluster::check_ray_predictor_table(unsigned long long hash) {
-  if (m_predictor_table.find(hash) != m_predictor_table.end()) {
-    return m_predictor_table[hash];
+  if (m_config->m_rt_predictor_config.virtual_placement_policy == 'a') {
+    if (m_predictor_table.find(hash) != m_predictor_table.end()) {
+      return m_predictor_table[hash];
+    }
   }
-  else {
-    predictor_entry dummy_entry;
-    dummy_entry.m_valid = false;
-    return dummy_entry;
+  else if (m_config->m_rt_predictor_config.virtual_placement_policy == 'd') {
+    unsigned index = hash & (m_config->m_rt_predictor_config.virtual_table_size - 1);
+    if (m_predictor_table.find(index) != m_predictor_table.end()) {
+      return m_predictor_table[index];
+    }
   }
+  
+  // Miss
+  predictor_entry dummy_entry;
+  dummy_entry.m_valid = false;
+  return dummy_entry;
 }
 
 void exec_shader_core_ctx::checkExecutionStatusAndUpdate(warp_inst_t &inst,

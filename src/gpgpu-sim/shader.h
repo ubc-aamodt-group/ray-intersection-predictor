@@ -1598,11 +1598,12 @@ class shader_core_config : public core_config {
     
     
     bool print_ray_predictor_settings;
-    sscanf(m_rt_predictor_config_string, "%u,%u,%u,%c,%u,%u,%u,%c,%c,%c,%u,%u", &print_ray_predictor_settings, &m_rt_predictor_config.latency,
+    sscanf(m_rt_predictor_config_string, "%u,%u,%u,%c,%u,%u,%u,%c,%c,%c,%u,%u,%u,%u,%u,%c", &print_ray_predictor_settings, &m_rt_predictor_config.latency,
             &m_rt_predictor_config.max_size, &m_rt_predictor_config.hash_type, &m_rt_predictor_config.hash_bits,
             &m_rt_predictor_config.go_up_level, &m_rt_predictor_config.entry_cap, &m_rt_predictor_config.entry_replacement_policy,
             &m_rt_predictor_config.replacement_policy, &m_rt_predictor_config.placement_policy, &m_rt_predictor_config.n_ways,
-            &m_rt_predictor_config.virtualize, &m_rt_predictor_config.virtualize_delay);
+            &m_rt_predictor_config.virtualize, &m_rt_predictor_config.virtualize_delay, &m_rt_predictor_config.virtual_table_size,
+            &m_rt_predictor_config.virtual_entry_cap, &m_rt_predictor_config.virtual_placement_policy);
     if (print_ray_predictor_settings) {
       // Print options into output for readability:
       printf("GPGPU-Sim: Ray Predictor Settings:\n");
@@ -1620,7 +1621,12 @@ class shader_core_config : public core_config {
         assert(m_rt_predictor_config.n_ways > 0);
       }
       printf("\tUse virtual table: %d\n", m_rt_predictor_config.virtualize);
-      if (m_rt_predictor_config.virtualize) printf("\tVirtual table latency: %d\n", m_rt_predictor_config.virtualize_delay);
+      if (m_rt_predictor_config.virtualize) {
+        printf("\tVirtual table latency: %d\n", m_rt_predictor_config.virtualize_delay);
+        printf("\tVirtual table size: %d\n", m_rt_predictor_config.virtual_table_size);
+        printf("\tVirtual table nodes/entry: %d\n", m_rt_predictor_config.virtual_entry_cap);
+        printf("\tVirtual table placement policy: %c\n", m_rt_predictor_config.virtual_placement_policy);
+      }
     }
   }
   void reg_options(class OptionParser *opp);

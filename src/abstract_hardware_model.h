@@ -531,6 +531,9 @@ struct ray_predictor_config {
   unsigned n_ways;
   unsigned virtualize;
   unsigned virtualize_delay;
+  unsigned virtual_table_size;
+  unsigned virtual_entry_cap;
+  unsigned virtual_placement_policy;
 };
 
 class gpgpu_functional_sim_config {
