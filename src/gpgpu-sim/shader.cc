@@ -5464,7 +5464,8 @@ predictor_entry simt_core_cluster::check_ray_predictor_table(unsigned long long 
   else if (m_config->m_rt_predictor_config.virtual_placement_policy == 'd') {
     unsigned index = hash & (m_config->m_rt_predictor_config.virtual_table_size - 1);
     if (m_predictor_table.find(index) != m_predictor_table.end()) {
-      return m_predictor_table[index];
+      if (m_predictor_table[index].m_valid && m_predictor_table[index].m_tag == hash)
+        return m_predictor_table[index];
     }
   }
   

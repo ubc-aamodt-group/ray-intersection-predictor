@@ -50,8 +50,6 @@ warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
   warp_inst_t prev_warp = m_current_warp;
   m_current_warp = inst;
   
-  unsigned long long accessed_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
-  
   // Iterate through every thread
   unsigned warp_size = inst.warp_size();
   num_rays += warp_size;
@@ -132,7 +130,7 @@ bool ray_predictor::check_table(unsigned long long hash, unsigned long long &ind
   if (m_placement_policy == 'd') {
     index = hash & (m_table_size - 1);
     if (m_predictor_table.find(index) != m_predictor_table.end())
-      return (m_predictor_table[index].m_tag == hash);
+      return (m_predictor_table[index].m_tag == hash && m_predictor_table[index].m_valid);
     else
       return false;
   }
@@ -141,6 +139,8 @@ bool ray_predictor::check_table(unsigned long long hash, unsigned long long &ind
   else if (m_placement_policy == 'a') {
     index = hash;
     bool hit = (m_predictor_table.find(hash) != m_predictor_table.end());
+    
+    if (hit) assert(m_predictor_table[hash].m_valid);
     
     // Update LRU
     if (hit && m_placement_policy == 'a' && m_replacement_policy == 'l') {
@@ -156,7 +156,7 @@ bool ray_predictor::check_table(unsigned long long hash, unsigned long long &ind
     
     // Check each way
     for (unsigned way=0; way<m_ways; way++) {
-      if (m_predictor_table[i + way*m_table_size/m_ways].m_tag == hash) {
+      if (m_predictor_table[i + way*m_table_size/m_ways].m_valid && m_predictor_table[i + way*m_table_size/m_ways].m_tag == hash) {
         // Update LRU
         if (m_replacement_policy == 'l') {
           m_predictor_table[i + way*m_table_size/m_ways].m_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
@@ -181,6 +181,7 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
     unsigned index = hash & (m_table_size - 1);
     if (m_predictor_table.find(index) != m_predictor_table.end()) {
       if (m_predictor_table[index].m_tag == hash) {
+        assert(std::find(m_predictor_table[index].m_nodes.begin(), m_predictor_table[index].m_nodes.end(), predict_node) == m_predictor_table[index].m_nodes.end());
         if (m_predictor_table[index].m_nodes.size() < m_number_of_entries_cap) {
           m_predictor_table[index].m_nodes.push_back(predict_node);
         }
@@ -205,6 +206,7 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
   else if (m_placement_policy == 'a') {
     // Check if hash is already in the predictor table
     if (m_predictor_table.find(hash) != m_predictor_table.end()) {
+        assert(std::find(m_predictor_table[hash].m_nodes.begin(), m_predictor_table[hash].m_nodes.end(), predict_node) == m_predictor_table[hash].m_nodes.end());
       if (m_predictor_table[hash].m_nodes.size() < m_number_of_entries_cap) {
         m_predictor_table[hash].m_nodes.push_back(predict_node);
       }
@@ -224,8 +226,10 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
     // Check if hash is already in the predictor table
     unsigned index = hash & (m_table_size/m_ways - 1);
     for (unsigned way=0; way<m_ways; way++) {
-      if (m_predictor_table[index + way*m_table_size/m_ways].m_tag == hash) {
+      if (m_predictor_table[index + way*m_table_size/m_ways].m_tag == hash && m_predictor_table[index + way*m_table_size/m_ways].m_valid) {
         if (m_predictor_table[index + way*m_table_size/m_ways].m_nodes.size() < m_number_of_entries_cap) {
+          // There shouldn't be any duplicate "predict_node" because if it was in the table, the ray would have been predicted and verified. 
+          assert(std::find(m_predictor_table[index + way*m_table_size/m_ways].m_nodes.begin(), m_predictor_table[index + way*m_table_size/m_ways].m_nodes.end(), predict_node) == m_predictor_table[index + way*m_table_size/m_ways].m_nodes.end());
           m_predictor_table[index + way*m_table_size/m_ways].m_nodes.push_back(predict_node);
         }
         else {
@@ -316,11 +320,11 @@ void ray_predictor::display_state(FILE* fout) {
 void ray_predictor::print_stats(FILE* fout) {
   fprintf(fout, "Shader Core %d Predictor Stats:\n", m_sid);
   fprintf(fout, "Total ray predictor hits: %d (%.3f) + virtual: %d\n", 
-          num_predicted, (float)num_predicted / (num_predicted + num_miss), num_virtual_predicted);
+          num_predicted, (float)num_predicted / num_rays, num_virtual_predicted);
   fprintf(fout, "Total ray predictor misses: %d (%.3f) + virtual: %d\n", 
-          num_miss, (float)num_miss / (num_predicted + num_miss), num_virtual_miss);
+          num_miss, (float)num_miss / num_rays, num_virtual_miss);
   fprintf(fout, "Total number of valid predictions: %d (%.3f) + virtual: %d\n", 
-          num_valid, (float)num_valid / (num_predicted + num_miss), num_virtual_valid);
+          num_valid, (float)num_valid / num_rays, num_virtual_valid);
   fprintf(fout, "Total memory access savings: %d\n", mem_access_saved);
   fprintf(fout, "Evicted entries: %d\n", num_evicted);
   fprintf(fout, "Per entry overflow: %d\n", num_entry_overflow);
@@ -368,11 +372,6 @@ bool ray_predictor::traverse_intersect(const new_addr_type prediction, const Ray
       return false;
     }
     mem_accesses.push_back(tri_addr);
-    
-    // Temporary fix for tree level
-    if (GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map.find(tri_addr) == GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map.end()) {
-      GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[tri_addr] = 0xff;
-    }
       
     bool hit = rtao_ray_triangle_test(p0, p1, p2, ray_properties, &thit);
     if (hit) {

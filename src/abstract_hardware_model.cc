@@ -965,8 +965,12 @@ mem_access_t warp_inst_t::memory_coalescing_arch_rt(new_addr_type addr) {
                         m_config->gpgpu_ctx);
                         
   access->set_uncoalesced_addr(addr);
-  assert(GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map.find(addr) != GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map.end());
-  access->set_tree_level(GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[addr]);
+  if(GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map.find(addr) == GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map.end()) {
+    access->set_tree_level(0xff);
+  }
+  else {
+    access->set_tree_level(GPGPU_Context()->the_gpgpusim->g_the_gpu->rt_tree_level_map[addr]);
+  }
   return *access;
 }
 
