@@ -2700,6 +2700,19 @@ void rt_unit::cycle() {
   if (m_config->m_rt_predictor) {
     // Move warp to ray predictor 
     if (m_ray_predictor->empty()) {
+      
+      // If predictor queue is not empty, pop next warp from the queue
+      if (!m_predictor_queue.empty()) {
+        
+        // Add current warp to queue if it's not empty
+        if (!pipe_reg.empty()) {
+          m_predictor_queue.push_back(pipe_reg);
+        }
+        
+        pipe_reg = m_predictor_queue.front();
+        m_predictor_queue.pop_front();
+      }
+      
       // If predictor is not currently busy, get any previous warps out and add incoming warp
       warp_inst_t predicted_inst = m_ray_predictor->lookup(pipe_reg);
       
@@ -2710,6 +2723,14 @@ void rt_unit::cycle() {
       
       // Move current warp out of rt-unit
       m_dispatch_reg->clear();
+    }
+    
+    // If predictor is busy
+    else {
+      // If instruction is not empty, add to predictor queue
+      if (!pipe_reg.empty()) {
+        m_predictor_queue.push_back(pipe_reg);
+      }
     }
     
     // For delay timing
