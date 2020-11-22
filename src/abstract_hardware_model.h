@@ -186,13 +186,13 @@ struct Ray
 	
 	bool anyhit;
 
-  float3 get_origin() { return {origin_tmin.x, origin_tmin.y, origin_tmin.z}; }
+  float3 get_origin() const { return {origin_tmin.x, origin_tmin.y, origin_tmin.z}; }
   void set_origin(float3 new_origin) { origin_tmin = {new_origin.x, new_origin.y, new_origin.z, origin_tmin.w}; }
   
   float get_tmin() const { return origin_tmin.w; }
   float get_tmax() const { return dir_tmax.w; }
 
-  float3 get_direction() { return {dir_tmax.x, dir_tmax.y, dir_tmax.z}; }
+  float3 get_direction() const { return {dir_tmax.x, dir_tmax.y, dir_tmax.z}; }
   void set_direction(float4 new_dir) { dir_tmax = new_dir; }
   
   void print() const {
@@ -522,7 +522,9 @@ struct ray_predictor_config {
   unsigned latency;
   unsigned max_size;
   char hash_type;
-  unsigned hash_bits;
+  unsigned hash_francois_bits;
+  unsigned hash_grid_bits;
+  unsigned hash_sphere_bits;
   unsigned go_up_level;
   unsigned entry_cap;
   char entry_replacement_policy;

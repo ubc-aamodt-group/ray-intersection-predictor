@@ -271,8 +271,8 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "0");
   option_parser_register(
       opp, "-gpgpu_rt_predictor_config", OPT_CSTR, &m_rt_predictor_config_string,
-      "ray predictor config: debug_print,latency,max_table_size,hash_type,hash_bits,go_up_level,max_entry_cap,replacement_policy,placement_policy,virtual,virtual_access_latency ",
-      "1,2,1024,f,2,0,10,n,a,0,0");
+      "ray predictor config: debug_print,latency,max_table_size,hash_type,hash_francois_bits,hash_grid_bits,hash_sphere_bits,go_up_level,max_entry_cap,replacement_policy,placement_policy,virtual,virtual_access_latency ",
+      "1,2,64,f,2,5,3,0,4,f,l,d,4,0,10,256,8,d");
   option_parser_register(
       opp, "-gpgpu_rt_warppool_order", OPT_CSTR, &m_rt_warppool_order,
       "defines order of memory accesses from the warp pool ",

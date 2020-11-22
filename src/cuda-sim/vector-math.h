@@ -56,4 +56,21 @@ float4 operator*(float4 a, float4 b)
     return make_float4(a.x * b.x, a.y * b.y, a.z * b.z,  a.w * b.w);
 }
 
+float clamp(float x, float lo, float hi)
+{
+    return std::max(std::min(x, hi), lo);
+}
+
+float3 min(float3 a, float3 b)
+{
+    return make_float3(std::min(a.x, b.x), std::min(a.y, b.y), std::min(a.z, b.z));
+}
+
+float3 max(float3 a, float3 b)
+{
+    return make_float3(std::max(a.x, b.x), std::max(a.y, b.y), std::max(a.z, b.z));
+}
+
+const float PI = 3.14159265358979323846;
+
 #endif

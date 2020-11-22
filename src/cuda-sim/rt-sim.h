@@ -25,8 +25,7 @@ float3 get_t_bound(float3 box, float3 origin, float3 idirection);
 
 // Predictor
 uint32_t hash_comp(float x, uint32_t num_bits);
-void hash_comp(float x, uint32_t num_bits, uint32_t& sign, uint32_t& exp, uint32_t& mant);
-unsigned long long compute_hash(Ray ray);
+unsigned long long compute_hash(Ray ray, const float3& world_min, const float3& world_max);
 
 // Ray Data Types
 struct Hit

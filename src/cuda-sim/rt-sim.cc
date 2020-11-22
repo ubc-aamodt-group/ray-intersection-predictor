@@ -337,9 +337,26 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     memory_space *mem=NULL;
     mem = thread->get_global_memory();
     
+    // Compute world bounds, which is just the bounding box of the first BVH node
+    float3 world_min, world_max;
+    {
+      float4 n0xy, n1xy, n01z;
+      mem->read(node_start, sizeof(float4), &n0xy);
+      mem->read(node_start + sizeof(float4), sizeof(float4), &n1xy);
+      mem->read(node_start + 2*sizeof(float4), sizeof(float4), &n01z);
+
+      float3 n0lo, n0hi, n1lo, n1hi;
+      n0lo = {n0xy.x, n0xy.z, n01z.x};
+      n0hi = {n0xy.y, n0xy.w, n01z.y};
+      n1lo = {n1xy.x, n1xy.z, n01z.z};
+      n1hi = {n1xy.y, n1xy.w, n01z.w};
+      world_min = min(n0lo, n1lo);
+      world_max = max(n0hi, n1hi);
+    }
+
     // Compute ray hash
     unsigned long long ray_hash;
-    ray_hash = compute_hash(ray_properties);
+    ray_hash = compute_hash(ray_properties, world_min, world_max);
     thread->add_ray_hash(ray_hash);
     thread->add_ray_properties(ray_properties);
     
@@ -777,40 +794,91 @@ uint32_t hash_comp(float x, uint32_t num_bits) {
     return (sign_bit_x << (2 * num_bits)) | (exp_x << num_bits) | mant_x;
 }
 
-// Overload of `hash_comp` to extract each part individually
-void hash_comp(float x, uint32_t num_bits, uint32_t& sign, uint32_t& exp, uint32_t& mant) {
-    uint32_t mask = UINT32_MAX >> (32 - num_bits);
-
-    uint32_t o_x = *((uint32_t*) &x);
-
-    sign = o_x >> 31;
-    exp = (o_x >> (31 - num_bits)) & mask;
-    mant = (o_x >> (23 - num_bits)) & mask;
+uint32_t hash_francois(const Ray &ray, uint32_t num_bits) {
+  // Each component has 1 bit sign, `num_bits` mantissa, `num_bits` exponent
+  uint32_t num_comp_bits = 2 * num_bits + 1;
+  uint32_t hash_d =
+    (hash_comp(ray.get_direction().z, num_bits) << (2 * num_comp_bits)) |
+    (hash_comp(ray.get_direction().y, num_bits) << num_comp_bits) |
+     hash_comp(ray.get_direction().x, num_bits);
+  uint32_t hash_o =
+    (hash_comp(ray.get_origin().x, num_bits) << (2 * num_comp_bits)) |
+    (hash_comp(ray.get_origin().y, num_bits) << num_comp_bits) |
+     hash_comp(ray.get_origin().z, num_bits);
+  return hash_o ^ hash_d;
 }
-  
-unsigned long long compute_hash(Ray ray) { 
-    
+
+// Quantize direction to a sphere - xyz to theta and phi
+// `theta_bits` is used for theta, `theta_bits` + 1 is used for phi, for a total of
+// 2 * `theta_bits` + 1 bits
+uint64_t hash_direction_spherical(const float3 &d, uint32_t num_sphere_bits) {
+  uint32_t theta_bits = num_sphere_bits;
+  uint32_t phi_bits = theta_bits + 1;
+
+  uint64_t theta = std::acos(clamp(d.z, -1.f, 1.f)) / PI * 180;
+  uint64_t phi = (std::atan2(d.y, d.x) + PI) / PI * 180;
+  uint64_t q_theta = theta >> (8 - theta_bits);
+  uint64_t q_phi = phi >> (9 - phi_bits);
+
+  return (q_phi << theta_bits) | q_theta;
+}
+
+// Quantize origin to a grid
+// Each component uses `num_bits`, for a total of 3 * `num_bits` bits
+uint64_t hash_origin_grid(const float3& o, const float3& min,
+                          const float3& max, uint32_t num_bits) {
+  uint32_t grid_size = 1 << num_bits;
+
+  uint64_t hash_o_x = clamp((o.x - min.x) / (max.x - min.x) * grid_size, 0.f, (float)grid_size - 1);
+  uint64_t hash_o_y = clamp((o.y - min.y) / (max.y - min.y) * grid_size, 0.f, (float)grid_size - 1);
+  uint64_t hash_o_z = clamp((o.z - min.z) / (max.z - min.z) * grid_size, 0.f, (float)grid_size - 1);
+  return (hash_o_x << (2 * num_bits)) | (hash_o_y << num_bits) | hash_o_z;
+}
+
+uint64_t hash_grid_spherical(const Ray &ray, const float3& min, const float3& max,
+                             uint32_t num_grid_bits, uint32_t num_sphere_bits)
+{
+  uint64_t hash_d = hash_direction_spherical(ray.get_direction(), num_sphere_bits);
+  uint64_t hash_o = hash_origin_grid(ray.get_origin(), min, max, num_grid_bits);
+  uint64_t hash = hash_o ^ hash_d;
+
+  return hash;
+}
+
+uint64_t hash_francois_grid_spherical(const Ray &ray,
+                                      const float3& min,
+                                      const float3& max,
+                                      uint32_t num_francois_bits,
+                                      uint32_t num_grid_bits,
+                                      uint32_t num_sphere_bits) {
+  return hash_grid_spherical(ray, min, max, num_grid_bits, num_sphere_bits) ^
+         hash_francois(ray, num_francois_bits);
+}
+
+unsigned long long compute_hash(Ray ray, const float3& world_min, const float3& world_max) { 
+  const ray_predictor_config& config = GPGPU_Context()->the_gpgpusim->g_the_gpu->get_config().get_ray_predictor_config();
+
   // Hash type
-  char hash_type = GPGPU_Context()->the_gpgpusim->g_the_gpu->get_config().get_ray_predictor_config().hash_type;
-  unsigned hash_bits = GPGPU_Context()->the_gpgpusim->g_the_gpu->get_config().get_ray_predictor_config().hash_bits;
+  char hash_type = config.hash_type;
+  unsigned hash_francois_bits = config.hash_francois_bits;
+  unsigned hash_grid_bits = config.hash_grid_bits;
+  unsigned hash_sphere_bits = config.hash_sphere_bits;
   unsigned long long hash;
   
   switch (hash_type) {
     case 'f': {
-        unsigned num_bits = hash_bits;
-        uint32_t num_comp_bits = 2 * num_bits + 1;
-        uint32_t hash_d =
-          (hash_comp(ray.get_direction().z, num_bits) << (2 * num_comp_bits)) |
-          (hash_comp(ray.get_direction().y, num_bits) << num_comp_bits) |
-           hash_comp(ray.get_direction().x, num_bits);
-        uint32_t hash_o =
-          (hash_comp(ray.get_origin().x, num_bits) << (2 * num_comp_bits)) |
-          (hash_comp(ray.get_origin().y, num_bits) << num_comp_bits) |
-           hash_comp(ray.get_origin().z, num_bits);
-        hash = hash_o ^ hash_d;
+        hash = hash_francois(ray, hash_francois_bits);
         break;
     }
-    
+    case 's': {
+      hash = hash_grid_spherical(ray, world_min, world_max, hash_grid_bits, hash_sphere_bits);
+      break;
+    }
+    case 'c': {
+      hash = hash_francois_grid_spherical(ray, world_min, world_max, hash_francois_bits,
+                                          hash_grid_bits, hash_sphere_bits);
+      break;
+    }
     case 'x': {
       // ProfilePhase p(Prof::PredictorHash);
 
