@@ -1339,6 +1339,7 @@ class rt_unit : public pipelined_simd_unit {
       // {warp id, warp instruction}
       std::map<unsigned, warp_inst_t> m_current_warps;
       std::deque<warp_inst_t> m_predictor_queue;
+      std::set<unsigned> m_predictor_queue_set;
       
       std::set<new_addr_type> m_warppool_mem_accesses;
       std::set<new_addr_type> m_warppool_awaiting_response;

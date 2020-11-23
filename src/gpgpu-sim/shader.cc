@@ -2704,13 +2704,16 @@ void rt_unit::cycle() {
       // If predictor queue is not empty, pop next warp from the queue
       if (!m_predictor_queue.empty()) {
         
-        // Add current warp to queue if it's not empty
-        if (!pipe_reg.empty()) {
+        // Add current warp to queue if it's not empty and isn't already in the queue
+        if (!pipe_reg.empty() &&
+            m_predictor_queue_set.find(pipe_reg.get_uid()) == m_predictor_queue_set.end()) {
           m_predictor_queue.push_back(pipe_reg);
+          m_predictor_queue_set.insert(pipe_reg.get_uid());
         }
         
         pipe_reg = m_predictor_queue.front();
         m_predictor_queue.pop_front();
+        m_predictor_queue_set.erase(pipe_reg.get_uid());
       }
       
       // If predictor is not currently busy, get any previous warps out and add incoming warp
@@ -2727,9 +2730,11 @@ void rt_unit::cycle() {
     
     // If predictor is busy
     else {
-      // If instruction is not empty, add to predictor queue
-      if (!pipe_reg.empty()) {
+      // If instruction is not empty and isn't already in the queue, add to predictor queue
+      if (!pipe_reg.empty() &&
+          m_predictor_queue_set.find(pipe_reg.get_uid()) == m_predictor_queue_set.end()) {
         m_predictor_queue.push_back(pipe_reg);
+        m_predictor_queue_set.insert(pipe_reg.get_uid());
       }
     }
     
