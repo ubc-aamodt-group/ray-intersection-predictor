@@ -1899,6 +1899,10 @@ void rt_unit::print_predictor_stats(FILE *fp) {
   m_ray_predictor->print_stats(fp);
 }
 
+void rt_unit::reset_rt_predictor_stats() {
+  m_ray_predictor->reset_stats();
+}
+
 void ldst_unit::get_L1D_sub_stats(struct cache_sub_stats &css) const {
   if (m_L1D) m_L1D->get_sub_stats(css);
 }
@@ -4712,6 +4716,10 @@ void shader_core_ctx::get_rt_cache_stats(cache_stats &cs) {
   m_rt_unit->get_cache_stats(cs);
 }
 
+void shader_core_ctx::reset_rt_predictor_stats() {
+  m_rt_unit->reset_rt_predictor_stats();
+}
+
 void shader_core_ctx::print_predictor_stats(FILE *fp) {
   m_rt_unit->print_predictor_stats(fp);
 }
@@ -5386,6 +5394,12 @@ void simt_core_cluster::get_cache_stats(cache_stats &cs) const {
 void simt_core_cluster::get_rt_cache_stats(cache_stats &cs) const {
   for (unsigned i = 0; i < m_config->n_simt_cores_per_cluster; ++i) {
     m_core[i]->get_rt_cache_stats(cs);
+  }
+}
+
+void simt_core_cluster::reset_rt_predictor_stats() {
+  for (unsigned i = 0; i < m_config->n_simt_cores_per_cluster; ++i) {
+    m_core[i]->reset_rt_predictor_stats();
   }
 }
 

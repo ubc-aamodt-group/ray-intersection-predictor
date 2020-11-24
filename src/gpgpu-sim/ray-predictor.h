@@ -42,6 +42,7 @@ class ray_predictor {
     void cycle();
     void display_state(FILE* fout);
     void print_stats(FILE* fout);
+    void reset_stats();
     
     unsigned predictor_table_size() {return m_predictor_table.size(); }
     float predictor_prediction_rate() {return (float) num_predicted / num_rays; }

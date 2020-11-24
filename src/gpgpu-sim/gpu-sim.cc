@@ -1111,6 +1111,10 @@ void gpgpu_sim::update_stats() {
   m_total_cta_launched = 0;
   gpu_completed_cta = 0;
   gpu_occupancy = occupancy_stats();
+  
+  for (unsigned i = 0; i < m_shader_config->n_simt_clusters; i++) {
+    m_cluster[i]->reset_rt_predictor_stats();
+  }
 }
 
 void gpgpu_sim::print_stats() {

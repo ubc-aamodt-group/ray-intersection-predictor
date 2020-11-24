@@ -1290,6 +1290,7 @@ class rt_unit : public pipelined_simd_unit {
         void get_L0C_sub_stats(struct cache_sub_stats &css) const;
         void get_cache_stats(cache_stats &cs);
         void print_predictor_stats(FILE *fp);
+        void reset_rt_predictor_stats();
         
     protected:
       bool memory_cycle(  warp_inst_t &inst, 
@@ -2160,6 +2161,7 @@ class shader_core_ctx : public core_t {
   void print_predictor_stats(FILE *fp);
   void get_cache_stats(cache_stats &cs);
   void get_rt_cache_stats(cache_stats &cs);
+  void reset_rt_predictor_stats();
   void get_L1I_sub_stats(struct cache_sub_stats &css) const;
   void get_L1D_sub_stats(struct cache_sub_stats &css) const;
   void get_L1C_sub_stats(struct cache_sub_stats &css) const;
@@ -2559,6 +2561,7 @@ class simt_core_cluster {
 
   void get_cache_stats(cache_stats &cs) const;
   void get_rt_cache_stats(cache_stats &cs) const;
+  void reset_rt_predictor_stats();
   void get_L1I_sub_stats(struct cache_sub_stats &css) const;
   void get_L1D_sub_stats(struct cache_sub_stats &css) const;
   void get_L1C_sub_stats(struct cache_sub_stats &css) const;

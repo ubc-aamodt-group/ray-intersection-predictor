@@ -444,6 +444,19 @@ void ray_predictor::print_stats(FILE* fout) {
   fprintf(fout, "--------------------------------------------\n");
 }
 
+void ray_predictor::reset_stats() {
+  num_rays = 0;
+  num_predicted = 0;
+  num_miss = 0;
+  num_valid = 0;
+  num_evicted = 0;
+  num_entry_overflow = 0;
+  num_virtual_predicted = 0;
+  num_virtual_miss = 0;
+  num_virtual_valid = 0;
+  mem_access_saved = 0;
+}
+
 bool ray_predictor::validate_prediction(const std::vector<new_addr_type>& prediction_list, const Ray ray_properties, unsigned tid, new_addr_type& hit_node) {
   bool valid;
   
