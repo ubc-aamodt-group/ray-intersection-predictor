@@ -126,6 +126,9 @@ warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
 }
 
 bool ray_predictor::check_table(unsigned long long hash, unsigned long long &index) {
+  unsigned long long cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle +
+    GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
+
   // Direct mapped predictor
   if (m_placement_policy == 'd') {
     index = hash & (m_table_size - 1);
@@ -144,7 +147,7 @@ bool ray_predictor::check_table(unsigned long long hash, unsigned long long &ind
     
     // Update LRU
     if (hit && m_placement_policy == 'a' && m_replacement_policy == 'l') {
-      m_predictor_table[hash].m_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle;
+      m_predictor_table[hash].m_timestamp = cycle;
     }
     
     return hit;
@@ -159,7 +162,7 @@ bool ray_predictor::check_table(unsigned long long hash, unsigned long long &ind
       if (m_predictor_table[i + way*m_table_size/m_ways].m_valid && m_predictor_table[i + way*m_table_size/m_ways].m_tag == hash) {
         // Update LRU
         if (m_replacement_policy == 'l') {
-          m_predictor_table[i + way*m_table_size/m_ways].m_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle;
+          m_predictor_table[i + way*m_table_size/m_ways].m_timestamp = cycle;
         }
         // Update index
         index = i + way*m_table_size/m_ways;
@@ -174,6 +177,8 @@ bool ray_predictor::check_table(unsigned long long hash, unsigned long long &ind
 }
 
 void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_node) {
+  unsigned long long cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle +
+    GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
   
   // Direct mapped
   if (m_placement_policy == 'd') {
@@ -195,7 +200,7 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
           
           num_entry_overflow++;
         }  
-        m_predictor_table[index].m_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle;
+        m_predictor_table[index].m_timestamp = cycle;
         return;
       }
       else {
@@ -218,7 +223,7 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
         }
         num_entry_overflow++;
       }
-      m_predictor_table[hash].m_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle;
+      m_predictor_table[hash].m_timestamp = cycle;
       return;
     }
   }
@@ -240,7 +245,7 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
           }
           num_entry_overflow++;
         }
-        m_predictor_table[index + way*m_table_size/m_ways].m_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle;
+        m_predictor_table[index + way*m_table_size/m_ways].m_timestamp = cycle;
         return;
       }
     }
@@ -249,7 +254,7 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
   // Otherwise, create new entry
   predictor_entry new_entry;
   new_entry.m_tag = hash;
-  new_entry.m_timestamp = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle;
+  new_entry.m_timestamp = cycle;
   new_entry.m_valid = true;
   new_entry.m_nodes.push_back(predict_node);
   
@@ -268,7 +273,7 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
     unsigned index = hash & (m_table_size/m_ways - 1);
     // Choose way
     unsigned w;
-    unsigned long long lru = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle + 1;
+    unsigned long long lru = cycle + 1;
     bool evict = true;
     for (unsigned way=0; way<m_ways; way++) {
       if (!m_predictor_table[index + way*m_table_size/m_ways].m_valid) {
@@ -293,9 +298,12 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
 }
 
 void ray_predictor::evict_entry() {
+  unsigned long long cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle +
+    GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
+
   // LRU
   if (m_replacement_policy == 'l') {
-    unsigned long long lru = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle + 1;
+    unsigned long long lru = cycle + 1;
     unsigned long long evicted_hash;
     for (auto it=m_predictor_table.begin(); it!=m_predictor_table.end(); ++it) {
       if (it->second.m_timestamp < lru) {
@@ -303,7 +311,7 @@ void ray_predictor::evict_entry() {
         lru = it->second.m_timestamp;
       }
     }
-    assert(lru != (GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle + 1));
+    assert(lru != (cycle + 1));
     m_predictor_table.erase(evicted_hash);
   }
   num_evicted++;
