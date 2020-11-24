@@ -1365,10 +1365,10 @@ void gpgpu_sim::gpu_print_stat() {
   printf("\nrt_total_node_accesses = %d\n", gpgpu_ctx->func_sim->g_total_raytrace_node_accesses);
   printf("\nrt_total_triangle_accesses = %d\n",
          gpgpu_ctx->func_sim->g_total_raytrace_triangle_accesses);
-  printf("\nrt_total_verified_node_accesses = %d\n",
-         gpgpu_ctx->func_sim->g_total_raytrace_verified_node_accesses);
-  printf("\nrt_total_verified_triangle_accesses = %d\n",
-         gpgpu_ctx->func_sim->g_total_raytrace_verified_triangle_accesses);
+  printf("\nrt_total_perfect_verified_node_accesses = %d\n",
+         gpgpu_ctx->func_sim->g_total_raytrace_perfect_verified_node_accesses);
+  printf("\nrt_total_perfect_verified_triangle_accesses = %d\n",
+         gpgpu_ctx->func_sim->g_total_raytrace_perfect_verified_triangle_accesses);
   printf("\nrt_total_verified_rays = %d\n",
          gpgpu_ctx->func_sim->g_total_raytrace_verified_rays);
   

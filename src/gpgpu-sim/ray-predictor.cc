@@ -345,13 +345,23 @@ bool ray_predictor::validate_prediction(const std::deque<new_addr_type> predicti
   
   // Save list of memory requests required to validate prediction
   std::deque<new_addr_type> predictor_mem_accesses;
+
+  cuda_sim* func_sim = GPGPU_Context()->func_sim;
+  unsigned verified_node_accesses = 0;
+  unsigned verified_triangle_accesses = 0;
   
   // Iterate through predictions
   for (auto it=prediction_list.begin(); it!=prediction_list.end(); ++it) {
-    valid = traverse_intersect(*it, ray_properties, predictor_mem_accesses);
+    verified_node_accesses++;
+
+    valid = traverse_intersect(*it, ray_properties, predictor_mem_accesses, verified_triangle_accesses);
     // If intersected, the prediction is valid
     if (valid) {
       mem_access_saved += m_current_warp.update_rt_mem_accesses(tid, valid, predictor_mem_accesses);
+
+      // Only add when we have a valid prediction
+      func_sim->g_total_raytrace_perfect_verified_node_accesses += verified_node_accesses;
+      func_sim->g_total_raytrace_perfect_verified_triangle_accesses += verified_triangle_accesses;
       return true;
     }
   }
@@ -361,13 +371,11 @@ bool ray_predictor::validate_prediction(const std::deque<new_addr_type> predicti
   return valid;
 }
 
-bool ray_predictor::traverse_intersect(const new_addr_type prediction, const Ray ray_properties, std::deque<new_addr_type> &mem_accesses) {
+bool ray_predictor::traverse_intersect(const new_addr_type prediction, const Ray ray_properties, std::deque<new_addr_type> &mem_accesses, unsigned& num_triangles_tested) {
   
   memory_space *mem = GPGPU_Context()->the_gpgpusim->g_the_gpu->get_global_memory();
   new_addr_type tri_addr = prediction;
   float thit = ray_properties.get_tmax();
-
-  GPGPU_Context()->func_sim->g_total_raytrace_verified_node_accesses++;
 
   // while triangle address is within triangle primitive range
   while (1) {
@@ -383,7 +391,7 @@ bool ray_predictor::traverse_intersect(const new_addr_type prediction, const Ray
       return false;
     }
     mem_accesses.push_back(tri_addr);
-    GPGPU_Context()->func_sim->g_total_raytrace_verified_triangle_accesses++;
+    num_triangles_tested++;
       
     bool hit = rtao_ray_triangle_test(p0, p1, p2, ray_properties, &thit);
     if (hit) {

@@ -124,8 +124,8 @@ class cuda_sim {
     g_total_raytrace_hits = 0;
     g_total_raytrace_node_accesses = 0;
     g_total_raytrace_triangle_accesses = 0;
-    g_total_raytrace_verified_node_accesses = 0;
-    g_total_raytrace_verified_triangle_accesses = 0;
+    g_total_raytrace_perfect_verified_node_accesses = 0;
+    g_total_raytrace_perfect_verified_triangle_accesses = 0;
     g_total_raytrace_verified_rays = 0;
     g_ptx_kernel_count =
         -1;  // used for classification stat collection purposes
@@ -163,8 +163,8 @@ class cuda_sim {
   unsigned g_additional_rt_mem_accesses;
   unsigned g_total_raytrace_node_accesses;
   unsigned g_total_raytrace_triangle_accesses;
-  unsigned g_total_raytrace_verified_node_accesses;
-  unsigned g_total_raytrace_verified_triangle_accesses;
+  unsigned g_total_raytrace_perfect_verified_node_accesses;
+  unsigned g_total_raytrace_perfect_verified_triangle_accesses;
   unsigned g_total_raytrace_verified_rays;
   char *cdp_latency_str;
   int g_ptx_kernel_count;  // used for classification stat collection purposes

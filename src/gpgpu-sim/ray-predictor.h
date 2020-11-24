@@ -57,7 +57,7 @@ class ray_predictor {
     bool check_table(unsigned long long hash, unsigned long long &index);
     void reset_cycle_delay(unsigned delay) { m_cycles = delay; };
     bool validate_prediction(const std::deque<new_addr_type> prediction_list, const Ray ray_properties, unsigned tid);
-    bool traverse_intersect(const new_addr_type prediction, const Ray ray_properties, std::deque<new_addr_type> &mem_accesses);
+    bool traverse_intersect(const new_addr_type prediction, const Ray ray_properties, std::deque<new_addr_type> &mem_accesses, unsigned& num_triangles_tested);
     
     std::map<unsigned long long, predictor_entry> m_predictor_table;
     warp_inst_t m_current_warp;
