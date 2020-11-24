@@ -5453,15 +5453,31 @@ void simt_core_cluster::add_ray_predictor_entry(unsigned long long hash, new_add
     index = hash & (m_config->m_rt_predictor_config.virtual_table_size - 1);
   else
     assert(0);
+
+  unsigned long long cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle +
+    GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
   
   // Add node if prediction already in table
   if (m_predictor_table.find(index) != m_predictor_table.end()) {
     if (m_predictor_table[index].m_tag == hash) {
-      m_predictor_table[index].m_nodes.push_back(predicted_node);
+      m_predictor_table[index].m_nodes.insert(predicted_node);
+      m_predictor_table[index].m_node_use_map[predicted_node] = cycle;
       
       // If too many nodes in entry, pop oldest
+      // TODO: This should use a node replacement policy rather than FIFO
       if (m_predictor_table[index].m_nodes.size() > m_config->m_rt_predictor_config.virtual_entry_cap) {
-        m_predictor_table[index].m_nodes.pop_front();
+        new_addr_type node_to_evict = 0;
+        unsigned long long oldest = cycle + 1;
+
+        for (const auto& node_use : m_predictor_table[index].m_node_use_map) {
+          if (node_use.second < oldest) {
+            node_to_evict = node_use.first;
+            oldest = node_use.second;
+          }
+        }
+
+        m_predictor_table[index].m_nodes.erase(node_to_evict);
+        m_predictor_table[index].m_node_use_map.erase(node_to_evict);
       }
     }
   }
@@ -5471,7 +5487,8 @@ void simt_core_cluster::add_ray_predictor_entry(unsigned long long hash, new_add
     predictor_entry new_entry;
     new_entry.m_valid = true;
     new_entry.m_tag = hash;
-    new_entry.m_nodes.push_back(predicted_node);
+    new_entry.m_nodes.insert(predicted_node);
+    new_entry.m_node_use_map[predicted_node] = cycle;
     m_predictor_table[index] = new_entry;
     
     // Evict if full

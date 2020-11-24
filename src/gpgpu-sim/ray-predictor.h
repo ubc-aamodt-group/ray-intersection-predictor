@@ -8,7 +8,8 @@ struct {
     bool m_valid;
     unsigned long long m_tag;
     unsigned long long m_timestamp;
-    std::deque<new_addr_type> m_nodes;
+    std::set<new_addr_type> m_nodes;
+    std::map<new_addr_type, unsigned long long> m_node_use_map;
 } typedef predictor_entry;
 
 class shader_core_ctx;
@@ -56,8 +57,12 @@ class ray_predictor {
     void add_entry(unsigned long long hash, new_addr_type prediction);
     bool check_table(unsigned long long hash, unsigned long long &index);
     void reset_cycle_delay(unsigned delay) { m_cycles = delay; };
-    bool validate_prediction(const std::deque<new_addr_type> prediction_list, const Ray ray_properties, unsigned tid);
+    bool validate_prediction(const std::vector<new_addr_type>& prediction_list, const Ray ray_properties, unsigned tid, new_addr_type& hit_node);
     bool traverse_intersect(const new_addr_type prediction, const Ray ray_properties, std::deque<new_addr_type> &mem_accesses, unsigned& num_triangles_tested);
+
+    void add_node_to_predictor_entry(unsigned long long index, new_addr_type node);
+    std::vector<new_addr_type> get_prediction_list(unsigned long long index) const;
+    void update_entry_use(unsigned long long index, new_addr_type node);
     
     std::map<unsigned long long, predictor_entry> m_predictor_table;
     warp_inst_t m_current_warp;

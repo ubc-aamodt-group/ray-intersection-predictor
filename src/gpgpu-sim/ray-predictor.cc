@@ -66,10 +66,13 @@ warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
       num_predicted++;
       
       // Read list of predictions from predictor table
-      std::deque<new_addr_type> &prediction_list = m_predictor_table[index].m_nodes;
+      std::vector<new_addr_type> prediction_list = get_prediction_list(index);
       // Validate prediction
-      bool valid = validate_prediction(prediction_list, m_current_warp.rt_ray_properties(i), i);
+      new_addr_type hit_node;
+      bool valid =
+        validate_prediction(prediction_list, m_current_warp.rt_ray_properties(i), i, hit_node);
       if (valid) {
+        update_entry_use(index, hit_node);
         num_valid++;
       }
       
@@ -100,7 +103,19 @@ warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
         // If hit in virtual table, validate
         if (virtual_entry.m_valid) {
           num_virtual_predicted++;
-          valid = validate_prediction(virtual_entry.m_nodes, m_current_warp.rt_ray_properties(i), i);
+          std::vector<new_addr_type> prediction_list(
+            virtual_entry.m_nodes.begin(), virtual_entry.m_nodes.end());
+
+          // Sort into insertion order
+          // TODO: This should be sorted based on the node replacement policy
+          std::sort(prediction_list.begin(), prediction_list.end(),
+            [&](new_addr_type a, new_addr_type b) {
+              return virtual_entry.m_node_use_map.at(a) < virtual_entry.m_node_use_map.at(b);
+            });
+
+          new_addr_type hit_node;
+          valid = validate_prediction(prediction_list, m_current_warp.rt_ray_properties(i), i, hit_node);
+          // TODO: This should update the node_use_map
           if (valid) num_virtual_valid++;
         }
         
@@ -176,6 +191,116 @@ bool ray_predictor::check_table(unsigned long long hash, unsigned long long &ind
   assert(0);
 }
 
+void ray_predictor::add_node_to_predictor_entry(unsigned long long index, new_addr_type node) {
+  predictor_entry& entry = m_predictor_table[index];
+  unsigned long long cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle +
+    GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
+
+  // Entry full: need to evict a node
+  if (entry.m_nodes.size() >= m_number_of_entries_cap) {
+    num_entry_overflow++;
+
+    new_addr_type node_to_evict = 0;
+    unsigned long long min_use = 0;
+
+    switch (m_node_replacement_policy) {
+      // No replacement: Just don't add any more
+      case 'n':
+        return;
+      // FIFO: Evict the first (with oldest/smallest timestamp) node
+      case 'f':
+      // LRU: Evict the least recently used (with oldest/smallest timestamp) node
+      case 'l':
+        min_use = cycle + 1;
+        break;
+      // Least used: Evict the least used (smallest used element) node
+      case 'u':
+        min_use = ULLONG_MAX;
+        break;
+      default:
+        assert(false);
+    }
+
+    for (const auto& node_use : entry.m_node_use_map) {
+      if (node_use.second < min_use) {
+        node_to_evict = node_use.first;
+        min_use = node_use.second;
+      }
+    }
+
+    assert(entry.m_nodes.find(node_to_evict) != entry.m_nodes.end());
+    assert(entry.m_node_use_map.find(node_to_evict) != entry.m_node_use_map.end());
+    entry.m_nodes.erase(node_to_evict);
+    entry.m_node_use_map.erase(node_to_evict);
+  }
+
+  assert(entry.m_nodes.find(node) == entry.m_nodes.end());
+  entry.m_nodes.insert(node);
+
+  switch (m_node_replacement_policy) {
+    case 'n':
+    case 'f':
+    case 'l':
+      entry.m_node_use_map[node] = cycle;
+      break;
+    case 'u':
+      entry.m_node_use_map[node] = 0;
+      break;
+    default:
+      assert(false);
+  }
+}
+
+std::vector<new_addr_type> ray_predictor::get_prediction_list(unsigned long long index) const {
+  const predictor_entry& entry = m_predictor_table.at(index);
+  std::vector<new_addr_type> nodes(entry.m_nodes.begin(), entry.m_nodes.end());
+
+  switch (m_node_replacement_policy) {
+    // Sort into insertion order
+    case 'n':
+    case 'f':
+      std::sort(nodes.begin(), nodes.end(), [&](new_addr_type a, new_addr_type b) {
+        return entry.m_node_use_map.at(a) < entry.m_node_use_map.at(b);
+      });
+      break;
+    // LRU: sort most recently used first
+    // Least used: sort most used first
+    case 'l':
+    case 'u':
+      std::sort(nodes.begin(), nodes.end(), [&](new_addr_type a, new_addr_type b) {
+        return entry.m_node_use_map.at(a) > entry.m_node_use_map.at(b);
+      });
+      break;
+    default:
+      assert(false);
+  }
+
+  return nodes;
+}
+
+void ray_predictor::update_entry_use(unsigned long long index, new_addr_type node) {
+  predictor_entry& entry = m_predictor_table[index];
+  unsigned long long cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle +
+    GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
+
+  switch (m_node_replacement_policy) {
+    case 'n':
+    case 'f':
+      // Do nothing
+      break;
+    case 'l':
+      assert(entry.m_node_use_map.find(node) != entry.m_node_use_map.end());
+      entry.m_node_use_map[node] = cycle;
+      break;
+    case 'u':
+      assert(entry.m_node_use_map.find(node) != entry.m_node_use_map.end());
+      entry.m_node_use_map[node]++;
+      break;
+    default:
+      assert(false);
+  }
+}
+
 void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_node) {
   unsigned long long cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle +
     GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
@@ -186,20 +311,7 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
     unsigned index = hash & (m_table_size - 1);
     if (m_predictor_table.find(index) != m_predictor_table.end()) {
       if (m_predictor_table[index].m_tag == hash) {
-        assert(std::find(m_predictor_table[index].m_nodes.begin(), m_predictor_table[index].m_nodes.end(), predict_node) == m_predictor_table[index].m_nodes.end());
-        if (m_predictor_table[index].m_nodes.size() < m_number_of_entries_cap) {
-          m_predictor_table[index].m_nodes.push_back(predict_node);
-        }
-        else {
-          // If FIFO, remove oldest node, add new node
-          if (m_node_replacement_policy == 'f') {
-            m_predictor_table[index].m_nodes.pop_front();
-            m_predictor_table[index].m_nodes.push_back(predict_node);
-          }
-          // Otherwise, leave as is
-          
-          num_entry_overflow++;
-        }  
+        add_node_to_predictor_entry(index, predict_node);
         m_predictor_table[index].m_timestamp = cycle;
         return;
       }
@@ -212,17 +324,7 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
   else if (m_placement_policy == 'a') {
     // Check if hash is already in the predictor table
     if (m_predictor_table.find(hash) != m_predictor_table.end()) {
-        assert(std::find(m_predictor_table[hash].m_nodes.begin(), m_predictor_table[hash].m_nodes.end(), predict_node) == m_predictor_table[hash].m_nodes.end());
-      if (m_predictor_table[hash].m_nodes.size() < m_number_of_entries_cap) {
-        m_predictor_table[hash].m_nodes.push_back(predict_node);
-      }
-      else {
-        if (m_node_replacement_policy == 'f') {
-          m_predictor_table[hash].m_nodes.pop_front();
-          m_predictor_table[hash].m_nodes.push_back(predict_node);
-        }
-        num_entry_overflow++;
-      }
+      add_node_to_predictor_entry(hash, predict_node);
       m_predictor_table[hash].m_timestamp = cycle;
       return;
     }
@@ -233,18 +335,7 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
     unsigned index = hash & (m_table_size/m_ways - 1);
     for (unsigned way=0; way<m_ways; way++) {
       if (m_predictor_table[index + way*m_table_size/m_ways].m_tag == hash && m_predictor_table[index + way*m_table_size/m_ways].m_valid) {
-        if (m_predictor_table[index + way*m_table_size/m_ways].m_nodes.size() < m_number_of_entries_cap) {
-          // There shouldn't be any duplicate "predict_node" because if it was in the table, the ray would have been predicted and verified. 
-          assert(std::find(m_predictor_table[index + way*m_table_size/m_ways].m_nodes.begin(), m_predictor_table[index + way*m_table_size/m_ways].m_nodes.end(), predict_node) == m_predictor_table[index + way*m_table_size/m_ways].m_nodes.end());
-          m_predictor_table[index + way*m_table_size/m_ways].m_nodes.push_back(predict_node);
-        }
-        else {
-          if (m_node_replacement_policy == 'f') {
-            m_predictor_table[index + way*m_table_size/m_ways].m_nodes.pop_front();
-            m_predictor_table[index + way*m_table_size/m_ways].m_nodes.push_back(predict_node);
-          }
-          num_entry_overflow++;
-        }
+        add_node_to_predictor_entry(index + way*m_table_size/m_ways, predict_node);
         m_predictor_table[index + way*m_table_size/m_ways].m_timestamp = cycle;
         return;
       }
@@ -256,7 +347,20 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
   new_entry.m_tag = hash;
   new_entry.m_timestamp = cycle;
   new_entry.m_valid = true;
-  new_entry.m_nodes.push_back(predict_node);
+  new_entry.m_nodes.insert(predict_node);
+
+  switch (m_node_replacement_policy) {
+    case 'n':
+    case 'f':
+    case 'l':
+      new_entry.m_node_use_map[predict_node] = new_entry.m_timestamp;
+      break;
+    case 'u':
+      new_entry.m_node_use_map[predict_node] = 0;
+      break;
+    default:
+      assert(false);
+  }
   
   if (m_placement_policy == 'd') {
     unsigned index = hash & (m_table_size - 1);
@@ -340,7 +444,7 @@ void ray_predictor::print_stats(FILE* fout) {
   fprintf(fout, "--------------------------------------------\n");
 }
 
-bool ray_predictor::validate_prediction(const std::deque<new_addr_type> prediction_list, const Ray ray_properties, unsigned tid) {
+bool ray_predictor::validate_prediction(const std::vector<new_addr_type>& prediction_list, const Ray ray_properties, unsigned tid, new_addr_type& hit_node) {
   bool valid;
   
   // Save list of memory requests required to validate prediction
@@ -362,6 +466,8 @@ bool ray_predictor::validate_prediction(const std::deque<new_addr_type> predicti
       // Only add when we have a valid prediction
       func_sim->g_total_raytrace_perfect_verified_node_accesses += verified_node_accesses;
       func_sim->g_total_raytrace_perfect_verified_triangle_accesses += verified_triangle_accesses;
+
+      hit_node = *it;
       return true;
     }
   }
