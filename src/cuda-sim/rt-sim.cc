@@ -406,6 +406,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             
             // TODO: Figure out if node_start + next_node + 2 also should be recorded
             thread->add_raytrace_mem_access(node_start + next_node);
+            GPGPU_Context()->func_sim->g_total_raytrace_node_accesses++;
             
             #ifdef DEBUG_PRINT
             printf("Node data: \n");
@@ -526,6 +527,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 }
                 
                 thread->add_raytrace_mem_access(tri_start + tri_addr);
+                GPGPU_Context()->func_sim->g_total_raytrace_triangle_accesses++;
                 
                 // RT-CORE NOTE: Fix for triangles
                 tree_level_map[tri_start + tri_addr] = 0xff;

@@ -359,6 +359,8 @@ bool ray_predictor::traverse_intersect(const new_addr_type prediction, const Ray
   new_addr_type tri_addr = prediction;
   float thit = ray_properties.get_tmax();
 
+  GPGPU_Context()->func_sim->g_total_raytrace_verified_node_accesses++;
+
   // while triangle address is within triangle primitive range
   while (1) {
       
@@ -373,9 +375,11 @@ bool ray_predictor::traverse_intersect(const new_addr_type prediction, const Ray
       return false;
     }
     mem_accesses.push_back(tri_addr);
+    GPGPU_Context()->func_sim->g_total_raytrace_verified_triangle_accesses++;
       
     bool hit = rtao_ray_triangle_test(p0, p1, p2, ray_properties, &thit);
     if (hit) {
+      GPGPU_Context()->func_sim->g_total_raytrace_verified_rays++;
       assert(ray_properties.anyhit);
       return true;
     }

@@ -1362,6 +1362,15 @@ void gpgpu_sim::gpu_print_stat() {
     printf("%d:%d\t", i, gpgpu_ctx->func_sim->g_raytrace_mem_accesses[i]);
   }
   printf("\nrt_total_hits = %d\n", gpgpu_ctx->func_sim->g_total_raytrace_hits);
+  printf("\nrt_total_node_accesses = %d\n", gpgpu_ctx->func_sim->g_total_raytrace_node_accesses);
+  printf("\nrt_total_triangle_accesses = %d\n",
+         gpgpu_ctx->func_sim->g_total_raytrace_triangle_accesses);
+  printf("\nrt_total_verified_node_accesses = %d\n",
+         gpgpu_ctx->func_sim->g_total_raytrace_verified_node_accesses);
+  printf("\nrt_total_verified_triangle_accesses = %d\n",
+         gpgpu_ctx->func_sim->g_total_raytrace_verified_triangle_accesses);
+  printf("\nrt_total_verified_rays = %d\n",
+         gpgpu_ctx->func_sim->g_total_raytrace_verified_rays);
   
   
   cache_stats core_cache_stats;
