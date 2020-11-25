@@ -24,7 +24,6 @@ float magic_min7(float a0, float a1, float b0, float b1, float c0, float c1, flo
 float3 get_t_bound(float3 box, float3 origin, float3 idirection);
 
 // Predictor
-uint32_t hash_comp(float x, uint32_t num_bits);
 unsigned long long compute_hash(Ray ray, const float3& world_min, const float3& world_max);
 
 // Ray Data Types

@@ -2575,6 +2575,7 @@ class simt_core_cluster {
   
   void add_ray_predictor_entry(unsigned long long hash, new_addr_type predicted_node);
   predictor_entry check_ray_predictor_table(unsigned long long hash);
+  unsigned long long compute_index(unsigned long long hash) const;
 
  protected:
   unsigned m_cluster_id;

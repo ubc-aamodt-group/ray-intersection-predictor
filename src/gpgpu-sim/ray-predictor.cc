@@ -33,7 +33,17 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   num_virtual_valid = 0;
   mem_access_saved = 0;
 }
-                    
+
+unsigned long long ray_predictor::compute_index(unsigned long long hash, unsigned num_bits) const {
+  uint64_t mask = UINT64_MAX >> (64 - num_bits);
+
+  uint64_t index = 0;
+  while (hash > 0) {
+    index ^= (hash & mask);
+    hash >>= num_bits;
+  }
+  return index;
+}
                     
 warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
   if (inst.empty()) {
@@ -146,7 +156,7 @@ bool ray_predictor::check_table(unsigned long long hash, unsigned long long &ind
 
   // Direct mapped predictor
   if (m_placement_policy == 'd') {
-    index = hash & (m_table_size - 1);
+    index = compute_index(hash, std::log2(m_table_size));
     if (m_predictor_table.find(index) != m_predictor_table.end())
       return (m_predictor_table[index].m_tag == hash && m_predictor_table[index].m_valid);
     else
@@ -170,7 +180,7 @@ bool ray_predictor::check_table(unsigned long long hash, unsigned long long &ind
   
   // Set associative predictor
   else if (m_placement_policy == 's') {
-    unsigned i = hash & (m_table_size/m_ways - 1);
+    unsigned i = compute_index(hash, std::log2(m_table_size/m_ways));
     
     // Check each way
     for (unsigned way=0; way<m_ways; way++) {
@@ -308,7 +318,7 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
   // Direct mapped
   if (m_placement_policy == 'd') {
     // Check if hash is already in the predictor table
-    unsigned index = hash & (m_table_size - 1);
+    unsigned index = compute_index(hash, std::log2(m_table_size));
     if (m_predictor_table.find(index) != m_predictor_table.end()) {
       if (m_predictor_table[index].m_tag == hash) {
         add_node_to_predictor_entry(index, predict_node);
@@ -332,7 +342,7 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
   // Set Associative
   else if (m_placement_policy == 's') {
     // Check if hash is already in the predictor table
-    unsigned index = hash & (m_table_size/m_ways - 1);
+    unsigned index = compute_index(hash, std::log2(m_table_size/m_ways));
     for (unsigned way=0; way<m_ways; way++) {
       if (m_predictor_table[index + way*m_table_size/m_ways].m_tag == hash && m_predictor_table[index + way*m_table_size/m_ways].m_valid) {
         add_node_to_predictor_entry(index + way*m_table_size/m_ways, predict_node);
@@ -363,7 +373,7 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
   }
   
   if (m_placement_policy == 'd') {
-    unsigned index = hash & (m_table_size - 1);
+    unsigned index = compute_index(hash, std::log2(m_table_size));
     m_predictor_table[index] = new_entry;
   }
   else if (m_placement_policy == 'a') {
@@ -374,7 +384,7 @@ void ray_predictor::add_entry(unsigned long long hash, new_addr_type predict_nod
     m_predictor_table[hash] = new_entry;
   }
   else if (m_placement_policy == 's') {
-    unsigned index = hash & (m_table_size/m_ways - 1);
+    unsigned index = compute_index(hash, std::log2(m_table_size/m_ways));
     // Choose way
     unsigned w;
     unsigned long long lru = cycle + 1;

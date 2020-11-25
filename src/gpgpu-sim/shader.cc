@@ -5459,14 +5459,29 @@ void simt_core_cluster::get_L0C_sub_stats(struct cache_sub_stats &css) const {
   css = total_css;
 }
 
-void simt_core_cluster::add_ray_predictor_entry(unsigned long long hash, new_addr_type predicted_node) {
+// TODO: These should really be part of ray-predictor to not have duplicate code...
+unsigned long long simt_core_cluster::compute_index(unsigned long long hash) const {
   unsigned long long index;
+  uint64_t mask;
+  uint32_t num_bits;
+
   if (m_config->m_rt_predictor_config.virtual_placement_policy == 'a')
-    index = hash;
-  else if (m_config->m_rt_predictor_config.virtual_placement_policy == 'd') 
-    index = hash & (m_config->m_rt_predictor_config.virtual_table_size - 1);
-  else
+    return hash;
+  else if (m_config->m_rt_predictor_config.virtual_placement_policy == 'd') {
+    mask = m_config->m_rt_predictor_config.virtual_table_size - 1;
+    num_bits = std::log2(m_config->m_rt_predictor_config.virtual_table_size);
+  } else
     assert(0);
+
+  while (hash > 0) {
+    index ^= (hash & mask);
+    hash >>= num_bits;
+  }
+  return index;
+}
+
+void simt_core_cluster::add_ray_predictor_entry(unsigned long long hash, new_addr_type predicted_node) {
+  unsigned long long index = compute_index(hash);
 
   unsigned long long cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle +
     GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
@@ -5513,13 +5528,14 @@ void simt_core_cluster::add_ray_predictor_entry(unsigned long long hash, new_add
 }
 
 predictor_entry simt_core_cluster::check_ray_predictor_table(unsigned long long hash) {
+  unsigned long long index = compute_index(hash);
+
   if (m_config->m_rt_predictor_config.virtual_placement_policy == 'a') {
-    if (m_predictor_table.find(hash) != m_predictor_table.end()) {
-      return m_predictor_table[hash];
+    if (m_predictor_table.find(index) != m_predictor_table.end()) {
+      return m_predictor_table[index];
     }
   }
   else if (m_config->m_rt_predictor_config.virtual_placement_policy == 'd') {
-    unsigned index = hash & (m_config->m_rt_predictor_config.virtual_table_size - 1);
     if (m_predictor_table.find(index) != m_predictor_table.end()) {
       if (m_predictor_table[index].m_valid && m_predictor_table[index].m_tag == hash)
         return m_predictor_table[index];
