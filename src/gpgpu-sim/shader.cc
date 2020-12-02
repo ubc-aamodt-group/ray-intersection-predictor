@@ -954,6 +954,11 @@ void shader_core_stats::visualizer_print(gzFile visualizer_file) {
     gzprintf(visualizer_file, "%u ", rt_mshr_size[i]);
   gzprintf(visualizer_file, "\n");
   
+  gzprintf(visualizer_file, "rt_active_threads:  ");
+  for (unsigned i = 0; i < m_config->num_shader() * m_config->max_warps_per_shader; i++)
+    gzprintf(visualizer_file, "%u ", rt_active_threads[i]);
+  gzprintf(visualizer_file, "\n");
+  
   // Predictor Stats
   gzprintf(visualizer_file, "rtpredict:  ");
   for (unsigned i = 0; i < m_config->num_shader(); i++)
@@ -2619,6 +2624,15 @@ void rt_unit::cycle() {
   m_stats->rt_predictor_verified_count[m_sid] = m_ray_predictor->predictor_num_verified();
   m_stats->rt_predictor_ray_count[m_sid] = m_ray_predictor->predictor_num_rays();
   
+  for (unsigned i=0; i<m_config->max_warps_per_shader; i++) {
+    if (m_current_warps.find(i) != m_current_warps.end()) {
+      m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + i] = m_current_warps[i].get_rt_active_threads();
+    }
+    else {
+      m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + i] = 0;
+    }
+  }
+  
   if (!m_response_fifo.empty()) {
     
     mem_fetch *mf = m_response_fifo.front();
@@ -2766,7 +2780,7 @@ void rt_unit::cycle() {
     }
     // Otherwise wait until waiting for response
     else if (m_config->m_rt_max_warps > 0 && m_current_warps.size() < m_config->m_rt_max_warps) {
-      if (rt_inst.mem_fetch_wait(m_config->m_rt_lock_threads) && !rt_inst.empty()) {
+      if (!rt_inst.empty()) {
         unsigned warp_id = rt_inst.warp_id();
         m_current_warps[rt_inst.warp_id()] = rt_inst;
         rt_inst.clear();

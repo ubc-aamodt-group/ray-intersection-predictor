@@ -1262,6 +1262,8 @@ class warp_inst_t : public inst_t {
   std::set<new_addr_type> get_rt_accesses() { return m_next_rt_accesses_set; }
   
   unsigned get_coalesce_count() { return m_coalesce_count; }
+  
+  unsigned get_rt_active_threads();
 
   // void dec_rt_warp_cycle() { m_rt_warp_cycle--; }
   // void set_rt_warp_cycle() { m_rt_warp_cycle = m_config->rt_warp_cycle; }

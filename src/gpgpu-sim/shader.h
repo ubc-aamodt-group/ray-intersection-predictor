@@ -1872,6 +1872,8 @@ struct shader_core_stats_pod {
   unsigned* rt_warppool_size;
   unsigned* rt_mshr_size;
   
+  unsigned* rt_active_threads;
+  
   unsigned* rt_predictor_size;
   float* rt_predictor_prediction_rate;
   float* rt_predictor_verification_rate;
@@ -1995,6 +1997,7 @@ class shader_core_stats : public shader_core_stats_pod {
     rt_max_mshr_entries = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_warppool_size = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_mshr_size = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_active_threads = (unsigned *)calloc(config->num_shader() * config->max_warps_per_shader, sizeof(unsigned));
     rt_predictor_size = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_predictor_prediction_rate = (float *)calloc(config->num_shader(), sizeof(float));
     rt_predictor_verification_rate = (float *)calloc(config->num_shader(), sizeof(float));

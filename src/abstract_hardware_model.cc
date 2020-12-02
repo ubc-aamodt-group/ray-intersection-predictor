@@ -817,8 +817,18 @@ void warp_inst_t::clear_rt_awaiting_threads(new_addr_type addr) {
   }
 }
 
+unsigned warp_inst_t::get_rt_active_threads() {
+  assert(m_per_scalar_thread_valid);
+  unsigned active_threads = 0;
+  for (auto it=m_per_scalar_thread.begin(); it!=m_per_scalar_thread.end(); it++) {
+    if (!it->raytrace_mem_accesses.empty()) {
+      active_threads++;
+    }
+  }
+  return active_threads;
+}
 
- bool warp_inst_t::mem_fetch_wait(bool locked) { 
+bool warp_inst_t::mem_fetch_wait(bool locked) { 
   // Wait for response if all current next accesses have been sent
   // and waiting for response list is not empty
   if (locked) {
