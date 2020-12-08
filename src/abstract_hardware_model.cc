@@ -870,6 +870,7 @@ bool warp_inst_t::mem_fetch_wait(bool locked) {
 void warp_inst_t::fill_next_rt_mem_access(bool locked) {
   new_addr_type next_addr;
   m_coalesce_count = 0;
+  m_mshr_merged_count = 0;
   
   // Memory requests in lock step
   if (locked) {
@@ -897,6 +898,7 @@ void warp_inst_t::fill_next_rt_mem_access(bool locked) {
     for (unsigned i=0; i<m_config->warp_size; i++) {
       if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty()) {
         new_addr_type addr = m_per_scalar_thread[i].raytrace_mem_accesses.front();
+        
         // RT-CORE NOTE: Fix 32
         new_addr_type block_addr = line_size_based_tag_func(addr, 32);
         // Check if it's already waiting for a response or waiting to be sent
@@ -908,6 +910,15 @@ void warp_inst_t::fill_next_rt_mem_access(bool locked) {
           // Track total unique accesses
           m_coalesce_count++;
         }
+        
+        // Count "MSHR" merges
+        else if (m_prev_mem_access[i] != addr && m_mf_awaiting_response.find(block_addr) != m_mf_awaiting_response.end()) {
+          // Accesses should either by in mf awaiting response OR next rt access, not both
+          assert (m_next_rt_accesses_set.find(addr) == m_next_rt_accesses_set.end());
+          m_mshr_merged_count++;
+        }
+        
+        m_prev_mem_access[i] = addr;
       }
     }
   }

@@ -246,6 +246,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "64:64:2,L:R:f:N,A:2:32,4");
   m_L0T_config = m_L0C_config;
   option_parser_register(
+      opp, "-gpgpu_rt_disable_rt_cache", OPT_BOOL, &bypassL0Complet,
+      "manage memory of all warps in rt core as one set ",
+      "0");
+  option_parser_register(
       opp, "-gpgpu_rt_max_warps", OPT_UINT32, &m_rt_max_warps,
       "max number of warps concurrently in one rt core ",
       "0");

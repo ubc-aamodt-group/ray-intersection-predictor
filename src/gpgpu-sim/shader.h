@@ -1765,6 +1765,7 @@ class shader_core_config : public core_config {
   bool m_rt_coalesce_warps;
   bool m_rt_predictor;
   bool m_rt_warppool;
+  bool bypassL0Complet;
   char * m_rt_warppool_order;
   bool m_rt_warppool_fifo;
   bool m_rt_warppool_tree;
@@ -1864,6 +1865,7 @@ struct shader_core_stats_pod {
   unsigned* rt_cur_warps;
   unsigned* rt_max_mshr_entries;
   unsigned rt_thread_coalesced_count;
+  unsigned rt_thread_mshr_count = 0;
   unsigned rt_warp_coalesced_count;
   unsigned rt_repeated_accesses;
   unsigned rt_consecutive_reservation_fails;

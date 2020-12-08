@@ -1262,6 +1262,7 @@ class warp_inst_t : public inst_t {
   std::set<new_addr_type> get_rt_accesses() { return m_next_rt_accesses_set; }
   
   unsigned get_coalesce_count() { return m_coalesce_count; }
+  unsigned get_mshr_merged_count() { return m_mshr_merged_count; }
   
   unsigned get_rt_active_threads();
 
@@ -1289,6 +1290,7 @@ class warp_inst_t : public inst_t {
                            // -- for instruction counting
 
    unsigned m_coalesce_count;
+   unsigned m_mshr_merged_count;
 
   // Combined list + set to track insertion order with no duplicates (duplicates coalesced)
   std::deque<new_addr_type> m_next_rt_accesses;
@@ -1322,6 +1324,8 @@ class warp_inst_t : public inst_t {
   std::vector<per_thread_info> m_per_scalar_thread;
   bool m_mem_accesses_created;
   std::list<mem_access_t> m_accessq;
+  
+  new_addr_type m_prev_mem_access[32];
 
   unsigned m_scheduler_id;  // the scheduler that issues this inst
   // unsigned m_rt_warp_cycle;

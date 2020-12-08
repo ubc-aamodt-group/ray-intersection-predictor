@@ -720,6 +720,7 @@ void shader_core_stats::print(FILE *fout) const {
   fprintf(fout, "rt_repeated_reservation_fails = %d\n", rt_repeated_reservation_fails);
   
   fprintf(fout, "Number of accesses after thread coalescing = %d\n", rt_thread_coalesced_count);
+  fprintf(fout, "Number of accesses merged into MSHR (pending hits) = %d\n", rt_thread_mshr_count);
   fprintf(fout, "Number of accesses potentially merged after leaving warp pool = %d\n", rt_warppool_potential_merge);
   
   fprintf(fout, "Number of cycles in warp pool:\n");
@@ -2642,8 +2643,10 @@ void rt_unit::cycle() {
                    m_core->get_gpu()->gpu_sim_cycle +
                    m_core->get_gpu()->gpu_tot_sim_cycle);
                    
-    m_L0_complet->fill( mf, m_core->get_gpu()->gpu_sim_cycle +
+    if (!m_config->bypassL0Complet) {
+      m_L0_complet->fill( mf, m_core->get_gpu()->gpu_sim_cycle +
                         m_core->get_gpu()->gpu_tot_sim_cycle);
+    }
                         
     m_response_fifo.pop_front();
 
@@ -2664,7 +2667,7 @@ void rt_unit::cycle() {
         }
       } 
       
-      else {
+      else if (!m_config->bypassL0Complet){
         // Check MSHR for all accessed to this address
         std::list<mem_fetch *> response_mf = m_L0_complet->probe_mshr(mf->get_addr());
         
@@ -2681,6 +2684,19 @@ void rt_unit::cycle() {
             m_current_warps[response->get_wid()].clear_mem_fetch_wait(mf->get_addr());
             if (!m_config->m_rt_lock_threads) m_current_warps[response->get_wid()].clear_rt_awaiting_threads(mf->get_addr());
           }
+        }
+      }
+      
+      else {
+        // If response warp is not in current warps list, it must be in dispatch reg
+        if (m_current_warps.find(mf->get_wid()) == m_current_warps.end()) {
+          assert(mf->get_wid() == pipe_reg.warp_id());
+          pipe_reg.clear_mem_fetch_wait(mf->get_addr());
+          if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
+        }
+        else {
+          m_current_warps[mf->get_wid()].clear_mem_fetch_wait(mf->get_addr());
+          if (!m_config->m_rt_lock_threads) m_current_warps[mf->get_wid()].clear_rt_awaiting_threads(mf->get_addr());
         }
       }
     } 
@@ -2938,6 +2954,7 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
   // Add currently selected warp's accesses
   inst.fill_next_rt_mem_access(m_config->m_rt_lock_threads);
   m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
+  m_stats->rt_thread_mshr_count += inst.get_mshr_merged_count();
   std::set<new_addr_type> warp_accesses = inst.get_rt_accesses();
   for (auto it=warp_accesses.begin(); it!=warp_accesses.end(); ++it) {
     new_addr_type addr = *it;
@@ -2973,6 +2990,7 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
     warp_inst_t &inst = it->second;
     inst.fill_next_rt_mem_access(m_config->m_rt_lock_threads);
     m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
+    m_stats->rt_thread_mshr_count += inst.get_mshr_merged_count();
     std::set<new_addr_type> warp_accesses = inst.get_rt_accesses();
     for (auto it=warp_accesses.begin(); it!=warp_accesses.end(); ++it) {
       new_addr_type addr = *it;
@@ -3068,6 +3086,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
   else {
     mem_access_t access = inst.get_next_rt_mem_access(m_config->m_rt_lock_threads);
     m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
+    m_stats->rt_thread_mshr_count += inst.get_mshr_merged_count();
 
     // Attempt to coalesce memory accesses between multiple warps
     // if (m_config->m_rt_coalesce_warps && m_config->m_rt_lock_threads) {
@@ -3083,19 +3102,35 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     mf->set_tree_level(access.get_tree_level());
     assert(mf->get_tree_level() > 0); 
   }
-  
-  
+    
+  enum cache_request_status status;
   std::list<cache_event> events;
-  enum cache_request_status status = cache->access(
-    mf->get_addr(), mf,
-    m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle,
-    events
-  );
+  
+  if (m_config->bypassL0Complet) {
+    // bypass L1 cache
+    unsigned control_size = 8;
+    unsigned size = mf->get_access_size() + control_size;
+    // printf("Interconnect:Addr: %x, size=%d\n",access.get_addr(),size);
+    if (m_icnt->full(size, inst.is_store() || inst.isatomic())) {
+      result = ICNT_RC_FAIL;
+    } else {
+      m_icnt->push(mf);
+      return result;
+    }
+  }
+  
+  else {
+    status = cache->access(
+      mf->get_addr(), mf,
+      m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle,
+      events
+    );
+  }
   
   // fprintf(m_cache_reuse_log_file, "%d: 0x%x\n", m_sid, mf->get_addr());
   
   // Stalled
-  if (status == RESERVATION_FAIL) {
+  if (status == RESERVATION_FAIL || result == ICNT_RC_FAIL) {
     
     // Check if consecutive
     if (mf->get_uncoalesced_addr() == m_prev_reservation_fail) {
@@ -3143,6 +3178,8 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
       }
     }
   }
+  
+  if (result == ICNT_RC_FAIL) return result;
   
   return process_cache_access(cache, mf->get_addr(), inst, events, mf, status);
 }
