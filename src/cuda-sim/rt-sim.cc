@@ -784,26 +784,26 @@ float3 calculate_idir(float3 direction) {
 
 
 
-uint32_t hash_comp(float x, uint32_t num_bits) {
+uint64_t hash_comp(float x, uint32_t num_bits) {
     uint32_t mask = UINT32_MAX >> (32 - num_bits);
 
     uint32_t o_x = *((uint32_t*) &x);
 
-    uint32_t sign_bit_x = o_x >> 31;
-    uint32_t exp_x = (o_x >> (31 - num_bits)) & mask;
-    uint32_t mant_x = (o_x >> (23 - num_bits)) & mask;
+    uint64_t sign_bit_x = o_x >> 31;
+    uint64_t exp_x = (o_x >> (31 - num_bits)) & mask;
+    uint64_t mant_x = (o_x >> (23 - num_bits)) & mask;
 
     return (sign_bit_x << (2 * num_bits)) | (exp_x << num_bits) | mant_x;
 }
 
-uint32_t hash_francois(const Ray &ray, uint32_t num_bits) {
+uint64_t hash_francois(const Ray &ray, uint32_t num_bits) {
   // Each component has 1 bit sign, `num_bits` mantissa, `num_bits` exponent
   uint32_t num_comp_bits = 2 * num_bits + 1;
-  uint32_t hash_d =
+  uint64_t hash_d =
     (hash_comp(ray.get_direction().z, num_bits) << (2 * num_comp_bits)) |
     (hash_comp(ray.get_direction().y, num_bits) << num_comp_bits) |
      hash_comp(ray.get_direction().x, num_bits);
-  uint32_t hash_o =
+  uint64_t hash_o =
     (hash_comp(ray.get_origin().x, num_bits) << (2 * num_comp_bits)) |
     (hash_comp(ray.get_origin().y, num_bits) << num_comp_bits) |
      hash_comp(ray.get_origin().z, num_bits);

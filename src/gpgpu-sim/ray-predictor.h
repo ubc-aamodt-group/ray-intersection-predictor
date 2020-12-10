@@ -64,6 +64,8 @@ class ray_predictor {
     void add_node_to_predictor_entry(unsigned long long index, new_addr_type node);
     std::vector<new_addr_type> get_prediction_list(unsigned long long index) const;
     void update_entry_use(unsigned long long index, new_addr_type node);
+
+    unsigned long long compute_index(unsigned long long hash, unsigned num_bits) const;
     
     std::map<unsigned long long, predictor_entry> m_predictor_table;
     warp_inst_t m_current_warp;
