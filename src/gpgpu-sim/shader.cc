@@ -2625,14 +2625,16 @@ void rt_unit::cycle() {
   m_stats->rt_predictor_verified_count[m_sid] = m_ray_predictor->predictor_num_verified();
   m_stats->rt_predictor_ray_count[m_sid] = m_ray_predictor->predictor_num_rays();
   
-  for (unsigned i=0; i<m_config->max_warps_per_shader; i++) {
-    if (m_current_warps.find(i) != m_current_warps.end()) {
-      m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + i] = m_current_warps[i].get_rt_active_threads();
-    }
-    else {
-      m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + i] = 0;
-    }
-  }
+  // // Default = 0
+  // for (unsigned i=0; i<m_config->max_warps_per_shader; i++) {
+  //     m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + i] = 0;
+  // }
+  // // Check current warps
+  // for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
+  //   if (it->second.warp_id() < m_config->max_warps_per_shader) { 
+  //     m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + it->second.warp_id()] = it->second.get_rt_active_threads();
+  //   }
+  // }
   
   if (!m_response_fifo.empty()) {
     
@@ -2680,9 +2682,14 @@ void rt_unit::cycle() {
             pipe_reg.clear_mem_fetch_wait(response->get_addr());
             if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
           }
+          // Otherwise check all the warps
           else {
-            m_current_warps[response->get_wid()].clear_mem_fetch_wait(mf->get_addr());
-            if (!m_config->m_rt_lock_threads) m_current_warps[response->get_wid()].clear_rt_awaiting_threads(mf->get_addr());
+            for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
+              if (it->second.warp_id() == response->get_wid()) {
+                it->second.clear_mem_fetch_wait(mf->get_addr());
+                if (!m_config->m_rt_lock_threads) it->second.clear_rt_awaiting_threads(mf->get_addr());
+              }
+            }
           }
         }
       }
@@ -2695,8 +2702,12 @@ void rt_unit::cycle() {
           if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
         }
         else {
-          m_current_warps[mf->get_wid()].clear_mem_fetch_wait(mf->get_addr());
-          if (!m_config->m_rt_lock_threads) m_current_warps[mf->get_wid()].clear_rt_awaiting_threads(mf->get_addr());
+          for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
+            if (it->second.warp_id() == mf->get_wid()) {
+              it->second.clear_mem_fetch_wait(mf->get_addr());
+              if (!m_config->m_rt_lock_threads) it->second.clear_rt_awaiting_threads(mf->get_addr());
+            }
+          }
         }
       }
     } 
@@ -2755,7 +2766,7 @@ void rt_unit::cycle() {
       
       // If returned warp is non-empty, add it to warp pool
       if (!predicted_inst.empty()) {
-        m_current_warps[predicted_inst.warp_id()] = predicted_inst;
+        m_current_warps[predicted_inst.get_uid()] = predicted_inst;
       }
       
       // Move current warp out of rt-unit
@@ -2791,16 +2802,20 @@ void rt_unit::cycle() {
     // If coalescing warp requests, move unconditionally
     if (m_config->m_rt_coalesce_warps && m_current_warps.size() < m_config->m_rt_max_warps && !rt_inst.empty()) {
       unsigned warp_id = rt_inst.warp_id();
-      m_current_warps[rt_inst.warp_id()] = rt_inst;
+      m_current_warps[rt_inst.get_uid()] = rt_inst;
       rt_inst.clear();
     }
     // Otherwise wait until waiting for response
     else if (m_config->m_rt_max_warps > 0 && m_current_warps.size() < m_config->m_rt_max_warps) {
       if (!rt_inst.empty()) {
         unsigned warp_id = rt_inst.warp_id();
-        m_current_warps[rt_inst.warp_id()] = rt_inst;
+        m_current_warps[rt_inst.get_uid()] = rt_inst;
         rt_inst.clear();
       }
+    }
+    
+    else {
+      pipe_reg = rt_inst;
     }
 
     // assert(rc_fail != NO_RC_FAIL || rt_mem_accesses_empty? || m_L0_complet->num_mshr_entries() > 10);
@@ -4060,13 +4075,14 @@ void rt_unit::print(FILE *fout) const {
   if (m_dispatch_reg->m_is_raytrace) {
     fprintf(fout, "%d ", m_dispatch_reg->mem_fetch_wait(m_config->m_rt_lock_threads));
   }
+  fprintf(fout, "uid:%d ", m_dispatch_reg->get_uid());
   m_dispatch_reg->print(fout);
   fprintf(fout, "Predictor warps: ");
   m_ray_predictor->display_state(fout);  
   fprintf(fout, "Other awaiting warps:\n");
   for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
     warp_inst_t inst = it->second;
-    fprintf(fout, "%d ", inst.mem_fetch_wait(m_config->m_rt_lock_threads));
+    fprintf(fout, "%d uid:%d ", inst.mem_fetch_wait(m_config->m_rt_lock_threads), it->first);
     inst.print(fout);
   }
   m_L0_complet->display_state(fout);

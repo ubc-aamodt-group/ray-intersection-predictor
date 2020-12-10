@@ -463,7 +463,7 @@ class ptx_thread_info {
   
   void add_raytrace_mem_access(addr_t addr) { m_raytrace_mem_accesses.push_back(addr); }
   void add_ray_hash(unsigned long long ray_hash) { m_ray_hash = ray_hash; }
-  void add_ray_intersect() { m_raytrace_intersect++; }
+  void add_ray_intersect() { m_raytrace_intersect = 1; }
   void add_ray_prediction(addr_t prediction) { m_raytrace_prediction = prediction; }
   void add_ray_properties(Ray ray) { m_ray = ray; }
   void set_tree_level_map(std::map<new_addr_type, unsigned> tree_level) { m_rt_tree_level_map = tree_level; }
