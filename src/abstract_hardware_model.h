@@ -536,6 +536,7 @@ struct ray_predictor_config {
   unsigned virtual_table_size;
   unsigned virtual_entry_cap;
   unsigned virtual_placement_policy;
+  bool repack_warps;
 };
 
 class gpgpu_functional_sim_config {
@@ -1269,6 +1270,30 @@ class warp_inst_t : public inst_t {
   // void dec_rt_warp_cycle() { m_rt_warp_cycle--; }
   // void set_rt_warp_cycle() { m_rt_warp_cycle = m_config->rt_warp_cycle; }
   // bool check_rt_warp_cycle() { return m_rt_warp_cycle <= 0; }
+  
+  struct per_thread_info {
+    per_thread_info() {
+      for (unsigned i = 0; i < MAX_ACCESSES_PER_INSN_PER_THREAD; i++)
+        memreqaddr[i] = 0;
+    }
+    dram_callback_t callback;
+    new_addr_type
+        memreqaddr[MAX_ACCESSES_PER_INSN_PER_THREAD];  // effective address,
+                                                       // upto 8 different
+                                                       // requests (to support
+                                                       // 32B access in 8 chunks
+                                                       // of 4B each)
+                                                   
+    // RT variables    
+    std::deque<new_addr_type> raytrace_mem_accesses;
+    bool ray_intersect;
+    new_addr_type ray_prediction;
+    unsigned long long ray_hash;
+    Ray ray_properties;
+  };
+  
+  struct per_thread_info get_thread_info(unsigned tid) { return m_per_scalar_thread[tid]; }
+  void set_thread_info(unsigned tid, struct per_thread_info thread_info) { m_per_scalar_thread[tid] = thread_info; }
 
  protected:
   unsigned m_uid;
@@ -1300,26 +1325,6 @@ class warp_inst_t : public inst_t {
   
   // List of current memory requests awaiting response
   std::set<new_addr_type> m_mf_awaiting_response;
-  struct per_thread_info {
-    per_thread_info() {
-      for (unsigned i = 0; i < MAX_ACCESSES_PER_INSN_PER_THREAD; i++)
-        memreqaddr[i] = 0;
-    }
-    dram_callback_t callback;
-    new_addr_type
-        memreqaddr[MAX_ACCESSES_PER_INSN_PER_THREAD];  // effective address,
-                                                       // upto 8 different
-                                                       // requests (to support
-                                                       // 32B access in 8 chunks
-                                                       // of 4B each)
-                                                   
-    // RT variables    
-    std::deque<new_addr_type> raytrace_mem_accesses;
-    bool ray_intersect;
-    new_addr_type ray_prediction;
-    unsigned long long ray_hash;
-    Ray ray_properties;
-  };
   bool m_per_scalar_thread_valid;
   std::vector<per_thread_info> m_per_scalar_thread;
   bool m_mem_accesses_created;

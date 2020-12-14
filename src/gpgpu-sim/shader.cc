@@ -2743,8 +2743,19 @@ void rt_unit::cycle() {
   // if (m_config->m_L0_tri_config.l1_latency > 0) l0t_latency_queue_cycle();
   
   if (m_config->m_rt_predictor) {
-    // Move warp to ray predictor 
-    if (m_ray_predictor->empty()) {
+    
+    // If there's a warp ready in the predictor, fetch it. 
+    if (m_ray_predictor->ready()) {
+      warp_inst_t predicted_inst = m_ray_predictor->retrieve();
+      
+      // If returned warp is non-empty, add it to warp pool
+      if (!predicted_inst.empty()) {
+        m_current_warps[predicted_inst.get_uid()] = predicted_inst;
+      }
+    }
+    
+    // Move warp to ray predictor if the predictor is not currently busy or full
+    if (!m_ray_predictor->busy()) {
       
       // If predictor queue is not empty, pop next warp from the queue
       if (!m_predictor_queue.empty()) {
@@ -2760,17 +2771,11 @@ void rt_unit::cycle() {
         m_predictor_queue.pop_front();
         m_predictor_queue_set.erase(pipe_reg.get_uid());
       }
-      
-      // If predictor is not currently busy, get any previous warps out and add incoming warp
-      warp_inst_t predicted_inst = m_ray_predictor->retrieve();
+
+      // Insert the selected warp
       m_ray_predictor->insert(pipe_reg);
       
-      // If returned warp is non-empty, add it to warp pool
-      if (!predicted_inst.empty()) {
-        m_current_warps[predicted_inst.get_uid()] = predicted_inst;
-      }
-      
-      // Move current warp out of rt-unit
+      // Move current warp out of rt-unit (it should either be in the predictor queue or in the predictor)
       m_dispatch_reg->clear();
     }
     

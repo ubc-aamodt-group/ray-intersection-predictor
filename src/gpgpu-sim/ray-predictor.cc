@@ -8,6 +8,8 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   
   m_predictor_table = {};
   m_busy = false;
+  m_ready = false;
+  m_cycles = -1;
   
   m_go_up_level = config.go_up_level;
   m_number_of_entries_cap = config.entry_cap;
@@ -19,6 +21,9 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   m_virtualize = config.virtualize;
   m_virtualize_delay = config.virtualize_delay;
   m_node_replacement_policy = config.entry_replacement_policy;
+  m_repack_warps = config.repack_warps;
+  
+  m_total_threads = 0;
   
   m_sid = sid;
   
@@ -32,6 +37,10 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   num_virtual_miss = 0;
   num_virtual_valid = 0;
   mem_access_saved = 0;
+  verified_packets = 0;
+  unverified_packets = 0;
+  unpredicted_packets = 0;
+  mixed_packets = 0;
 }
 
 unsigned long long ray_predictor::compute_index(unsigned long long hash, unsigned num_bits) const {
@@ -51,20 +60,18 @@ void ray_predictor::insert(const warp_inst_t& inst) {
     m_current_warp.clear();
     return;
   }
-  
-  // Mark predictor busy
-  m_busy = true;
-  reset_cycle_delay(m_cycle_delay);
+    
   m_current_warp = inst;
   
   // Iterate through every thread
   unsigned warp_size = inst.warp_size();
-  num_rays += warp_size;
+  num_rays += inst.active_count();
+  m_total_threads += inst.active_count();
   for (unsigned i=0; i<warp_size; i++) {
     unsigned long long ray_hash = m_current_warp.rt_ray_hash(i);
     
     // Check if valid ray
-    if (ray_hash == 0) continue;
+    if (!m_current_warp.active(i)) continue;
     
     unsigned long long index;
     // Check predictor table
@@ -78,13 +85,27 @@ void ray_predictor::insert(const warp_inst_t& inst) {
       new_addr_type hit_node;
       bool valid =
         validate_prediction(prediction_list, m_current_warp.rt_ray_properties(i), i, hit_node);
+        
+        
       if (valid) {
         update_entry_use(index, hit_node);
         num_valid++;
+        
+        // Add this thread to list of verified threads
+        if (m_repack_warps) {
+          verified_threads.push_back(m_current_warp.get_thread_info(i));
+        }
+        
       }
       
       // If invalid, regular traversal
       else {
+        
+        // Add this thread to list of unverified threads
+        if (m_repack_warps) {
+          unverified_threads.push_back(m_current_warp.get_thread_info(i));
+        }
+        
         // Add to table if ray intersects with something
         if (m_current_warp.rt_ray_intersect(i)) {
           new_addr_type predict_node = m_current_warp.rt_ray_prediction(i);
@@ -99,6 +120,11 @@ void ray_predictor::insert(const warp_inst_t& inst) {
     
     // Regular traversal.
     else {
+      
+      // Add this thread to list of unpredicted threads
+      if (m_repack_warps) {
+        unpredicted_threads.push_back(m_current_warp.get_thread_info(i));
+      }
       num_miss++;
       
       if (m_virtualize) {
@@ -143,10 +169,105 @@ void ray_predictor::insert(const warp_inst_t& inst) {
       }
     }
   }  
+  
+  
+  // Mark predictor busy
+  if (m_repack_warps) {
+    // If this is the first warp, start timer
+    if (m_predictor_warps.empty()) {
+      reset_cycle_delay(20);
+    }
+    m_predictor_warps.push_back(m_current_warp);
+  }
+  else {
+    m_busy = true;
+    reset_cycle_delay(m_cycle_delay);
+  }
+  
 }
 
 warp_inst_t ray_predictor::retrieve() {
-  return m_current_warp;
+  // After retrieved, no longer ready
+  m_ready = false;
+  
+  // Only handles one warp at a time
+  if (!m_repack_warps) {
+    return m_current_warp;
+  }
+  
+  else {
+    // If repacking warps, check if there are any ready warps
+    assert(!m_predictor_warps.empty());
+    m_current_warp = m_predictor_warps.front();
+    m_predictor_warps.pop_front();
+      
+    // Prioritizes verified threads
+    if (verified_threads.size() >= 32) {
+      verified_packets++;
+      for (unsigned tid=0; tid<32; tid++) {
+        m_current_warp.set_thread_info(tid, verified_threads.front());
+        verified_threads.pop_front();
+      }
+      m_total_threads -= 32;
+    }
+    
+    else if (unpredicted_threads.size() >= 32) {
+      unpredicted_packets++;
+      for (unsigned tid=0; tid<32; tid++) {
+        m_current_warp.set_thread_info(tid, unpredicted_threads.front());
+        unpredicted_threads.pop_front();
+      }
+      m_total_threads -= 32;
+    }
+    
+    else if (unverified_threads.size() >= 32) {
+      unverified_packets++;
+      for (unsigned tid=0; tid<32; tid++) {
+        m_current_warp.set_thread_info(tid, unverified_threads.front());
+        unverified_threads.pop_front();
+      }
+      m_total_threads -= 32;
+    }
+    
+    // Otherwise the timer must have expired, pack a warp with anything..?
+    else {
+      mixed_packets++;
+      for (unsigned tid=0; tid<32; tid++) {
+        if (!unpredicted_threads.empty()) {
+          m_current_warp.set_thread_info(tid, unpredicted_threads.front());
+          unpredicted_threads.pop_front();
+          m_total_threads--;
+        }
+        else if (!verified_threads.empty()) {
+          m_current_warp.set_thread_info(tid, verified_threads.front());
+          verified_threads.pop_front();
+          m_total_threads--;
+        }
+        else if (!unverified_threads.empty()) {
+          m_current_warp.set_thread_info(tid, unverified_threads.front());
+          unverified_threads.pop_front();
+          m_total_threads--;
+        }
+        else if (m_total_threads <= 0) {
+          // No more threads left (some warps might not have been full)
+          break;
+        }
+        
+        // If all the categories are empty, there shouldn't still be a warp in the predictor
+        else {
+          assert(0);  
+        }
+      }
+    }
+    
+    // Reset the timer if there are still warps in the predictor (otherwise done)
+    if (!m_predictor_warps.empty()) {
+      reset_cycle_delay(20);
+    }
+    
+    // Return repacked warp or empty warp
+    return m_current_warp;
+  }
 }
 
 bool ray_predictor::check_table(unsigned long long hash, unsigned long long &index) {
@@ -431,11 +552,50 @@ void ray_predictor::evict_entry() {
 }
 
 void ray_predictor::cycle() {
-  if (m_cycles == 0) m_busy = false;
-  else if (m_cycles > 0) m_cycles--;
+  
+  // Check if predictor is full
+  if (m_repack_warps) {
+    if (m_predictor_warps.size() >= 16) {
+      m_busy = true;
+    }
+    else {
+      m_busy = false;
+    }
+    
+    // Check if timer expired or if any categories are ready
+    if (m_cycles == 0) {
+      m_ready = true;
+      m_cycles = -1;
+    }
+    else if (verified_threads.size() > 32 ||
+          unverified_threads.size() > 32 ||
+          unpredicted_threads.size() > 32)
+    {
+      m_ready = true;
+    }
+  }
+  
+  // For single warp predictor, full == busy
+  else {
+    if (m_cycles == 0) {
+      m_busy = false;
+      m_ready = true;
+      m_cycles = -1;
+    }
+  }
+  
+  // Decrement timer
+  if (m_cycles > 0) m_cycles--;
+  
 }
 
 void ray_predictor::display_state(FILE* fout) {
+  if (m_repack_warps) {
+    fprintf(fout, "\n");
+    for (auto it=m_predictor_warps.begin(); it!=m_predictor_warps.end(); it++) {
+      it->print(fout);
+    }
+  }
   m_current_warp.print(fout);
 }
 
@@ -450,6 +610,8 @@ void ray_predictor::print_stats(FILE* fout) {
   fprintf(fout, "Total memory access savings: %d\n", mem_access_saved);
   fprintf(fout, "Evicted entries: %d\n", num_evicted);
   fprintf(fout, "Per entry overflow: %d\n", num_entry_overflow);
+  if (m_repack_warps)
+    fprintf(fout, "Repacked warps: Verified %d, Unverified %d, Unpredicted %d, Mixed %d\n", verified_packets, unverified_packets, unpredicted_packets, mixed_packets);
   fprintf(fout, "--------------------------------------------\n");
 }
 

@@ -34,10 +34,12 @@ class ray_predictor {
     bool m_virtualize;
     unsigned m_virtualize_delay;
     unsigned m_ways;
+    bool m_repack_warps;
     
     unsigned m_sid;
     
-    bool empty() { return !m_busy; }
+    bool busy() { return m_busy; }
+    bool ready() { return m_ready; }
     void insert(const warp_inst_t& inst);
     warp_inst_t retrieve();
     void cycle();
@@ -70,9 +72,17 @@ class ray_predictor {
     
     std::map<unsigned long long, predictor_entry> m_predictor_table;
     warp_inst_t m_current_warp;
-    bool m_busy;
     
-    unsigned m_cycles;
+    std::deque<warp_inst_t> m_predictor_warps;
+    std::deque<struct warp_inst_t::per_thread_info> verified_threads;
+    std::deque<struct warp_inst_t::per_thread_info> unverified_threads;
+    std::deque<struct warp_inst_t::per_thread_info> unpredicted_threads;
+    unsigned m_total_threads;
+    
+    bool m_busy;
+    bool m_ready;
+    
+    int m_cycles;
     
     // Stats
     unsigned num_predicted;
@@ -85,6 +95,10 @@ class ray_predictor {
     unsigned num_virtual_valid;
     unsigned num_rays;
     int mem_access_saved;
+    unsigned verified_packets;
+    unsigned unverified_packets;
+    unsigned unpredicted_packets;
+    unsigned mixed_packets;
 };
 
 #endif
