@@ -45,19 +45,16 @@ unsigned long long ray_predictor::compute_index(unsigned long long hash, unsigne
   return index;
 }
                     
-warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
+void ray_predictor::insert(const warp_inst_t& inst) {
+  // Not a valid warp
   if (inst.empty()) {
-    // Not a valid warp, return previous warp
-    warp_inst_t prev_warp = m_current_warp;
-    // Clear current warp
     m_current_warp.clear();
-    return prev_warp;
+    return;
   }
   
   // Mark predictor busy
   m_busy = true;
   reset_cycle_delay(m_cycle_delay);
-  warp_inst_t prev_warp = m_current_warp;
   m_current_warp = inst;
   
   // Iterate through every thread
@@ -145,9 +142,11 @@ warp_inst_t ray_predictor::lookup(const warp_inst_t& inst) {
         add_entry(ray_hash, predict_node);
       }
     }
-  }
-  return prev_warp;
-  
+  }  
+}
+
+warp_inst_t ray_predictor::retrieve() {
+  return m_current_warp;
 }
 
 bool ray_predictor::check_table(unsigned long long hash, unsigned long long &index) {

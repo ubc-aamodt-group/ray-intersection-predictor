@@ -2762,7 +2762,8 @@ void rt_unit::cycle() {
       }
       
       // If predictor is not currently busy, get any previous warps out and add incoming warp
-      warp_inst_t predicted_inst = m_ray_predictor->lookup(pipe_reg);
+      warp_inst_t predicted_inst = m_ray_predictor->retrieve();
+      m_ray_predictor->insert(pipe_reg);
       
       // If returned warp is non-empty, add it to warp pool
       if (!predicted_inst.empty()) {
