@@ -723,6 +723,18 @@ void shader_core_stats::print(FILE *fout) const {
   fprintf(fout, "Number of accesses merged into MSHR (pending hits) = %d\n", rt_thread_mshr_count);
   fprintf(fout, "Number of accesses potentially merged after leaving warp pool = %d\n", rt_warppool_potential_merge);
   
+  fprintf(fout, "Intrawarp Coalescing: \n");
+  for (unsigned i=0; i<m_config->warp_size; i++) {
+    fprintf(fout, "\t%d", rt_intrawarp_coalescing[i]);
+  }
+  fprintf(fout, "\n");
+  
+  fprintf(fout, "Thread Divergence:\n");
+  for (unsigned i=0; i<100; i++) {
+    fprintf(fout, "\t%d", rt_tot_thread_divergence[i]);
+  }
+  fprintf(fout, "\n");
+  
   fprintf(fout, "Number of cycles in warp pool:\n");
   for (unsigned i=0; i<200; i++) {
     fprintf(fout, "%d: %d\t", i, rt_warppool_wait_time[i]);
@@ -2597,6 +2609,13 @@ void rt_unit::issue(register_set &reg_set) {
   inst->op_pipe = MEM__OP;
   // RT-CORE NOTE: Add stats
   pipelined_simd_unit::issue(reg_set);
+  
+  if (!m_config->m_rt_predictor) {
+    // Check shortest thread vs longest thread in warp. 
+    unsigned length = m_dispatch_reg->check_thread_divergence();
+    if (length < 99) m_stats->rt_tot_thread_divergence[length]++;
+    else m_stats->rt_tot_thread_divergence[99]++;
+  }
 }
 
 void rt_unit::cycle() {
@@ -2751,6 +2770,11 @@ void rt_unit::cycle() {
       // If returned warp is non-empty, add it to warp pool
       if (!predicted_inst.empty()) {
         m_current_warps[predicted_inst.get_uid()] = predicted_inst;
+        
+        // Check shortest thread vs longest thread in warp. 
+        unsigned length = predicted_inst.check_thread_divergence();
+        if (length < 99) m_stats->rt_tot_thread_divergence[length]++;
+        else m_stats->rt_tot_thread_divergence[99]++;
       }
     }
     
@@ -2976,6 +3000,7 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
   inst.fill_next_rt_mem_access(m_config->m_rt_lock_threads);
   m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
   m_stats->rt_thread_mshr_count += inst.get_mshr_merged_count();
+  m_stats->rt_intrawarp_coalescing[inst.get_coalesce_count()]++;
   std::set<new_addr_type> warp_accesses = inst.get_rt_accesses();
   for (auto it=warp_accesses.begin(); it!=warp_accesses.end(); ++it) {
     new_addr_type addr = *it;
@@ -3012,6 +3037,7 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
     inst.fill_next_rt_mem_access(m_config->m_rt_lock_threads);
     m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
     m_stats->rt_thread_mshr_count += inst.get_mshr_merged_count();
+    m_stats->rt_intrawarp_coalescing[inst.get_coalesce_count()]++;
     std::set<new_addr_type> warp_accesses = inst.get_rt_accesses();
     for (auto it=warp_accesses.begin(); it!=warp_accesses.end(); ++it) {
       new_addr_type addr = *it;
@@ -3108,6 +3134,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     mem_access_t access = inst.get_next_rt_mem_access(m_config->m_rt_lock_threads);
     m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
     m_stats->rt_thread_mshr_count += inst.get_mshr_merged_count();
+    m_stats->rt_intrawarp_coalescing[inst.get_coalesce_count()]++;
 
     // Attempt to coalesce memory accesses between multiple warps
     // if (m_config->m_rt_coalesce_warps && m_config->m_rt_lock_threads) {

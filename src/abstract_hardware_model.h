@@ -1231,6 +1231,8 @@ class warp_inst_t : public inst_t {
   void rt_mem_accesses_pop(new_addr_type addr);
   bool rt_mem_accesses_empty();
   
+  unsigned check_thread_divergence();
+  
   // RT-CORE NOTE: May need to update this logic for special node fetching? (i.e. vote on next mem access)
   mem_access_t get_next_rt_mem_access(bool locked);
   void fill_next_rt_mem_access(bool locked);
@@ -1262,7 +1264,11 @@ class warp_inst_t : public inst_t {
   
   std::set<new_addr_type> get_rt_accesses() { return m_next_rt_accesses_set; }
   
-  unsigned get_coalesce_count() { return m_coalesce_count; }
+  unsigned get_coalesce_count() { 
+    assert(m_coalesce_count <= warp_size());
+    return m_coalesce_count; 
+  }
+  
   unsigned get_mshr_merged_count() { return m_mshr_merged_count; }
   
   unsigned get_rt_active_threads();

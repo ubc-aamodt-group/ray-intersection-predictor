@@ -828,6 +828,18 @@ unsigned warp_inst_t::get_rt_active_threads() {
   return active_threads;
 }
 
+unsigned warp_inst_t::check_thread_divergence() {
+  unsigned shortest = 10000;
+  unsigned longest = 0;
+  for (unsigned i=0; i<m_config->warp_size; i++) {
+    unsigned length = m_per_scalar_thread[i].raytrace_mem_accesses.size();
+    if (length < shortest) shortest = length;
+    else if (length > longest) longest = length;
+  }
+  assert (longest - shortest >= 0);
+  return longest - shortest;
+}
+
 bool warp_inst_t::mem_fetch_wait(bool locked) { 
   // Wait for response if all current next accesses have been sent
   // and waiting for response list is not empty
