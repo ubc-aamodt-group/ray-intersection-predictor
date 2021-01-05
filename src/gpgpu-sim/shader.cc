@@ -75,9 +75,18 @@ std::list<unsigned> shader_core_ctx::get_regs_written(const inst_t &fvt) const {
 }
 
 void exec_shader_core_ctx::create_shd_warp() {
-  m_warp.resize(m_config->max_warps_per_shader);
-  for (unsigned k = 0; k < m_config->max_warps_per_shader; ++k) {
-    m_warp[k] = new shd_warp_t(this, m_config->warp_size);
+  // Create extra warps?
+  if (!m_config->m_rt_predictor_config.repack_unpredicted_warps) {
+    m_warp.resize(m_config->max_warps_per_shader + 2);
+    for (unsigned k = 0; k < m_config->max_warps_per_shader + 2; ++k) {
+      m_warp[k] = new shd_warp_t(this, m_config->warp_size);
+    }
+  }
+  else {
+    m_warp.resize(m_config->max_warps_per_shader);
+    for (unsigned k = 0; k < m_config->max_warps_per_shader; ++k) {
+      m_warp[k] = new shd_warp_t(this, m_config->warp_size);
+    }
   }
 }
 
@@ -722,6 +731,7 @@ void shader_core_stats::print(FILE *fout) const {
   fprintf(fout, "Number of accesses after thread coalescing = %d\n", rt_thread_coalesced_count);
   fprintf(fout, "Number of accesses merged into MSHR (pending hits) = %d\n", rt_thread_mshr_count);
   fprintf(fout, "Number of accesses potentially merged after leaving warp pool = %d\n", rt_warppool_potential_merge);
+  fprintf(fout, "Total number of warps = %d\n", rt_total_warps);
   
   fprintf(fout, "Intrawarp Coalescing: \n");
   for (unsigned i=0; i<m_config->warp_size; i++) {
@@ -2569,6 +2579,8 @@ rt_unit::rt_unit(mem_fetch_interface *icnt,
   m_sid = sid;
   m_tpc = tpc;
   
+  n_warps = 0;
+  
   // RT-CORE NOTE: Make the type of cache (tex, constant, data) configurable?
   m_L0_complet = new read_only_cache( "L0Complet", m_config->m_L0C_config, m_sid,
                                       get_shader_constant_cache_id(), icnt, 
@@ -2603,6 +2615,18 @@ rt_unit::rt_unit(mem_fetch_interface *icnt,
   // m_cache_reuse_log_file = fopen(m_log_file_filename, "w+");
 }
 
+
+bool rt_unit::can_issue(const warp_inst_t &inst) const {
+  switch (inst.op) {
+    case RT_CORE_OP:
+      break;
+    default:
+      return false;
+  }
+  if (n_warps >= (m_config->m_rt_max_warps)) return false;
+  return m_dispatch_reg->empty() && !occupied.test(inst.latency);
+}
+        
 void rt_unit::issue(register_set &reg_set) {
   warp_inst_t *inst = *(reg_set.get_ready());
   // RT-CORE NOTE: MEM__OP? RT__OP?
@@ -2624,6 +2648,12 @@ void rt_unit::cycle() {
   warp_inst_t &pipe_reg = *m_dispatch_reg;
   enum mem_stage_stall_type rc_fail = NO_RC_FAIL;
   mem_stage_access_type type;
+  
+  // Count warp if not empty
+  if (!pipe_reg.empty()) {
+    n_warps++;
+    m_stats->rt_total_warps++;
+  }
   
   // RT-CORE NOTE
   // Add cycling for intersection units?
@@ -2769,12 +2799,29 @@ void rt_unit::cycle() {
       
       // If returned warp is non-empty, add it to warp pool
       if (!predicted_inst.empty()) {
-        m_current_warps[predicted_inst.get_uid()] = predicted_inst;
         
-        // Check shortest thread vs longest thread in warp. 
-        unsigned length = predicted_inst.check_thread_divergence();
-        if (length < 99) m_stats->rt_tot_thread_divergence[length]++;
-        else m_stats->rt_tot_thread_divergence[99]++;
+        // Handle special case (when there is warp reformation, but unpredicted threads do not get repacked, but all the threads were predicted)
+        if (predicted_inst.active_count() == 0) {
+          predicted_inst.completed(GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle + GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle);
+          m_core->dec_inst_in_pipeline(predicted_inst.warp_id());
+          n_warps--;
+        }
+        
+        // Normal case
+        else {
+          // Add warp to RT core warps
+          m_current_warps[predicted_inst.get_uid()] = predicted_inst;
+          
+          // Check if newly generated warp for warp reformation
+          if (predicted_inst.warp_id() >= m_config->max_warps_per_shader) {
+            m_core->inc_inst_in_pipeline(predicted_inst.warp_id());
+          }
+          
+          // Check shortest thread vs longest thread in warp. 
+          unsigned length = predicted_inst.check_thread_divergence();
+          if (length < 99) m_stats->rt_tot_thread_divergence[length]++;
+          else m_stats->rt_tot_thread_divergence[99]++;
+        }
       }
     }
     
@@ -2787,6 +2834,7 @@ void rt_unit::cycle() {
         // Add current warp to queue if it's not empty and isn't already in the queue
         if (!pipe_reg.empty() &&
             m_predictor_queue_set.find(pipe_reg.get_uid()) == m_predictor_queue_set.end()) {
+          assert(pipe_reg.warp_id() < m_config->max_warps_per_shader);
           m_predictor_queue.push_back(pipe_reg);
           m_predictor_queue_set.insert(pipe_reg.get_uid());
         }
@@ -2810,9 +2858,9 @@ void rt_unit::cycle() {
           m_predictor_queue_set.find(pipe_reg.get_uid()) == m_predictor_queue_set.end()) {
         m_predictor_queue.push_back(pipe_reg);
         m_predictor_queue_set.insert(pipe_reg.get_uid());
+        m_dispatch_reg->clear();
       }
     }
-    
     // For delay timing
     m_ray_predictor->cycle();
   }
@@ -2828,49 +2876,35 @@ void rt_unit::cycle() {
   done &= memory_cycle(rt_inst, rc_fail, type);
   m_mem_rc = rc_fail;
   
-  if (!done) {  // log stall types and return
-    // If coalescing warp requests, move unconditionally
-    if (m_config->m_rt_coalesce_warps && m_current_warps.size() < m_config->m_rt_max_warps && !rt_inst.empty()) {
-      unsigned warp_id = rt_inst.warp_id();
-      m_current_warps[rt_inst.get_uid()] = rt_inst;
-      rt_inst.clear();
-    }
-    // Otherwise wait until waiting for response
-    else if (m_config->m_rt_max_warps > 0 && m_current_warps.size() < m_config->m_rt_max_warps) {
-      if (!rt_inst.empty()) {
-        unsigned warp_id = rt_inst.warp_id();
-        m_current_warps[rt_inst.get_uid()] = rt_inst;
-        rt_inst.clear();
-      }
-    }
-    
-    else {
-      pipe_reg = rt_inst;
-    }
-
-    // assert(rc_fail != NO_RC_FAIL || rt_mem_accesses_empty? || m_L0_complet->num_mshr_entries() > 10);
-    // RT-CORE NOTE add stats
-    // m_stats->gpgpu_n_stall_shd_mem++;
-    // m_stats->gpu_stall_shd_mem_breakdown[type][rc_fail]++;
+  if (!done && !rt_inst.empty()) {
+    // Move unconditionally to m_current_warps
+    m_current_warps[rt_inst.get_uid()] = rt_inst;
+    rt_inst.clear();
     return;
   }
 
   // If "done" (no more mem accesses)
   if (!rt_inst.empty() && !rt_inst.mem_fetch_wait(m_config->m_rt_lock_threads)) {
-    pipe_reg = rt_inst;
-    unsigned warp_id = pipe_reg.warp_id();
-    assert(pipe_reg.is_load());
-    assert(pipe_reg.space.get_type() == global_space);
+    // pipe_reg = rt_inst;
+    unsigned warp_id = rt_inst.warp_id();
+    assert(rt_inst.is_load());
+    assert(rt_inst.space.get_type() == global_space);
 
     // Skip checking for pending writes (no WAW hazard?)
    
-    m_core->warp_inst_complete(*m_dispatch_reg);
+    m_core->warp_inst_complete(rt_inst);
     // RT-CORE NOTE check if this is still needed
     // m_scoreboard->releaseRegisters(m_dispatch_reg);
     
-    // QUESTION: What does this do?
     m_core->dec_inst_in_pipeline(warp_id);
-    m_dispatch_reg->clear();
+    
+    // Ignore warps generated inside RT core
+    if (warp_id < m_config->max_warps_per_shader) {
+      n_warps--;
+    }
+    // Track number of warps in RT core
+    assert(n_warps >= 0);
+    rt_inst.clear();
   }
 }
 
@@ -4104,21 +4138,39 @@ void ldst_unit::print(FILE *fout) const {
 }
 
 void rt_unit::print(FILE *fout) const {
-  fprintf(fout, "%s dispatch= ", m_name.c_str());
+  // Issued instruction
+  fprintf(fout, "%s dispatch (%d warps)\n", m_name.c_str(), n_warps);
   if (m_dispatch_reg->m_is_raytrace) {
     fprintf(fout, "%d ", m_dispatch_reg->mem_fetch_wait(m_config->m_rt_lock_threads));
   }
-  fprintf(fout, "uid:%d ", m_dispatch_reg->get_uid());
+  fprintf(fout, "uid:%5d ", m_dispatch_reg->get_uid());
   m_dispatch_reg->print(fout);
+  
+  // Predictor Queue
+  fprintf(fout, "\nPREDICTOR...............................................\n");
+  fprintf(fout, "Predictor Queue: \n");
+  for (auto it=m_predictor_queue.begin(); it!=m_predictor_queue.end(); ++it) {
+    fprintf(fout, "uid:%5d ", it->get_uid());
+    it->print(fout);
+  }
+  
+  // Predictor Contents
   fprintf(fout, "Predictor warps: ");
   m_ray_predictor->display_state(fout);  
-  fprintf(fout, "Other awaiting warps:\n");
+  fprintf(fout, "........................................................\n");
+  
+  // RT Core Warps
+  fprintf(fout, "RT Core Warps:\n");
   for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
     warp_inst_t inst = it->second;
-    fprintf(fout, "%d uid:%d ", inst.mem_fetch_wait(m_config->m_rt_lock_threads), it->first);
+    fprintf(fout, "%d uid:%5d ", inst.mem_fetch_wait(m_config->m_rt_lock_threads), it->first);
     inst.print(fout);
   }
+  
+  // Current Memory Accesses
   m_L0_complet->display_state(fout);
+  
+  // Response FIFO
   fprintf(fout, "RT response FIFO (occupancy = %zu):\n", m_response_fifo.size());
   for (std::list<mem_fetch *>::const_iterator i = m_response_fifo.begin();
        i != m_response_fifo.end(); i++) {

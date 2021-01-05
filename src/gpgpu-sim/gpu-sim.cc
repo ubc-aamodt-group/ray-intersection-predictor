@@ -282,6 +282,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "repack warps in predictor ",
       "0");
   option_parser_register(
+      opp, "-gpgpu_rt_predictor_repack_unpredicted_warps", OPT_BOOL, &m_rt_predictor_config.repack_unpredicted_warps,
+      "include unpredicted warps when repacking warps in predictor ",
+      "0");
+  option_parser_register(
       opp, "-gpgpu_rt_warppool_order", OPT_CSTR, &m_rt_warppool_order,
       "defines order of memory accesses from the warp pool ",
       "s");

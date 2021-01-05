@@ -537,6 +537,7 @@ struct ray_predictor_config {
   unsigned virtual_entry_cap;
   unsigned virtual_placement_policy;
   bool repack_warps;
+  bool repack_unpredicted_warps;
 };
 
 class gpgpu_functional_sim_config {
@@ -1296,10 +1297,15 @@ class warp_inst_t : public inst_t {
     new_addr_type ray_prediction;
     unsigned long long ray_hash;
     Ray ray_properties;
+    
+    void clear_mem_accesses() {
+      raytrace_mem_accesses.clear();
+    }
   };
   
   struct per_thread_info get_thread_info(unsigned tid) { return m_per_scalar_thread[tid]; }
   void set_thread_info(unsigned tid, struct per_thread_info thread_info) { m_per_scalar_thread[tid] = thread_info; }
+  void clear_thread_info(unsigned tid) { m_per_scalar_thread[tid].clear_mem_accesses(); }
 
  protected:
   unsigned m_uid;

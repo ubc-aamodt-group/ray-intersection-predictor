@@ -1267,16 +1267,7 @@ class rt_unit : public pipelined_simd_unit {
                 shader_core_stats *stats,
                 unsigned sid, unsigned tpc);
                 
-        virtual bool can_issue(const warp_inst_t &inst) const {
-          switch (inst.op) {
-            case RT_CORE_OP:
-              break;
-            default:
-              return false;
-          }
-          return pipelined_simd_unit::can_issue(inst);
-        }
-        
+        virtual bool can_issue(const warp_inst_t &inst) const;
         virtual void active_lanes_in_pipeline();
         virtual void issue(register_set &source_reg);
         virtual void cycle();
@@ -1339,6 +1330,7 @@ class rt_unit : public pipelined_simd_unit {
       
       // {warp id, warp instruction}
       std::map<unsigned, warp_inst_t> m_current_warps;
+      unsigned n_warps;
       std::deque<warp_inst_t> m_predictor_queue;
       std::set<unsigned> m_predictor_queue_set;
       
@@ -1884,6 +1876,7 @@ struct shader_core_stats_pod {
   unsigned* rt_predictor_predicted_count;
   unsigned* rt_predictor_verified_count;
   unsigned* rt_predictor_ray_count;
+  unsigned rt_total_warps;
   
   unsigned rt_warppool_potential_merge;
  
@@ -2157,6 +2150,9 @@ class shader_core_ctx : public core_t {
   void dec_inst_in_pipeline(unsigned warp_id) {
     m_warp[warp_id]->dec_inst_in_pipeline();
   }  // also used in writeback()
+  void inc_inst_in_pipeline(unsigned warp_id) {
+    m_warp[warp_id]->inc_inst_in_pipeline();
+  }
   void store_ack(class mem_fetch *mf);
   bool warp_waiting_at_mem_barrier(unsigned warp_id);
   void set_max_cta(const kernel_info_t &kernel);

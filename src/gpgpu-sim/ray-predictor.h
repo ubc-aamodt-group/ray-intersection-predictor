@@ -35,6 +35,10 @@ class ray_predictor {
     unsigned m_virtualize_delay;
     unsigned m_ways;
     bool m_repack_warps;
+    bool m_repack_unpredicted_warps;
+    
+    unsigned m_verified_warp_id;
+    unsigned m_unverified_warp_id;
     
     unsigned m_sid;
     
