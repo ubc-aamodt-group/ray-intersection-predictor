@@ -2714,6 +2714,7 @@ void rt_unit::cycle() {
         }
         if (m_config->m_rt_warppool) {
           assert(m_warppool_awaiting_response.find(mf->get_addr()) != m_warppool_awaiting_response.end());
+          assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
           m_warppool_awaiting_response.erase(mf->get_addr());
         }
       } 
@@ -2783,6 +2784,7 @@ void rt_unit::cycle() {
   }
     
   writeback();
+  assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
   
   // Cycle caches
   m_L0_complet->cycle();
@@ -3111,7 +3113,7 @@ mem_access_t rt_unit::get_next_rt_mem_access(warp_inst_t &inst) {
     do {
       next_addr = m_warppool_fifo_list.front();
       m_warppool_fifo_list.pop_front();
-    } while (m_warppool_mem_accesses.find(next_addr) == m_warppool_mem_accesses.end());
+    } while (m_warppool_mem_accesses.find(next_addr) == m_warppool_mem_accesses.end() || m_warppool_awaiting_response.find(next_addr) != m_warppool_awaiting_response.end());
     // Repeatedly take next addr from fifo list if the current one has already been erased at some point (fifo list does not track this)
     m_warppool_mem_accesses.erase(next_addr);
   }
@@ -3224,9 +3226,13 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     m_reservation_fails.insert(mf->get_uncoalesced_addr());
     m_prev_reservation_fail = mf->get_uncoalesced_addr();
     
-    if (!m_L0_complet->get_bypass_rf_config()) {
+    if (!m_L0_complet->probe_mshr(mf->get_addr()).empty()) {
+      printf("0x%x\n", mf->get_addr());
+    }
+    else if (!m_L0_complet->get_bypass_rf_config()) {
       if (m_config->m_rt_warppool) {
         m_warppool_awaiting_response.erase(mf->get_addr());
+        assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
         // m_warppool_mem_accesses.insert(mf->get_addr());
         m_warppool_stalled_accesses.insert(mf->get_uncoalesced_addr());
       }
@@ -3285,6 +3291,7 @@ mem_stage_stall_type rt_unit::process_cache_access(
         }
       }
       if (m_config->m_rt_warppool) m_warppool_awaiting_response.erase(address);
+      assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
       
       // Track memory access time
       if (m_config->m_rt_warppool) {

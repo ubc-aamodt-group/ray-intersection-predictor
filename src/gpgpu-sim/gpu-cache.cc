@@ -545,6 +545,7 @@ bool mshr_table::full(new_addr_type block_addr) const {
 
 /// Add or merge this access
 void mshr_table::add(new_addr_type block_addr, mem_fetch *mf) {
+  if (mf == NULL) return;
   m_data[block_addr].m_list.push_back(mf);
   assert(m_data.size() <= m_num_entries);
   assert(m_data[block_addr].m_list.size() <= m_max_merged);
@@ -595,7 +596,7 @@ mem_fetch *mshr_table::next_access() {
 }
 
 void mshr_table::display(FILE *fp) const {
-  fprintf(fp, "MSHR contents\n");
+  fprintf(fp, "MSHR contents (%d entries)\n", m_data.size());
   for (table::const_iterator e = m_data.begin(); e != m_data.end(); ++e) {
     unsigned block_addr = e->first;
     fprintf(fp, "MSHR: tag=0x%06x, atomic=%d %zu entries : ", block_addr,
