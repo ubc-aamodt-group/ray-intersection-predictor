@@ -539,6 +539,7 @@ struct ray_predictor_config {
   bool repack_warps;
   bool repack_unpredicted_warps;
   bool repack_oracle;
+  unsigned repack_max_warps;
 };
 
 class gpgpu_functional_sim_config {

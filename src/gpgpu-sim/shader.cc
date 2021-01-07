@@ -2787,7 +2787,7 @@ void rt_unit::cycle() {
   if (m_config->m_rt_predictor) {
     
     // If there's a warp ready in the predictor, fetch it. 
-    if (m_ray_predictor->ready()) {
+    if (m_ray_predictor->ready() && m_current_warps.size() < (m_config->m_rt_max_warps + m_config->m_rt_predictor_config.repack_max_warps)) {
       warp_inst_t predicted_inst = m_ray_predictor->retrieve();
       
       // If returned warp is non-empty, add it to warp pool
@@ -4158,7 +4158,7 @@ void rt_unit::print(FILE *fout) const {
   fprintf(fout, "........................................................\n");
   
   // RT Core Warps
-  fprintf(fout, "RT Core Warps:\n");
+  fprintf(fout, "RT Core Warps: (%d warps)\n", m_current_warps.size());
   for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
     warp_inst_t inst = it->second;
     fprintf(fout, "%d uid:%5d ", inst.mem_fetch_wait(m_config->m_rt_lock_threads), it->first);

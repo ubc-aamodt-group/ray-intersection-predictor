@@ -282,6 +282,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "repack warps in predictor ",
       "0");
   option_parser_register(
+      opp, "-gpgpu_rt_predictor_repack_max_warps", OPT_UINT32, &m_rt_predictor_config.repack_max_warps,
+      "max number of repacked warps in rt core ",
+      "0");
+  option_parser_register(
       opp, "-gpgpu_rt_predictor_repack_oracle", OPT_BOOL, &m_rt_predictor_config.repack_oracle,
       "repack warps in predictor (with oracle knowledge of verification) ",
       "0");
