@@ -538,6 +538,7 @@ struct ray_predictor_config {
   unsigned virtual_placement_policy;
   bool repack_warps;
   bool repack_unpredicted_warps;
+  bool repack_oracle;
 };
 
 class gpgpu_functional_sim_config {

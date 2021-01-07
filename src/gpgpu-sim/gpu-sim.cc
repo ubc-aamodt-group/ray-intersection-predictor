@@ -282,6 +282,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "repack warps in predictor ",
       "0");
   option_parser_register(
+      opp, "-gpgpu_rt_predictor_repack_oracle", OPT_BOOL, &m_rt_predictor_config.repack_oracle,
+      "repack warps in predictor (with oracle knowledge of verification) ",
+      "0");
+  option_parser_register(
       opp, "-gpgpu_rt_predictor_repack_unpredicted_warps", OPT_BOOL, &m_rt_predictor_config.repack_unpredicted_warps,
       "include unpredicted warps when repacking warps in predictor ",
       "0");

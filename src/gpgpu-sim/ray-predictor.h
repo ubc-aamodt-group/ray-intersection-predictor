@@ -35,6 +35,7 @@ class ray_predictor {
     unsigned m_virtualize_delay;
     unsigned m_ways;
     bool m_repack_warps;
+    bool m_repack_oracle;
     bool m_repack_unpredicted_warps;
     
     unsigned m_verified_warp_id;
@@ -78,9 +79,13 @@ class ray_predictor {
     warp_inst_t m_current_warp;
     
     std::deque<warp_inst_t> m_predictor_warps;
+    
+    // Requires oracle knowledge
     std::deque<struct warp_inst_t::per_thread_info> verified_threads;
     std::deque<struct warp_inst_t::per_thread_info> unverified_threads;
+    
     std::deque<struct warp_inst_t::per_thread_info> unpredicted_threads;
+    std::deque<struct warp_inst_t::per_thread_info> predicted_threads;
     unsigned m_total_threads;
     
     bool m_busy;
@@ -102,6 +107,7 @@ class ray_predictor {
     unsigned verified_packets;
     unsigned unverified_packets;
     unsigned unpredicted_packets;
+    unsigned predicted_packets;
     unsigned mixed_packets;
 };
 

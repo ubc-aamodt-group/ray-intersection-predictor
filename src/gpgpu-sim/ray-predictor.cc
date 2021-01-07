@@ -22,6 +22,7 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   m_virtualize_delay = config.virtualize_delay;
   m_node_replacement_policy = config.entry_replacement_policy;
   m_repack_warps = config.repack_warps;
+  m_repack_oracle = config.repack_oracle;
   m_repack_unpredicted_warps = config.repack_unpredicted_warps;
   
   
@@ -45,6 +46,7 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   verified_packets = 0;
   unverified_packets = 0;
   unpredicted_packets = 0;
+  predicted_packets = 0;
   mixed_packets = 0;
 }
 
@@ -98,7 +100,14 @@ void ray_predictor::insert(const warp_inst_t& inst) {
         
         // Add this thread to list of verified threads
         if (m_repack_warps) {
-          verified_threads.push_back(m_current_warp.get_thread_info(i));
+          
+          if (m_repack_oracle) {
+            verified_threads.push_back(m_current_warp.get_thread_info(i));
+          }
+          else {
+            predicted_threads.push_back(m_current_warp.get_thread_info(i));
+          }
+          
           m_current_warp.clear_thread_info(i);
           m_current_warp.set_not_active(i);
         }
@@ -110,7 +119,14 @@ void ray_predictor::insert(const warp_inst_t& inst) {
         
         // Add this thread to list of unverified threads
         if (m_repack_warps) {
-          unverified_threads.push_back(m_current_warp.get_thread_info(i));
+          
+          if (m_repack_oracle) {
+            unverified_threads.push_back(m_current_warp.get_thread_info(i));
+          }
+          else {
+            predicted_threads.push_back(m_current_warp.get_thread_info(i));
+          }
+          
           m_current_warp.clear_thread_info(i);
           m_current_warp.set_not_active(i);
         }
@@ -247,6 +263,28 @@ warp_inst_t ray_predictor::retrieve() {
       for (unsigned tid=0; tid<32; tid++) {
         m_current_warp.set_thread_info(tid, unpredicted_threads.front());
         unpredicted_threads.pop_front();
+      }
+      m_total_threads -= 32;
+    }
+    
+    else if (predicted_threads.size() >= 32) {
+      predicted_packets++;
+      if (!m_repack_unpredicted_warps) {
+        // Make sure warp is emptied
+        m_current_warp.clear();
+        // Set up warp parameters
+        active_mask_t mask;
+        mask.set();
+        unsigned long long current_cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle + GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
+        // Create warp
+        m_current_warp.issue(mask, m_unverified_warp_id, current_cycle, m_unverified_warp_id, 0xff);
+      }
+      active_mask_t mask;
+      mask.set();
+      m_current_warp.set_active(mask);
+      for (unsigned tid=0; tid<32; tid++) {
+        m_current_warp.set_thread_info(tid, predicted_threads.front());
+        predicted_threads.pop_front();
       }
       m_total_threads -= 32;
     }
@@ -624,6 +662,7 @@ void ray_predictor::cycle() {
     }
     else if (verified_threads.size() > 32 ||
           unverified_threads.size() > 32 ||
+          predicted_threads.size() > 32 ||
           unpredicted_threads.size() > 32)
     {
       m_ready = true;
@@ -669,7 +708,7 @@ void ray_predictor::print_stats(FILE* fout) {
   fprintf(fout, "Evicted entries: %d\n", num_evicted);
   fprintf(fout, "Per entry overflow: %d\n", num_entry_overflow);
   if (m_repack_warps)
-    fprintf(fout, "Repacked warps: Verified %d, Unverified %d, Unpredicted %d, Mixed %d\n", verified_packets, unverified_packets, unpredicted_packets, mixed_packets);
+    fprintf(fout, "Repacked warps: Verified %d, Unverified %d, Unpredicted %d, Predicted %d, Mixed %d\n", verified_packets, unverified_packets, unpredicted_packets, predicted_packets, mixed_packets);
   fprintf(fout, "--------------------------------------------\n");
 }
 
