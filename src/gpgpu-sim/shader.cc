@@ -2714,7 +2714,7 @@ void rt_unit::cycle() {
         }
         if (m_config->m_rt_warppool) {
           assert(m_warppool_awaiting_response.find(mf->get_addr()) != m_warppool_awaiting_response.end());
-          assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
+          if (!m_config->bypassL0Complet) assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
           m_warppool_awaiting_response.erase(mf->get_addr());
         }
       } 
@@ -2736,18 +2736,10 @@ void rt_unit::cycle() {
       }
       
       else {
-        // If response warp is not in current warps list, it must be in dispatch reg
-        if (m_current_warps.find(mf->get_wid()) == m_current_warps.end()) {
-          assert(mf->get_wid() == pipe_reg.warp_id());
-          pipe_reg.clear_mem_fetch_wait(mf->get_addr());
-          if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
-        }
-        else {
-          for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
-            if (it->second.warp_id() == mf->get_wid()) {
-              it->second.clear_mem_fetch_wait(mf->get_addr());
-              if (!m_config->m_rt_lock_threads) it->second.clear_rt_awaiting_threads(mf->get_addr());
-            }
+        for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
+          if (it->second.warp_id() == mf->get_wid()) {
+            it->second.clear_mem_fetch_wait(mf->get_addr());
+            if (!m_config->m_rt_lock_threads) it->second.clear_rt_awaiting_threads(mf->get_addr());
           }
         }
       }
@@ -2775,7 +2767,7 @@ void rt_unit::cycle() {
   }
     
   writeback();
-  if (m_config->m_rt_warppool) assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
+  if (m_config->m_rt_warppool && !m_config->bypassL0Complet) assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
   
   // Cycle caches
   m_L0_complet->cycle();
@@ -3223,7 +3215,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     else if (!m_L0_complet->get_bypass_rf_config()) {
       if (m_config->m_rt_warppool) {
         m_warppool_awaiting_response.erase(mf->get_addr());
-        if (m_config->m_rt_warppool) assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
+        if (m_config->m_rt_warppool && !m_config->bypassL0Complet) assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
         // m_warppool_mem_accesses.insert(mf->get_addr());
         m_warppool_stalled_accesses.insert(mf->get_uncoalesced_addr());
       }
@@ -3282,7 +3274,7 @@ mem_stage_stall_type rt_unit::process_cache_access(
         }
       }
       if (m_config->m_rt_warppool) m_warppool_awaiting_response.erase(address);
-      if (m_config->m_rt_warppool) assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
+      if (m_config->m_rt_warppool && !m_config->bypassL0Complet) assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
       
       // Track memory access time
       if (m_config->m_rt_warppool) {
