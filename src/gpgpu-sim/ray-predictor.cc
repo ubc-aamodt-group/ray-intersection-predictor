@@ -810,37 +810,121 @@ bool ray_predictor::validate_prediction(const std::vector<new_addr_type>& predic
 }
 
 bool ray_predictor::traverse_intersect(const new_addr_type prediction, const Ray ray_properties, std::deque<new_addr_type> &mem_accesses, unsigned& num_triangles_tested) {
+  gpgpu_sim* g_the_gpu = GPGPU_Context()->the_gpgpusim->g_the_gpu;
+
+  memory_space *mem = g_the_gpu->get_global_memory();
+  addr_t node_start = g_the_gpu->rt_node_start;
+  addr_t tri_start = g_the_gpu->rt_tri_start;
+
+  std::list<int> traversal_stack;
   
-  memory_space *mem = GPGPU_Context()->the_gpgpusim->g_the_gpu->get_global_memory();
-  new_addr_type tri_addr = prediction;
+  // Initialize
+  addr_t child0_addr = 0;
+  addr_t child1_addr = 0;
+  addr_t next_node = prediction;
+
   float thit = ray_properties.get_tmax();
 
-  // while triangle address is within triangle primitive range
-  while (1) {
-      
-    // Matches rtao Woopify triangle
-    float4 p0, p1, p2;
-    mem->read(tri_addr, sizeof(float4), &p0);
-    mem->read(tri_addr + sizeof(float4), sizeof(float4), &p1);
-    mem->read(tri_addr + 2*sizeof(float4), sizeof(float4), &p2);
-      
-    // Check if triangle is valid (if (__float_as_int(v00.x) == 0x80000000))
-    if (*(int*)&p0.x ==  0x80000000) {
-      return false;
-    }
-    mem_accesses.push_back(tri_addr);
-    num_triangles_tested++;
-      
-    bool hit = rtao_ray_triangle_test(p0, p1, p2, ray_properties, &thit);
-    if (hit) {
-      GPGPU_Context()->func_sim->g_total_raytrace_verified_rays++;
-      assert(ray_properties.anyhit);
-      return true;
-    }
-      
-          
-    // Go to next triangle
-    tri_addr += 0x30;
+  do {
+    // Check not a leaf node and not empty traversal stack (Leaf nodes start with 0xf...)
+    while ((int)next_node >= 0)
+    {
+      if (next_node != 0) next_node *= 0x10;
 
-  }
+      float4 n0xy, n1xy, n01z;
+      mem->read(node_start + next_node, sizeof(float4), &n0xy);
+      mem->read(node_start + next_node + sizeof(float4), sizeof(float4), &n1xy);
+      mem->read(node_start + next_node + 2*sizeof(float4), sizeof(float4), &n01z);
+      
+      mem_accesses.push_back(node_start + next_node);
+      
+      // Reorganize
+      float3 n0lo, n0hi, n1lo, n1hi;
+      n0lo = {n0xy.x, n0xy.z, n01z.x};
+      n0hi = {n0xy.y, n0xy.w, n01z.y};
+      n1lo = {n1xy.x, n1xy.z, n01z.z};
+      n1hi = {n1xy.y, n1xy.w, n01z.w};
+      
+      float thit0, thit1;
+      float3 idir = calculate_idir(ray_properties.get_direction());
+      bool child0_hit = ray_box_test(n0lo, n0hi, idir, ray_properties.get_origin(), ray_properties.get_tmin(), ray_properties.get_tmax(), thit0);
+      bool child1_hit = ray_box_test(n1lo, n1hi, idir, ray_properties.get_origin(), ray_properties.get_tmin(), ray_properties.get_tmax(), thit1);
+      
+      mem->read(node_start + next_node + 3*sizeof(float4), sizeof(addr_t), &child0_addr);
+      mem->read(node_start + next_node + 3*sizeof(float4) + sizeof(addr_t), sizeof(addr_t), &child1_addr);
+      
+      // Miss
+      if (!child0_hit && !child1_hit) {
+        if (traversal_stack.empty()) {
+          next_node = EMPTY_STACK;
+          break;
+        }
+        
+        // Pop next node from stack
+        next_node = traversal_stack.back();
+        traversal_stack.pop_back();
+      }
+      // Both hit
+      else if (child0_hit && child1_hit) {
+        next_node = (thit0 < thit1) ? child0_addr : child1_addr;
+        
+        // Push extra node to stack
+        traversal_stack.push_back((thit0 < thit1) ? child1_addr : child0_addr);
+        
+        if (traversal_stack.size() > MAX_TRAVERSAL_STACK_SIZE) printf("Short stack full!\n");
+      }
+      // Single hit
+      else {
+        assert(child0_hit ^ child1_hit);
+        next_node = (child0_hit) ? child0_addr : child1_addr;
+      }
+    }
+    
+    addr_t tri_addr;
+
+    while ((int)next_node < 0) {
+      // Convert to triangle offset
+      tri_addr = ~next_node;
+      tri_addr *= 0x10;
+      
+      // while triangle address is within triangle primitive range
+      while (1) {
+        // Matches rtao Woopify triangle
+        float4 p0, p1, p2;
+        mem->read(tri_start + tri_addr, sizeof(float4), &p0);
+        mem->read(tri_start + tri_addr + sizeof(float4), sizeof(float4), &p1);
+        mem->read(tri_start + tri_addr + 2*sizeof(float4), sizeof(float4), &p2);
+        
+        // Check if triangle is valid (if (__float_as_int(v00.x) == 0x80000000))
+        if (*(int*)&p0.x ==  0x80000000) {
+          break;
+        }
+        
+        num_triangles_tested++;
+
+        mem_accesses.push_back(tri_start + tri_addr);
+
+        bool hit = rtao_ray_triangle_test(p0, p1, p2, ray_properties, &thit);
+        if (hit) {
+          GPGPU_Context()->func_sim->g_total_raytrace_verified_rays++;
+          assert(ray_properties.anyhit);
+          return true;
+        }
+            
+        // Go to next triangle
+        tri_addr += 0x30;
+      }
+
+      if (traversal_stack.empty()) {
+        next_node = EMPTY_STACK;
+        break;
+      }
+
+      // Pop next node off stack
+      next_node = traversal_stack.back();
+      traversal_stack.pop_back();
+    }
+  }  while (next_node != EMPTY_STACK);
+
+  return false;
 }

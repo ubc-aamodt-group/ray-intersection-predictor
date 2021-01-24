@@ -332,6 +332,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     assert(size == 8);
     addr_t tri_start;
     thread->m_local_mem->read(from_addr, size, &tri_start);
+
+    thread->set_node_start(node_start);
+    thread->set_tri_start(tri_start);
     
     // Global memory
     memory_space *mem=NULL;
@@ -367,6 +370,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     // addr_t* stack_ptr = &traversal_stack[0];
     
     std::list<addr_t> traversal_stack;
+    std::vector<addr_t> nodes_stack;
     
     // Initialize
     addr_t child0_addr = 0;
@@ -385,12 +389,17 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     // Map of address to tree level
     std::map<new_addr_type, unsigned> tree_level_map;
     tree_level_map[node_start] = 1;
+
+    std::map<unsigned long long, int> tree_depth_map;
+    tree_depth_map[0] = 0;
         
     do {
 
         // Check not a leaf node and not empty traversal stack (Leaf nodes start with 0xf...)
         while ((int)next_node >= 0)
         {
+            nodes_stack.push_back(next_node);
+
             if (next_node != 0) next_node *= 0x10;
             // Get top node data
             // const float4 n0xy = __ldg(localBVHTreeNodes + nodeAddr + 0); // (c0.lo.x, c0.hi.x, c0.lo.y, c0.hi.y)
@@ -439,6 +448,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 tree_level_map[node_start + child0_addr * 0x10] = current_tree_level + 1;
             if ((int)child1_addr > 0)
                 tree_level_map[node_start + child1_addr * 0x10] = current_tree_level + 1;
+
+            tree_depth_map[child0_addr * 0x10] = tree_depth_map[next_node] + 1;
+            tree_depth_map[child1_addr * 0x10] = tree_depth_map[next_node] + 1;
             
             #ifdef DEBUG_PRINT
             printf("Child 0 offset: 0x%x \t", child0_addr);
@@ -448,6 +460,8 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             
             // Miss
             if (!child0_hit && !child1_hit) {
+                nodes_stack.pop_back();
+
                 if (traversal_stack.empty()) {
                     next_node = EMPTY_STACK;
                     break;
@@ -456,6 +470,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 // Pop next node from stack
                 next_node = traversal_stack.back();
                 traversal_stack.pop_back();
+                nodes_stack.resize(tree_depth_map[next_node * 0x10]);
                 #ifdef DEBUG_PRINT
                 printf("Traversal Stack: \n");
                 print_stack(traversal_stack);
@@ -539,7 +554,16 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                     #endif
                     *(int*) &ray_payload.t_triId_u_v.y = tri_addr >> 4;
                     
-                    predict_node = tri_start + (~next_node << 4);
+                    predict_node = next_node;
+                    if (predictor_config.go_up_level > 0) {
+                        size_t go_up_index =
+                            std::max(0, (int) nodes_stack.size() - (int) predictor_config.go_up_level);
+                        predict_node = nodes_stack[go_up_index];
+
+                        assert(
+                            tree_depth_map[next_node * 0x10] - tree_depth_map[predict_node * 0x10] == nodes_stack.size() - go_up_index);
+                    }
+
                     if (ray_properties.anyhit) {
                         traversal_stack.clear();
                         next_node = EMPTY_STACK;
@@ -566,6 +590,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             // Pop next node off stack
             next_node = traversal_stack.back();
             traversal_stack.pop_back();
+            nodes_stack.resize(tree_depth_map[next_node * 0x10]);
             #ifdef DEBUG_PRINT
             printf("Traversal Stack: \n");
             print_stack(traversal_stack);

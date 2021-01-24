@@ -1876,6 +1876,10 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
       
       // Add tree level map
       m_gpu->gpgpu_ctx->the_gpgpusim->g_the_gpu->rt_tree_level_map.insert(m_rt_tree_level_map.begin(), m_rt_tree_level_map.end());
+
+      // Add node/tri start addresses
+      m_gpu->gpgpu_ctx->the_gpgpusim->g_the_gpu->rt_node_start = m_node_start;
+      m_gpu->gpgpu_ctx->the_gpgpusim->g_the_gpu->rt_tri_start = m_tri_start;
       
       // insn_memaddr = m_raytrace_mem_accesses.front();
       inst.set_addr(lane_id,

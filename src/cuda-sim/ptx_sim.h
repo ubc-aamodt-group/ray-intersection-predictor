@@ -467,6 +467,8 @@ class ptx_thread_info {
   void add_ray_prediction(addr_t prediction) { m_raytrace_prediction = prediction; }
   void add_ray_properties(Ray ray) { m_ray = ray; }
   void set_tree_level_map(std::map<new_addr_type, unsigned> tree_level) { m_rt_tree_level_map = tree_level; }
+  void set_node_start(addr_t node_start) { m_node_start = node_start; }
+  void set_tri_start(addr_t tri_start) { m_tri_start = tri_start; }
 
  public:
   addr_t m_last_effective_address;
@@ -530,6 +532,8 @@ class ptx_thread_info {
   addr_t m_raytrace_prediction;
   Ray m_ray;
   std::map<new_addr_type, unsigned> m_rt_tree_level_map;
+  addr_t m_node_start;
+  addr_t m_tri_start;
 };
 
 addr_t generic_to_local(unsigned smid, unsigned hwtid, addr_t addr);
