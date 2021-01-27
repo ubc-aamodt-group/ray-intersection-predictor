@@ -24,6 +24,7 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   m_repack_warps = config.repack_warps;
   m_repack_oracle = config.repack_oracle;
   m_repack_unpredicted_warps = config.repack_unpredicted_warps;
+  m_thread_latency = config.thread_latency;
   
   
   m_verified_warp_id = m_core->get_config()->max_warps_per_shader;
@@ -75,6 +76,9 @@ void ray_predictor::insert(const warp_inst_t& inst) {
   num_rays += inst.active_count();
   m_total_threads += inst.active_count();
   for (unsigned i=0; i<warp_size; i++) {
+    // Set latency
+    m_current_warp.add_thread_latency(i, m_thread_latency*i);
+    
     unsigned long long ray_hash = m_current_warp.rt_ray_hash(i);
     
     // Check if valid ray
@@ -681,6 +685,9 @@ void ray_predictor::cycle() {
   // Decrement timer
   if (m_cycles > 0) m_cycles--;
   
+  for (auto it=m_predictor_warps.begin(); it!=m_predictor_warps.end(); it++) {
+    it->dec_thread_latency();
+  }
 }
 
 void ray_predictor::display_state(FILE* fout) {

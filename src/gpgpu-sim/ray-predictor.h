@@ -37,6 +37,7 @@ class ray_predictor {
     bool m_repack_warps;
     bool m_repack_oracle;
     bool m_repack_unpredicted_warps;
+    unsigned m_thread_latency;
     
     unsigned m_verified_warp_id;
     unsigned m_unverified_warp_id;

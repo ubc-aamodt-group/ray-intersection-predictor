@@ -750,6 +750,15 @@ void warp_inst_t::completed(unsigned long long cycle) const {
       pc, latency * active_count());
 }
 
+void warp_inst_t::dec_thread_latency() { 
+  for (unsigned i=0; i<m_config->warp_size; i++) {
+    if (m_per_scalar_thread[i].latency_delay > 0) {
+      m_per_scalar_thread[i].latency_delay--; 
+    }
+  }
+}
+
+
 void warp_inst_t::set_rt_mem_accesses(unsigned int tid, const std::deque<new_addr_type>& mem_accesses) { 
   if (!m_per_scalar_thread_valid) {
     m_per_scalar_thread.resize(m_config->warp_size);
@@ -812,6 +821,7 @@ void warp_inst_t::clear_rt_awaiting_threads(new_addr_type addr) {
       new_addr_type block_addr = line_size_based_tag_func(thread_addr, 32);
       if (block_addr == addr) {
         m_per_scalar_thread[i].raytrace_mem_accesses.pop_front();
+        m_per_scalar_thread[i].latency_delay += m_config->m_rt_thread_latency;
       }
     }
   }
@@ -908,7 +918,8 @@ void warp_inst_t::fill_next_rt_mem_access(bool locked) {
   // Not in lock step
   else {
     for (unsigned i=0; i<m_config->warp_size; i++) {
-      if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty()) {
+      // Only add in accesses if the thread is ready (done predictor lookup or done intersection tests)
+      if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty() && m_per_scalar_thread[i].latency_delay == 0) {
         new_addr_type addr = m_per_scalar_thread[i].raytrace_mem_accesses.front();
         
         // RT-CORE NOTE: Fix 32

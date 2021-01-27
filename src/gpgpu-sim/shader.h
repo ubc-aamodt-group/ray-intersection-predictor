@@ -1626,6 +1626,7 @@ class shader_core_config : public core_config {
         printf("\tVirtual table placement policy: %c\n", m_rt_predictor_config.virtual_placement_policy);
       }
     }
+    m_rt_predictor_config.thread_latency = m_rt_thread_latency;
   }
   void reg_options(class OptionParser *opp);
   unsigned max_cta(const kernel_info_t &k) const;
@@ -1868,6 +1869,8 @@ struct shader_core_stats_pod {
   unsigned* rt_warppool_size;
   unsigned* rt_mshr_size;
   
+  unsigned* rt_stalled_instructions;
+  
   unsigned* rt_active_threads;
   
   unsigned* rt_predictor_size;
@@ -2003,6 +2006,7 @@ class shader_core_stats : public shader_core_stats_pod {
     rt_predictor_predicted_count = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_predictor_verified_count = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_predictor_ray_count = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_stalled_instructions = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
 
     m_outgoing_traffic_stats = new traffic_breakdown("coretomem");
     m_incoming_traffic_stats = new traffic_breakdown("memtocore");

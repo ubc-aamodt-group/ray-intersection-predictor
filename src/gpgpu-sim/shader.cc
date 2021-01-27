@@ -960,6 +960,11 @@ void shader_core_stats::visualizer_print(gzFile visualizer_file) {
            gpgpu_n_cache_bkconflict);
   gzprintf(visualizer_file, "gpgpu_n_shmem_bkconflict: %d\n",
            gpgpu_n_shmem_bkconflict);
+  
+  gzprintf(visualizer_file, "rt_stalled_instructions:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_stalled_instructions[i]);
+  gzprintf(visualizer_file, "\n");
 
   // Warp Pool Stats
   gzprintf(visualizer_file, "rtwarps:  ");
@@ -1900,6 +1905,14 @@ void shader_core_ctx::execute() {
       } else {
         // stall issue (cannot reserve result bus)
       }
+      if (m_fu[n]->get_name() == "RT_CORE") {
+        m_stats->rt_stalled_instructions[m_sid] -= 1;
+      }
+    }
+    else if (issue_inst.has_ready() && !(m_fu[n]->can_issue(**ready_reg))) {
+      if (m_fu[n]->get_name() == "RT_CORE") {
+        m_stats->rt_stalled_instructions[m_sid] += 1;
+      }
     }
   }
 }
@@ -2684,6 +2697,11 @@ void rt_unit::cycle() {
   //     m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + it->second.warp_id()] = it->second.get_rt_active_threads();
   //   }
   // }
+  
+  // Cycle intersection tests
+  for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
+    (it->second).dec_thread_latency();
+  }
   
   if (!m_response_fifo.empty()) {
     
@@ -4142,6 +4160,11 @@ void rt_unit::print(FILE *fout) const {
   for (auto it=m_predictor_queue.begin(); it!=m_predictor_queue.end(); ++it) {
     fprintf(fout, "uid:%5d ", it->get_uid());
     it->print(fout);
+    fprintf(fout, "Latency Delay: [");
+    for (unsigned i=0; i<m_config->warp_size; i++) {
+      fprintf(fout, "%4d", it->get_thread_latency(i));
+    }
+    fprintf(fout, "]\n");
   }
   
   // Predictor Contents
@@ -4155,6 +4178,11 @@ void rt_unit::print(FILE *fout) const {
     warp_inst_t inst = it->second;
     fprintf(fout, "%d uid:%5d ", inst.mem_fetch_wait(m_config->m_rt_lock_threads), it->first);
     inst.print(fout);
+    fprintf(fout, "Latency Delay: [");
+    for (unsigned i=0; i<m_config->warp_size; i++) {
+      fprintf(fout, "%4d", inst.get_thread_latency(i));
+    }
+    fprintf(fout, "]\n");
   }
   
   // Current Memory Accesses

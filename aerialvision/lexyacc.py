@@ -153,6 +153,7 @@ def parseMe(filename):
         'rtmshr' :vc.variable('', 2, 0, "impVec"),
         'rtpredict' :vc.variable('', 2, 0, "impVec"),
         'rt_active_threads' :vc.variable('', 2, 0, "impVec"),
+        'rt_stalled_instructions' :vc.variable('', 2, 0, "impVec"),
         'globalInsn':vc.variable('globalinsncount', 1, 1, 'scalar'), 
         'globalCycle':vc.variable('globalcyclecount', 1, 1, 'scalar'), 
         'shaderWarpDiv':vc.variable('shaderwarpdiv', 2, 0, 'impVec'), 
