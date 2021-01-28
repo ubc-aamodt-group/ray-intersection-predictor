@@ -408,7 +408,7 @@ class core_config {
   bool gmem_skip_L1D;  // on = global memory access always skip the L1 cache
 
   bool adaptive_cache_config;
-  unsigned m_rt_thread_latency;
+  unsigned m_rt_intersection_latency;
 };
 
 // bounded stack that implements simt reconvergence using pdom mechanism from
@@ -540,7 +540,9 @@ struct ray_predictor_config {
   bool repack_unpredicted_warps;
   bool repack_oracle;
   unsigned repack_max_warps;
-  unsigned thread_latency;
+  unsigned per_thread_lookup_latency;
+  bool oracle_update;
+  bool magic_verify;
 };
 
 class gpgpu_functional_sim_config {
@@ -1234,6 +1236,8 @@ class warp_inst_t : public inst_t {
   new_addr_type rt_ray_prediction(unsigned int tid) const { return m_per_scalar_thread[tid].ray_prediction; }
   void rt_mem_accesses_pop(new_addr_type addr);
   bool rt_mem_accesses_empty();
+  unsigned get_next_predictor_update();
+  void set_rt_update_predictor(unsigned int tid) { m_per_scalar_thread[tid].update_predictor = true; }
   
   unsigned check_thread_divergence();
   
@@ -1286,7 +1290,7 @@ class warp_inst_t : public inst_t {
       for (unsigned i = 0; i < MAX_ACCESSES_PER_INSN_PER_THREAD; i++)
         memreqaddr[i] = 0;
         
-        latency_delay = 0;
+        intersection_delay = 0;
     }
     dram_callback_t callback;
     new_addr_type
@@ -1302,7 +1306,8 @@ class warp_inst_t : public inst_t {
     new_addr_type ray_prediction;
     unsigned long long ray_hash;
     Ray ray_properties;
-    unsigned latency_delay;
+    unsigned intersection_delay;
+    bool update_predictor;
     
     void clear_mem_accesses() {
       raytrace_mem_accesses.clear();
@@ -1312,8 +1317,8 @@ class warp_inst_t : public inst_t {
   struct per_thread_info get_thread_info(unsigned tid) { return m_per_scalar_thread[tid]; }
   void set_thread_info(unsigned tid, struct per_thread_info thread_info) { m_per_scalar_thread[tid] = thread_info; }
   void clear_thread_info(unsigned tid) { m_per_scalar_thread[tid].clear_mem_accesses(); }
-  void add_thread_latency(unsigned tid, unsigned cycles) { m_per_scalar_thread[tid].latency_delay += cycles; }
-  unsigned get_thread_latency(unsigned tid) const { return m_per_scalar_thread[tid].latency_delay; }
+  void add_thread_latency(unsigned tid, unsigned cycles) { m_per_scalar_thread[tid].intersection_delay += cycles; }
+  unsigned get_thread_latency(unsigned tid) const { return m_per_scalar_thread[tid].intersection_delay; }
   void dec_thread_latency();
 
  protected:

@@ -270,7 +270,7 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "manage memory of all warps in rt core as one set ",
       "0");
   option_parser_register(
-      opp, "-gpgpu_rt_intersection_latency", OPT_UINT32, &m_rt_thread_latency,
+      opp, "-gpgpu_rt_intersection_latency", OPT_UINT32, &m_rt_intersection_latency,
       "latency of pipelines intersection tests ",
       "0");
   option_parser_register(
@@ -281,6 +281,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       opp, "-gpgpu_rt_predictor_config", OPT_CSTR, &m_rt_predictor_config_string,
       "ray predictor config: debug_print,latency,max_table_size,hash_type,hash_francois_bits,hash_grid_bits,hash_sphere_bits,go_up_level,max_entry_cap,replacement_policy,placement_policy,virtual,virtual_access_latency ",
       "1,2,64,f,2,5,3,0,4,f,l,d,4,0,10,256,8,d");
+  option_parser_register(
+      opp, "-gpgpu_rt_predictor_lookup_latency", OPT_UINT32, &m_rt_predictor_config.per_thread_lookup_latency,
+      "latency of per-thread predictor lookup ",
+      "0");
   option_parser_register(
       opp, "-gpgpu_rt_predictor_repack_warps", OPT_BOOL, &m_rt_predictor_config.repack_warps,
       "repack warps in predictor ",
@@ -296,6 +300,14 @@ void shader_core_config::reg_options(class OptionParser *opp) {
   option_parser_register(
       opp, "-gpgpu_rt_predictor_repack_unpredicted_warps", OPT_BOOL, &m_rt_predictor_config.repack_unpredicted_warps,
       "include unpredicted warps when repacking warps in predictor ",
+      "0");
+  option_parser_register(
+      opp, "-gpgpu_rt_predictor_oracle_update", OPT_BOOL, &m_rt_predictor_config.oracle_update,
+      "add entry to predictor before traversal (using oracle knowledge) ",
+      "0");
+  option_parser_register(
+      opp, "-gpgpu_rt_magic_predictor", OPT_BOOL, &m_rt_predictor_config.magic_verify,
+      "magically verify all possible predictions ",
       "0");
   option_parser_register(
       opp, "-gpgpu_rt_warppool_order", OPT_CSTR, &m_rt_warppool_order,

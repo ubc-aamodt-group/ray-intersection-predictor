@@ -2796,6 +2796,24 @@ void rt_unit::cycle() {
   
   if (m_config->m_rt_predictor) {
     
+    // Check for predictor entry updates
+    unsigned updates_per_cycle = 6;
+    unsigned updates = 0;
+    for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
+      unsigned thread = (it->second).get_next_predictor_update();
+      // If no thread in warp has updates, move to next warp
+      if (thread == -1) continue;
+      // Can only update a certain amount per cycle
+      if (updates >= updates_per_cycle) break;
+      // If there is an update
+      if (thread > -1) {
+        new_addr_type predict_node = (it->second).rt_ray_prediction(thread);
+        unsigned long long ray_hash = (it->second).rt_ray_hash(thread);
+        m_ray_predictor->add_entry(ray_hash, predict_node);
+        updates++;
+      }
+    }
+    
     // If there's a warp ready in the predictor, fetch it. 
     if (m_ray_predictor->ready() && m_current_warps.size() < (m_config->m_rt_max_warps + m_config->m_rt_predictor_config.repack_max_warps)) {
       warp_inst_t predicted_inst = m_ray_predictor->retrieve();
@@ -2971,8 +2989,6 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
     rc_fail = fail;
     fail_type = RT_C_MEM;
   }
-  
-  // inst.dec_rt_warp_cycle();
   
   // Done if no more rt mem accesses
   return inst.rt_mem_accesses_empty();

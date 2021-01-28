@@ -24,7 +24,9 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   m_repack_warps = config.repack_warps;
   m_repack_oracle = config.repack_oracle;
   m_repack_unpredicted_warps = config.repack_unpredicted_warps;
-  m_thread_latency = config.thread_latency;
+  m_per_thread_latency = config.per_thread_lookup_latency;
+  m_oracle_update = config.oracle_update;
+  m_magic_verify = config.magic_verify;
   
   
   m_verified_warp_id = m_core->get_config()->max_warps_per_shader;
@@ -77,7 +79,7 @@ void ray_predictor::insert(const warp_inst_t& inst) {
   m_total_threads += inst.active_count();
   for (unsigned i=0; i<warp_size; i++) {
     // Set latency
-    m_current_warp.add_thread_latency(i, m_thread_latency*i);
+    m_current_warp.add_thread_latency(i, m_per_thread_latency*i);
     
     unsigned long long ray_hash = m_current_warp.rt_ray_hash(i);
     
@@ -92,6 +94,15 @@ void ray_predictor::insert(const warp_inst_t& inst) {
       
       // Read list of predictions from predictor table
       std::vector<new_addr_type> prediction_list = get_prediction_list(index);
+      
+      // Magic version where all predictions are valid
+      if (m_magic_verify) {
+        if (m_current_warp.rt_ray_intersect(i)) {
+          new_addr_type prediction = m_current_warp.rt_ray_prediction(i);
+          prediction_list.push_back(prediction);
+        }
+      }
+      
       // Validate prediction
       new_addr_type hit_node;
       bool valid =
@@ -137,11 +148,18 @@ void ray_predictor::insert(const warp_inst_t& inst) {
         
         // Add to table if ray intersects with something
         if (m_current_warp.rt_ray_intersect(i)) {
-          new_addr_type predict_node = m_current_warp.rt_ray_prediction(i);
-          add_entry(ray_hash, predict_node);
-          
-          if (m_virtualize) {
-            m_core->get_cluster()->add_ray_predictor_entry(ray_hash, predict_node);
+          // Update predictor table
+          if (m_oracle_update) {
+            new_addr_type predict_node = m_current_warp.rt_ray_prediction(i);
+            add_entry(ray_hash, predict_node);
+            
+            if (m_virtualize) {
+              m_core->get_cluster()->add_ray_predictor_entry(ray_hash, predict_node);
+            }
+          }
+          // Mark as needing update
+          else {
+            m_current_warp.set_rt_update_predictor(i);
           }
         }
       }
@@ -195,8 +213,15 @@ void ray_predictor::insert(const warp_inst_t& inst) {
       
       // Add to table if ray intersects with something
       if (m_current_warp.rt_ray_intersect(i)) {
-        new_addr_type predict_node = m_current_warp.rt_ray_prediction(i);
-        add_entry(ray_hash, predict_node);
+        // Update now
+        if (m_oracle_update) {
+          new_addr_type predict_node = m_current_warp.rt_ray_prediction(i);
+          add_entry(ray_hash, predict_node);
+        }
+        // Mark as need update
+        else {
+          m_current_warp.set_rt_update_predictor(i);
+        }
       }
     }
   }  
@@ -206,7 +231,7 @@ void ray_predictor::insert(const warp_inst_t& inst) {
   if (m_repack_warps) {
     // If this is the first warp, start timer
     if (m_predictor_warps.empty()) {
-      reset_cycle_delay(20);
+      reset_cycle_delay(m_cycle_delay);
     }
     m_predictor_warps.push_back(m_current_warp);
   }

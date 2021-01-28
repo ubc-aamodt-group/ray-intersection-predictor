@@ -37,7 +37,9 @@ class ray_predictor {
     bool m_repack_warps;
     bool m_repack_oracle;
     bool m_repack_unpredicted_warps;
-    unsigned m_thread_latency;
+    unsigned m_per_thread_latency;
+    bool m_magic_verify;
+    bool m_oracle_update;
     
     unsigned m_verified_warp_id;
     unsigned m_unverified_warp_id;
@@ -59,12 +61,12 @@ class ray_predictor {
     unsigned predictor_num_predicted() {return num_predicted; }
     unsigned predictor_num_verified() {return num_valid; }
     unsigned predictor_num_rays() {return num_rays; }
+    void add_entry(unsigned long long hash, new_addr_type prediction);
     
   private:
   
     // TODO:
     void evict_entry();
-    void add_entry(unsigned long long hash, new_addr_type prediction);
     bool check_table(unsigned long long hash, unsigned long long &index);
     void reset_cycle_delay(unsigned delay) { m_cycles = delay; };
     bool validate_prediction(const std::vector<new_addr_type>& prediction_list, const Ray ray_properties, unsigned tid, new_addr_type& hit_node);

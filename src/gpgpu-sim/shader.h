@@ -1626,7 +1626,6 @@ class shader_core_config : public core_config {
         printf("\tVirtual table placement policy: %c\n", m_rt_predictor_config.virtual_placement_policy);
       }
     }
-    m_rt_predictor_config.thread_latency = m_rt_thread_latency;
   }
   void reg_options(class OptionParser *opp);
   unsigned max_cta(const kernel_info_t &k) const;

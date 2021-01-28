@@ -752,8 +752,8 @@ void warp_inst_t::completed(unsigned long long cycle) const {
 
 void warp_inst_t::dec_thread_latency() { 
   for (unsigned i=0; i<m_config->warp_size; i++) {
-    if (m_per_scalar_thread[i].latency_delay > 0) {
-      m_per_scalar_thread[i].latency_delay--; 
+    if (m_per_scalar_thread[i].intersection_delay > 0) {
+      m_per_scalar_thread[i].intersection_delay--; 
     }
   }
 }
@@ -821,7 +821,7 @@ void warp_inst_t::clear_rt_awaiting_threads(new_addr_type addr) {
       new_addr_type block_addr = line_size_based_tag_func(thread_addr, 32);
       if (block_addr == addr) {
         m_per_scalar_thread[i].raytrace_mem_accesses.pop_front();
-        m_per_scalar_thread[i].latency_delay += m_config->m_rt_thread_latency;
+        m_per_scalar_thread[i].intersection_delay += m_config->m_rt_intersection_latency;
       }
     }
   }
@@ -889,6 +889,21 @@ bool warp_inst_t::mem_fetch_wait(bool locked) {
     
 }
 
+
+unsigned warp_inst_t::get_next_predictor_update() {
+  for (unsigned i=0; i<m_config->warp_size; i++) {
+    // If the thread is done, and the intersection unit delay is over
+    if (m_per_scalar_thread[i].raytrace_mem_accesses.empty() && m_per_scalar_thread[i].intersection_delay == 0) {
+      // Check if the predictor needs to be updated (hit a triangle but not verified by predictor)
+      if (m_per_scalar_thread[i].ray_intersect && m_per_scalar_thread[i].update_predictor) {
+        m_per_scalar_thread[i].update_predictor = false;
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+
 void warp_inst_t::fill_next_rt_mem_access(bool locked) {
   new_addr_type next_addr;
   m_coalesce_count = 0;
@@ -919,7 +934,7 @@ void warp_inst_t::fill_next_rt_mem_access(bool locked) {
   else {
     for (unsigned i=0; i<m_config->warp_size; i++) {
       // Only add in accesses if the thread is ready (done predictor lookup or done intersection tests)
-      if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty() && m_per_scalar_thread[i].latency_delay == 0) {
+      if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty() && m_per_scalar_thread[i].intersection_delay == 0) {
         new_addr_type addr = m_per_scalar_thread[i].raytrace_mem_accesses.front();
         
         // RT-CORE NOTE: Fix 32
