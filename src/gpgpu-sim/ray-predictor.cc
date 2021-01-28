@@ -132,6 +132,12 @@ void ray_predictor::insert(const warp_inst_t& inst) {
       // If invalid, regular traversal
       else {
         
+        // Check that the magic implementation is not broken
+        if (m_magic_verify) {
+          // The only un-verified threads should be ones that don't hit any triangles
+          assert(!m_current_warp.rt_ray_intersect(i));
+        }
+        
         // Add this thread to list of unverified threads
         if (m_repack_warps) {
           
@@ -486,8 +492,11 @@ void ray_predictor::add_node_to_predictor_entry(unsigned long long index, new_ad
     entry.m_node_use_map.erase(node_to_evict);
   }
 
-  assert(entry.m_nodes.find(node) == entry.m_nodes.end());
-  entry.m_nodes.insert(node);
+  // Assertion is only true for oracle predictor updates. Otherwise, multiple threads could miss in the predictor but update with the same node later on.
+  // assert(entry.m_nodes.find(node) == entry.m_nodes.end());
+  if (entry.m_nodes.find(node) == entry.m_nodes.end()) {
+    entry.m_nodes.insert(node);
+  }
 
   switch (m_node_replacement_policy) {
     case 'n':

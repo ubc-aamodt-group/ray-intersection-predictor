@@ -2800,7 +2800,7 @@ void rt_unit::cycle() {
     unsigned updates_per_cycle = 6;
     unsigned updates = 0;
     for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
-      unsigned thread = (it->second).get_next_predictor_update();
+      int thread = (it->second).get_next_predictor_update();
       // If no thread in warp has updates, move to next warp
       if (thread == -1) continue;
       // Can only update a certain amount per cycle

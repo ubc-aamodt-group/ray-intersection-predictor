@@ -1236,7 +1236,7 @@ class warp_inst_t : public inst_t {
   new_addr_type rt_ray_prediction(unsigned int tid) const { return m_per_scalar_thread[tid].ray_prediction; }
   void rt_mem_accesses_pop(new_addr_type addr);
   bool rt_mem_accesses_empty();
-  unsigned get_next_predictor_update();
+  int get_next_predictor_update();
   void set_rt_update_predictor(unsigned int tid) { m_per_scalar_thread[tid].update_predictor = true; }
   
   unsigned check_thread_divergence();

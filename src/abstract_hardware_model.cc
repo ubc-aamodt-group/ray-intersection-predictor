@@ -890,7 +890,7 @@ bool warp_inst_t::mem_fetch_wait(bool locked) {
 }
 
 
-unsigned warp_inst_t::get_next_predictor_update() {
+int warp_inst_t::get_next_predictor_update() {
   for (unsigned i=0; i<m_config->warp_size; i++) {
     // If the thread is done, and the intersection unit delay is over
     if (m_per_scalar_thread[i].raytrace_mem_accesses.empty() && m_per_scalar_thread[i].intersection_delay == 0) {
