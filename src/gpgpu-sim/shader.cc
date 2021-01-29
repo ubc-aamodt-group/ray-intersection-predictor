@@ -2724,16 +2724,26 @@ void rt_unit::cycle() {
     if (m_config->m_rt_max_warps > 0) {
       // Clear all warps if coalesced
       if (m_config->m_rt_coalesce_warps) {
+        bool requester_thread_found = false;
         pipe_reg.clear_mem_fetch_wait(mf->get_addr());
-        if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
+        if (!m_config->m_rt_lock_threads) {
+          requester_thread_found |= pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
+        }
         for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
           (it->second).clear_mem_fetch_wait(mf->get_addr());
-          if (!m_config->m_rt_lock_threads) (it->second).clear_rt_awaiting_threads(mf->get_addr());
+          if (!m_config->m_rt_lock_threads) {
+            requester_thread_found |= (it->second).clear_rt_awaiting_threads(mf->get_addr());
+          }
         }
         if (m_config->m_rt_warppool) {
           assert(m_warppool_awaiting_response.find(mf->get_addr()) != m_warppool_awaiting_response.end());
           if (!m_config->bypassL0Complet) assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
           m_warppool_awaiting_response.erase(mf->get_addr());
+        }
+        
+        // Make sure at least one thread accepted the response. (Other threads might still be completing intersection test)
+        if (!requester_thread_found) {
+          printf("Requester not found for: 0x%x", mf->get_addr());
         }
       } 
       

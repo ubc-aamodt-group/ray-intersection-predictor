@@ -1252,7 +1252,7 @@ class warp_inst_t : public inst_t {
     // printf("Clear Warp %d: 0x%x\t", m_warp_id, addr);
     m_mf_awaiting_response.erase(addr);
   }
-  void clear_rt_awaiting_threads(new_addr_type addr);
+  bool clear_rt_awaiting_threads(new_addr_type addr);
   void clear_rt_access(new_addr_type addr) {
     m_next_rt_accesses_set.erase(addr);
   }

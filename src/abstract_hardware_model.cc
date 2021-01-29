@@ -812,19 +812,28 @@ bool warp_inst_t::rt_mem_accesses_empty() {
 }
 
 // Clear any threads waiting on current address
-void warp_inst_t::clear_rt_awaiting_threads(new_addr_type addr) {
+bool warp_inst_t::clear_rt_awaiting_threads(new_addr_type addr) {
+  bool thread_found = false;
   for (unsigned i=0; i<m_config->warp_size; i++) {
     if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty()) {
-      new_addr_type thread_addr = m_per_scalar_thread[i].raytrace_mem_accesses.front();
-      // Convert node address to address used to access cache
-      // RT-CORE NOTE: Temporarily hard coded to 32, to be updated
-      new_addr_type block_addr = line_size_based_tag_func(thread_addr, 32);
-      if (block_addr == addr) {
-        m_per_scalar_thread[i].raytrace_mem_accesses.pop_front();
-        m_per_scalar_thread[i].intersection_delay += m_config->m_rt_intersection_latency;
+      
+      // Only remove accesses from threads that have completed their previous intersection test
+      if (m_per_scalar_thread[i].intersection_delay == 0) {
+        new_addr_type thread_addr = m_per_scalar_thread[i].raytrace_mem_accesses.front();
+        // Convert node address to address used to access cache
+        // RT-CORE NOTE: Temporarily hard coded to 32, to be updated
+        new_addr_type block_addr = line_size_based_tag_func(thread_addr, 32);
+        if (block_addr == addr) {
+          m_per_scalar_thread[i].raytrace_mem_accesses.pop_front();
+          
+          // Set up delay of next intersection test
+          m_per_scalar_thread[i].intersection_delay += m_config->m_rt_intersection_latency;
+          thread_found = true;
+        }
       }
     }
   }
+  return thread_found;
 }
 
 unsigned warp_inst_t::get_rt_active_threads() {
