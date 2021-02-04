@@ -392,6 +392,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
 
     std::map<unsigned long long, int> tree_depth_map;
     tree_depth_map[0] = 0;
+
+    int num_nodes_accessed = 0;
+    int num_triangles_accessed = 0;
         
     do {
 
@@ -416,6 +419,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             // TODO: Figure out if node_start + next_node + 2 also should be recorded
             thread->add_raytrace_mem_access(node_start + next_node);
             GPGPU_Context()->func_sim->g_total_raytrace_node_accesses++;
+            num_nodes_accessed++;
             
             #ifdef DEBUG_PRINT
             printf("Node data: \n");
@@ -543,6 +547,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 
                 thread->add_raytrace_mem_access(tri_start + tri_addr);
                 GPGPU_Context()->func_sim->g_total_raytrace_triangle_accesses++;
+                num_triangles_accessed++;
                 
                 // RT-CORE NOTE: Fix for triangles
                 tree_level_map[tri_start + tri_addr] = 0xff;
@@ -618,6 +623,8 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     }
 
     thread->set_tree_level_map(tree_level_map);
+    thread->set_num_nodes_accessed(num_nodes_accessed);
+    thread->set_num_triangles_accessed(num_triangles_accessed);
 }
 
 bool ray_box_test_cwbvh(float3 low, float3 high, float3 idir, float3 origin, float tmin, float tmax, float& thit) 

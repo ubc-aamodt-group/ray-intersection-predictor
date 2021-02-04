@@ -1167,6 +1167,18 @@ void gpgpu_sim::update_stats() {
   for (unsigned i = 0; i < m_shader_config->n_simt_clusters; i++) {
     m_cluster[i]->reset_rt_predictor_stats();
   }
+  gpgpu_ctx->func_sim->g_total_raytrace_mem_accesses = 0;
+  for (unsigned i=0; i<50; i++) {
+    gpgpu_ctx->func_sim->g_raytrace_mem_accesses[i] = 0;
+  }
+  gpgpu_ctx->func_sim->g_total_raytrace_hits = 0;
+  gpgpu_ctx->func_sim->g_total_raytrace_node_accesses = 0;
+  gpgpu_ctx->func_sim->g_total_raytrace_triangle_accesses = 0;
+  gpgpu_ctx->func_sim->g_actual_raytrace_node_accesses = 0;
+  gpgpu_ctx->func_sim->g_actual_raytrace_triangle_accesses = 0;
+  gpgpu_ctx->func_sim->g_total_raytrace_perfect_verified_node_accesses = 0;
+  gpgpu_ctx->func_sim->g_total_raytrace_perfect_verified_triangle_accesses = 0;
+  gpgpu_ctx->func_sim->g_total_raytrace_verified_rays = 0;
 }
 
 void gpgpu_sim::print_stats() {
@@ -1421,6 +1433,15 @@ void gpgpu_sim::gpu_print_stat() {
   printf("\nrt_total_node_accesses = %d\n", gpgpu_ctx->func_sim->g_total_raytrace_node_accesses);
   printf("\nrt_total_triangle_accesses = %d\n",
          gpgpu_ctx->func_sim->g_total_raytrace_triangle_accesses);
+  if (m_shader_config->m_rt_predictor) {
+    printf("\nrt_actual_node_accesses = %d\n", gpgpu_ctx->func_sim->g_actual_raytrace_node_accesses);
+    printf("\nrt_actual_triangle_accesses = %d\n",
+          gpgpu_ctx->func_sim->g_actual_raytrace_triangle_accesses);
+  } else {
+    printf("\nrt_actual_node_accesses = %d\n", gpgpu_ctx->func_sim->g_total_raytrace_node_accesses);
+    printf("\nrt_actual_triangle_accesses = %d\n",
+          gpgpu_ctx->func_sim->g_total_raytrace_triangle_accesses);
+  }
   printf("\nrt_total_perfect_verified_node_accesses = %d\n",
          gpgpu_ctx->func_sim->g_total_raytrace_perfect_verified_node_accesses);
   printf("\nrt_total_perfect_verified_triangle_accesses = %d\n",

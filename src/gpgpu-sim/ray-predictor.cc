@@ -173,6 +173,9 @@ void ray_predictor::insert(const warp_inst_t& inst) {
             m_current_warp.set_rt_update_predictor(i);
           }
         }
+
+        GPGPU_Context()->func_sim->g_actual_raytrace_node_accesses += m_current_warp.rt_num_nodes_accessed(i);
+        GPGPU_Context()->func_sim->g_actual_raytrace_triangle_accesses += m_current_warp.rt_num_triangles_accessed(i);
       }
     }
     
@@ -219,7 +222,12 @@ void ray_predictor::insert(const warp_inst_t& inst) {
             new_addr_type predict_node = m_current_warp.rt_ray_prediction(i);
             m_core->get_cluster()->add_ray_predictor_entry(ray_hash, predict_node);
           }
+          GPGPU_Context()->func_sim->g_actual_raytrace_node_accesses += m_current_warp.rt_num_nodes_accessed(i);
+          GPGPU_Context()->func_sim->g_actual_raytrace_triangle_accesses += m_current_warp.rt_num_triangles_accessed(i);
         }
+      } else {
+        GPGPU_Context()->func_sim->g_actual_raytrace_node_accesses += m_current_warp.rt_num_nodes_accessed(i);
+        GPGPU_Context()->func_sim->g_actual_raytrace_triangle_accesses += m_current_warp.rt_num_triangles_accessed(i);
       }
       
       // Add to table if ray intersects with something
@@ -788,9 +796,8 @@ bool ray_predictor::validate_prediction(const std::vector<new_addr_type>& predic
   
   // Iterate through predictions
   for (auto it=prediction_list.begin(); it!=prediction_list.end(); ++it) {
-    verified_node_accesses++;
-
-    valid = traverse_intersect(*it, ray_properties, predictor_mem_accesses, verified_triangle_accesses);
+    valid = traverse_intersect(*it, ray_properties, predictor_mem_accesses,
+                               verified_node_accesses, verified_triangle_accesses);
     // If intersected, the prediction is valid
     if (valid) {
       mem_access_saved += m_current_warp.update_rt_mem_accesses(tid, valid, predictor_mem_accesses);
@@ -799,6 +806,9 @@ bool ray_predictor::validate_prediction(const std::vector<new_addr_type>& predic
       func_sim->g_total_raytrace_perfect_verified_node_accesses += verified_node_accesses;
       func_sim->g_total_raytrace_perfect_verified_triangle_accesses += verified_triangle_accesses;
 
+      func_sim->g_actual_raytrace_node_accesses += verified_node_accesses;
+      func_sim->g_actual_raytrace_triangle_accesses += verified_triangle_accesses;
+
       hit_node = *it;
       return true;
     }
@@ -806,10 +816,12 @@ bool ray_predictor::validate_prediction(const std::vector<new_addr_type>& predic
   
   assert(!valid);
   mem_access_saved += m_current_warp.update_rt_mem_accesses(tid, valid, predictor_mem_accesses);
+  func_sim->g_actual_raytrace_node_accesses += verified_node_accesses;
+  func_sim->g_actual_raytrace_triangle_accesses += verified_triangle_accesses;
   return valid;
 }
 
-bool ray_predictor::traverse_intersect(const new_addr_type prediction, const Ray ray_properties, std::deque<new_addr_type> &mem_accesses, unsigned& num_triangles_tested) {
+bool ray_predictor::traverse_intersect(const new_addr_type prediction, const Ray ray_properties, std::deque<new_addr_type> &mem_accesses, unsigned& num_nodes_tested, unsigned& num_triangles_tested) {
   gpgpu_sim* g_the_gpu = GPGPU_Context()->the_gpgpusim->g_the_gpu;
 
   memory_space *mem = g_the_gpu->get_global_memory();
@@ -830,6 +842,7 @@ bool ray_predictor::traverse_intersect(const new_addr_type prediction, const Ray
     while ((int)next_node >= 0)
     {
       if (next_node != 0) next_node *= 0x10;
+      num_nodes_tested++;
 
       float4 n0xy, n1xy, n01z;
       mem->read(node_start + next_node, sizeof(float4), &n0xy);
