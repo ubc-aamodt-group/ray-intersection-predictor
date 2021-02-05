@@ -541,6 +541,8 @@ struct ray_predictor_config {
   bool repack_oracle;
   unsigned repack_max_warps;
   unsigned per_thread_lookup_latency;
+  unsigned lookup_bandwidth;
+  unsigned update_bandwidth;
   bool oracle_update;
   bool magic_verify;
 };

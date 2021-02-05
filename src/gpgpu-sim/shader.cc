@@ -728,6 +728,12 @@ void shader_core_stats::print(FILE *fout) const {
   fprintf(fout, "rt_consecutive_reservation_fails = %d\n", rt_consecutive_reservation_fails);
   fprintf(fout, "rt_repeated_reservation_fails = %d\n", rt_repeated_reservation_fails);
   
+  fprintf(fout, "rt_predictor_update_bandwidth_overflow = ");
+  for (unsigned i=0; i<m_config->num_shader(); i++) {
+    fprintf(fout, "%d\t", rt_predictor_update_bandwidth_overflow[i]);
+  }
+  fprintf(fout, "\n");
+  
   fprintf(fout, "Number of accesses after thread coalescing = %d\n", rt_thread_coalesced_count);
   fprintf(fout, "Number of accesses merged into MSHR (pending hits) = %d\n", rt_thread_mshr_count);
   fprintf(fout, "Number of accesses potentially merged after leaving warp pool = %d\n", rt_warppool_potential_merge);
@@ -2807,14 +2813,17 @@ void rt_unit::cycle() {
   if (m_config->m_rt_predictor) {
     
     // Check for predictor entry updates
-    unsigned updates_per_cycle = 6;
+    unsigned updates_per_cycle = m_config->m_rt_predictor_config.update_bandwidth;
     unsigned updates = 0;
     for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
       int thread = (it->second).get_next_predictor_update();
       // If no thread in warp has updates, move to next warp
       if (thread == -1) continue;
       // Can only update a certain amount per cycle
-      if (updates >= updates_per_cycle) break;
+      if (updates >= updates_per_cycle) {
+        m_stats->rt_predictor_update_bandwidth_overflow[m_sid]++;
+        break;
+      }
       // If there is an update
       if (thread > -1) {
         new_addr_type predict_node = (it->second).rt_ray_prediction(thread);

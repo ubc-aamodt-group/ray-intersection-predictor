@@ -286,6 +286,14 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "latency of per-thread predictor lookup ",
       "0");
   option_parser_register(
+      opp, "-gpgpu_rt_predictor_lookup_bandwidth", OPT_UINT32, &m_rt_predictor_config.lookup_bandwidth,
+      "number of concurrent predictor lookups ",
+      "0");
+  option_parser_register(
+      opp, "-gpgpu_rt_predictor_update_bandwidth", OPT_UINT32, &m_rt_predictor_config.update_bandwidth,
+      "number of concurrent predictor updates ",
+      "0");
+  option_parser_register(
       opp, "-gpgpu_rt_predictor_repack_warps", OPT_BOOL, &m_rt_predictor_config.repack_warps,
       "repack warps in predictor ",
       "0");

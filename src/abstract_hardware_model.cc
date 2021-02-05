@@ -817,13 +817,14 @@ bool warp_inst_t::clear_rt_awaiting_threads(new_addr_type addr) {
   for (unsigned i=0; i<m_config->warp_size; i++) {
     if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty()) {
       
-      // Only remove accesses from threads that have completed their previous intersection test
-      if (m_per_scalar_thread[i].intersection_delay == 0) {
-        new_addr_type thread_addr = m_per_scalar_thread[i].raytrace_mem_accesses.front();
-        // Convert node address to address used to access cache
-        // RT-CORE NOTE: Temporarily hard coded to 32, to be updated
-        new_addr_type block_addr = line_size_based_tag_func(thread_addr, 32);
-        if (block_addr == addr) {
+      new_addr_type thread_addr = m_per_scalar_thread[i].raytrace_mem_accesses.front();
+      // Convert node address to address used to access cache
+      // RT-CORE NOTE: Temporarily hard coded to 32, to be updated
+      new_addr_type block_addr = line_size_based_tag_func(thread_addr, 32);
+      
+      if (block_addr == addr) {
+        // Only remove accesses from threads that have completed their previous intersection test
+        if (m_per_scalar_thread[i].intersection_delay == 0) {
           m_per_scalar_thread[i].raytrace_mem_accesses.pop_front();
           
           // Set up delay of next intersection test

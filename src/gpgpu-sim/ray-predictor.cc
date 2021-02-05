@@ -25,6 +25,7 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   m_repack_oracle = config.repack_oracle;
   m_repack_unpredicted_warps = config.repack_unpredicted_warps;
   m_per_thread_latency = config.per_thread_lookup_latency;
+  m_lookup_bandwidth = config.lookup_bandwidth;
   m_oracle_update = config.oracle_update;
   m_magic_verify = config.magic_verify;
   
@@ -77,9 +78,12 @@ void ray_predictor::insert(const warp_inst_t& inst) {
   unsigned warp_size = inst.warp_size();
   num_rays += inst.active_count();
   m_total_threads += inst.active_count();
+  
+  unsigned latency = m_per_thread_latency;
   for (unsigned i=0; i<warp_size; i++) {
     // Set latency
-    m_current_warp.add_thread_latency(i, m_per_thread_latency*i);
+    m_current_warp.add_thread_latency(i, latency);
+    latency = std::floor(i / m_lookup_bandwidth) * m_per_thread_latency;
     
     unsigned long long ray_hash = m_current_warp.rt_ray_hash(i);
     

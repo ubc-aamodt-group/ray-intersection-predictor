@@ -1880,6 +1880,8 @@ struct shader_core_stats_pod {
   unsigned* rt_predictor_ray_count;
   unsigned rt_total_warps;
   
+  unsigned* rt_predictor_update_bandwidth_overflow;
+  
   unsigned rt_warppool_potential_merge;
  
   std::map<new_addr_type, unsigned> rt_mem_access_heat_map;
@@ -2006,6 +2008,8 @@ class shader_core_stats : public shader_core_stats_pod {
     rt_predictor_verified_count = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_predictor_ray_count = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_stalled_instructions = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    
+    rt_predictor_update_bandwidth_overflow = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
 
     m_outgoing_traffic_stats = new traffic_breakdown("coretomem");
     m_incoming_traffic_stats = new traffic_breakdown("memtocore");
