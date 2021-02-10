@@ -1872,6 +1872,10 @@ struct shader_core_stats_pod {
   
   unsigned* rt_active_threads;
   
+  unsigned rt_average_warp_latency;
+  unsigned rt_max_warp_latency;
+  unsigned rt_min_warp_latency;
+  
   unsigned* rt_predictor_size;
   float* rt_predictor_prediction_rate;
   float* rt_predictor_verification_rate;

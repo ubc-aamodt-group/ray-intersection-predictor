@@ -763,6 +763,10 @@ void shader_core_stats::print(FILE *fout) const {
   }
   fprintf(fout, "\n");
   
+  fprintf(fout, "Avg Warp Latency = %d\n", rt_average_warp_latency);
+  fprintf(fout, "Min Warp Latency = %d\n", rt_min_warp_latency);
+  fprintf(fout, "Max Warp Latency = %d\n", rt_max_warp_latency);
+  
   if(!m_config->m_rt_accumulate_stats) {
     fprintf(fout, "(1 shader stats)\n");
   }
@@ -2672,6 +2676,9 @@ void rt_unit::cycle() {
   if (!pipe_reg.empty()) {
     n_warps++;
     m_stats->rt_total_warps++;
+    
+    pipe_reg.set_start_cycle(m_core->get_gpu()->gpu_sim_cycle +
+                        m_core->get_gpu()->gpu_tot_sim_cycle);
   }
   
   // RT-CORE NOTE
@@ -2929,6 +2936,25 @@ void rt_unit::cycle() {
     unsigned warp_id = rt_inst.warp_id();
     assert(rt_inst.is_load());
     assert(rt_inst.space.get_type() == global_space);
+
+    // Track latency of warps
+    if (warp_id < m_config->max_warps_per_shader) {
+      unsigned long long current_cycle = m_core->get_gpu()->gpu_sim_cycle +
+                          m_core->get_gpu()->gpu_tot_sim_cycle;
+      unsigned long long warp_total_cycle = current_cycle - rt_inst.get_start_cycle();
+      assert(m_stats->rt_total_warps > 0);
+      unsigned current_average = (m_stats->rt_total_warps - 1) * m_stats->rt_average_warp_latency + warp_total_cycle;
+      m_stats->rt_average_warp_latency = current_average / m_stats->rt_total_warps;
+      
+      if (warp_total_cycle > m_stats->rt_max_warp_latency) {
+        m_stats->rt_max_warp_latency = warp_total_cycle;
+      } 
+      if (m_stats->rt_min_warp_latency == 0) {
+        m_stats->rt_min_warp_latency = warp_total_cycle;
+      } else if (warp_total_cycle < m_stats->rt_min_warp_latency) {
+        m_stats->rt_min_warp_latency = warp_total_cycle;
+      }
+    }
 
     // Skip checking for pending writes (no WAW hazard?)
    

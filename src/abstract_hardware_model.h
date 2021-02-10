@@ -1282,6 +1282,9 @@ class warp_inst_t : public inst_t {
   unsigned get_mshr_merged_count() { return m_mshr_merged_count; }
   
   unsigned get_rt_active_threads();
+  
+  void set_start_cycle(unsigned long long cycle) { m_start_cycle = cycle; }
+  unsigned long long get_start_cycle() { return m_start_cycle; }
 
   // void dec_rt_warp_cycle() { m_rt_warp_cycle--; }
   // void set_rt_warp_cycle() { m_rt_warp_cycle = m_config->rt_warp_cycle; }
@@ -1357,6 +1360,8 @@ class warp_inst_t : public inst_t {
   std::vector<per_thread_info> m_per_scalar_thread;
   bool m_mem_accesses_created;
   std::list<mem_access_t> m_accessq;
+  
+  unsigned long long m_start_cycle;
   
   new_addr_type m_prev_mem_access[32];
 
