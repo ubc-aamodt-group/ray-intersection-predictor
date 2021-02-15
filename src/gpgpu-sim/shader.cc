@@ -1027,6 +1027,36 @@ void shader_core_stats::visualizer_print(gzFile visualizer_file) {
   for (unsigned i = 0; i < m_config->num_shader(); i++)
     gzprintf(visualizer_file, "%u ", rt_predictor_ray_count[i]);
   gzprintf(visualizer_file, "\n");
+
+  gzprintf(visualizer_file, "rt_warp_valid:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_warp_valid[i]);
+  gzprintf(visualizer_file, "\n");
+
+  gzprintf(visualizer_file, "rt_predictor_ready:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_predictor_ready[i]);
+  gzprintf(visualizer_file, "\n");
+
+  gzprintf(visualizer_file, "rt_predictor_result_valid:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_predictor_result_valid[i]);
+  gzprintf(visualizer_file, "\n");
+
+  gzprintf(visualizer_file, "rt_unit_ready:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_unit_ready[i]);
+  gzprintf(visualizer_file, "\n");
+
+  gzprintf(visualizer_file, "rt_mf_valid:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_mf_valid[i]);
+  gzprintf(visualizer_file, "\n");
+
+  gzprintf(visualizer_file, "rt_mem_ready:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_mem_ready[i]);
+  gzprintf(visualizer_file, "\n");
   
   // instruction count per shader core
   gzprintf(visualizer_file, "shaderinsncount:  ");
@@ -2679,6 +2709,11 @@ void rt_unit::cycle() {
     
     pipe_reg.set_start_cycle(m_core->get_gpu()->gpu_sim_cycle +
                         m_core->get_gpu()->gpu_tot_sim_cycle);
+                        
+    m_stats->rt_warp_valid[m_sid] = 1;
+  }
+  else {
+    m_stats->rt_warp_valid[m_sid] = 0;
   }
   
   // RT-CORE NOTE
@@ -2840,12 +2875,21 @@ void rt_unit::cycle() {
       }
     }
     
+    m_stats->rt_predictor_result_valid[m_sid] = 0;
+    if (m_current_warps.size() < (m_config->m_rt_max_warps + m_config->m_rt_predictor_config.repack_max_warps)) {
+      m_stats->rt_unit_ready[m_sid] = 1;
+    }
+    else {
+      m_stats->rt_unit_ready[m_sid] = 0;
+    }
     // If there's a warp ready in the predictor, fetch it. 
     if (m_ray_predictor->ready() && m_current_warps.size() < (m_config->m_rt_max_warps + m_config->m_rt_predictor_config.repack_max_warps)) {
+      
       warp_inst_t predicted_inst = m_ray_predictor->retrieve();
       
       // If returned warp is non-empty, add it to warp pool
       if (!predicted_inst.empty()) {
+        m_stats->rt_predictor_result_valid[m_sid] = 1;
         
         // Handle special case (when there is warp reformation, but unpredicted threads do not get repacked, but all the threads were predicted)
         if (predicted_inst.active_count() == 0) {
@@ -2874,6 +2918,7 @@ void rt_unit::cycle() {
     
     // Move warp to ray predictor if the predictor is not currently busy or full
     if (!m_ray_predictor->busy()) {
+      m_stats->rt_predictor_ready[m_sid] = 1;
       
       // If predictor queue is not empty, pop next warp from the queue
       if (!m_predictor_queue.empty()) {
@@ -2900,6 +2945,8 @@ void rt_unit::cycle() {
     
     // If predictor is busy
     else {
+      m_stats->rt_predictor_ready[m_sid] = 0;
+      
       // If instruction is not empty and isn't already in the queue, add to predictor queue
       if (!pipe_reg.empty() &&
           m_predictor_queue_set.find(pipe_reg.get_uid()) == m_predictor_queue_set.end()) {
@@ -2976,7 +3023,8 @@ void rt_unit::cycle() {
 
 bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem_stage_access_type &fail_type) {
   
-  
+  m_stats->rt_mf_valid[m_sid] = 0;
+  m_stats->rt_mem_ready[m_sid] = 0;
   if (m_config->m_rt_warppool) {
     if (inst.empty()) {
       if (!m_current_warps.empty()) {
@@ -3205,6 +3253,7 @@ mem_access_t rt_unit::get_next_rt_mem_access(warp_inst_t &inst) {
 }
 
 mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_inst_t &inst) {
+  m_stats->rt_mem_ready[m_sid] = 1;
   mem_stage_stall_type result = NO_RC_FAIL;
   if (inst.rt_mem_accesses_empty()) return result;
   
@@ -3220,6 +3269,8 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     mem_access_t access = get_next_rt_mem_access(inst);
     m_warppool_awaiting_response.insert(access.get_addr());
     
+    m_stats->rt_mf_valid[m_sid] = 1;
+    
     // Access cache
     mf = m_mf_allocator->alloc(
       inst, access, m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle
@@ -3229,6 +3280,8 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     assert(mf->get_tree_level() > 0); 
   }
   else {
+    m_stats->rt_mf_valid[m_sid] = 1;
+    
     mem_access_t access = inst.get_next_rt_mem_access(m_config->m_rt_lock_threads);
     m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
     m_stats->rt_thread_mshr_count += inst.get_mshr_merged_count();

@@ -1872,6 +1872,19 @@ struct shader_core_stats_pod {
   
   unsigned* rt_active_threads;
   
+  // Valid warp to place into RT unit
+  unsigned* rt_warp_valid;
+  // Predictor ready for new warp
+  unsigned* rt_predictor_ready;
+  // Valid prediction result
+  unsigned* rt_predictor_result_valid;
+  // RT unit ready for new warp
+  unsigned* rt_unit_ready;
+  // Valid memory request
+  unsigned* rt_mf_valid;
+  // Memory system ready for new mf
+  unsigned* rt_mem_ready;
+  
   unsigned rt_average_warp_latency;
   unsigned rt_max_warp_latency;
   unsigned rt_min_warp_latency;
@@ -2012,6 +2025,13 @@ class shader_core_stats : public shader_core_stats_pod {
     rt_predictor_verified_count = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_predictor_ray_count = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_stalled_instructions = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    
+    rt_warp_valid = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_predictor_ready = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_predictor_result_valid = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_unit_ready = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_mf_valid = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_mem_ready = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     
     rt_predictor_update_bandwidth_overflow = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
 
