@@ -2750,6 +2750,13 @@ void rt_unit::cycle() {
   m_stats->rt_predictor_verified_count[m_sid] = m_ray_predictor->predictor_num_verified();
   m_stats->rt_predictor_ray_count[m_sid] = m_ray_predictor->predictor_num_rays();
   
+  // Set default values
+  m_stats->rt_mf_valid[m_sid] = 0;
+  m_stats->rt_mem_ready[m_sid] = 0;
+  m_stats->rt_mf_warp_valid[m_sid] = 0;
+  m_stats->rt_cur_warp_mem_size[m_sid] = 0;
+  m_stats->rt_warp_id[m_sid] = NULL;
+  
   // // Default = 0
   // for (unsigned i=0; i<m_config->max_warps_per_shader; i++) {
   //     m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + i] = 0;
@@ -2844,16 +2851,14 @@ void rt_unit::cycle() {
     // Reservation fails stats tracking
     m_reservation_fails.erase(mf->get_uncoalesced_addr());
     
-    // Warp Pool timing
-    if (m_config->m_rt_warppool) {
-      unsigned long long waiting_time = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle - m_warppool_access_stats[mf->get_addr()];
-      if (waiting_time/10 < 199) {
-        m_stats->rt_mem_wait_time[waiting_time/10]++;
-      } else {
-        m_stats->rt_mem_wait_time[199]++;
-      }
-      m_warppool_access_stats.erase(mf->get_addr());
+    // MF Timing
+    unsigned long long waiting_time = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle - m_warppool_access_stats[mf->get_addr()];
+    if (waiting_time/10 < 199) {
+      m_stats->rt_mem_wait_time[waiting_time/10]++;
+    } else {
+      m_stats->rt_mem_wait_time[199]++;
     }
+    m_warppool_access_stats.erase(mf->get_addr());
     
   }
     
@@ -3037,12 +3042,6 @@ void rt_unit::cycle() {
 }
 
 bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem_stage_access_type &fail_type) {
-  
-  m_stats->rt_mf_valid[m_sid] = 0;
-  m_stats->rt_mem_ready[m_sid] = 0;
-  m_stats->rt_mf_warp_valid[m_sid] = 0;
-  m_stats->rt_cur_warp_mem_size[m_sid] = 0;
-  m_stats->rt_warp_id[m_sid] = -1;
   if (m_config->m_rt_warppool) {
     if (inst.empty()) {
       if (!m_current_warps.empty()) {
@@ -3152,8 +3151,12 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
       if (m_config->m_rt_warppool_fifo) {
         for (auto it=m_warppool_stalled_accesses.begin(); it!=m_warppool_stalled_accesses.end(); ++it){
           if (m_warppool_mem_accesses.find(*it) == m_warppool_mem_accesses.end()) {
-            m_warppool_fifo_list.push_back(*it);
-            m_warppool_mem_accesses.insert(*it);
+            new_addr_type addr = *it;
+            new_addr_type block_addr = addr & ~(32 - 1);
+            if (m_warppool_awaiting_response.find(block_addr) == m_warppool_awaiting_response.end()) {
+              m_warppool_fifo_list.push_back(*it);
+              m_warppool_mem_accesses.insert(*it);
+            }
           }
         }
       }
@@ -3242,16 +3245,16 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
   }
 }
 
-mem_access_t rt_unit::get_next_rt_mem_access(warp_inst_t &inst) {
+new_addr_type rt_unit::get_next_rt_mem_access(warp_inst_t &inst) {
   new_addr_type next_addr;
  
   if (m_config->m_rt_warppool_fifo) {
-    do {
-      next_addr = m_warppool_fifo_list.front();
-      m_warppool_fifo_list.pop_front();
-    } while (m_warppool_mem_accesses.find(next_addr) == m_warppool_mem_accesses.end() || m_warppool_awaiting_response.find(next_addr) != m_warppool_awaiting_response.end());
-    // Repeatedly take next addr from fifo list if the current one has already been erased at some point (fifo list does not track this)
+    assert(m_warppool_fifo_list.size() == m_warppool_mem_accesses.size());
+    next_addr = m_warppool_fifo_list.front();
+    m_warppool_fifo_list.pop_front();
+    assert(m_warppool_mem_accesses.find(next_addr) != m_warppool_mem_accesses.end());
     m_warppool_mem_accesses.erase(next_addr);
+    assert(m_warppool_awaiting_response.find(next_addr) == m_warppool_awaiting_response.end());
   }
   
   else if (m_config->m_rt_warppool_tree) {
@@ -3272,9 +3275,10 @@ mem_access_t rt_unit::get_next_rt_mem_access(warp_inst_t &inst) {
     auto it = m_warppool_mem_accesses.begin();
     next_addr = *it;
     m_warppool_mem_accesses.erase(next_addr); 
+    assert(m_warppool_awaiting_response.find(next_addr) == m_warppool_awaiting_response.end());
   }
   
-  return inst.memory_coalescing_arch_rt(next_addr);
+  return next_addr;
   
 }
 
@@ -3292,7 +3296,9 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     track_warp_mem_accesses(inst);
     
     if (m_warppool_mem_accesses.empty()) return result;
-    mem_access_t access = get_next_rt_mem_access(inst);
+    else if (m_config->m_rt_warppool_fifo && m_warppool_fifo_list.empty()) return result;
+    new_addr_type next_addr = get_next_rt_mem_access(inst);
+    mem_access_t access = inst.memory_coalescing_arch_rt(next_addr);
     m_warppool_awaiting_response.insert(access.get_addr());
     
     m_stats->rt_mf_valid[m_sid] = 1;
@@ -3312,6 +3318,8 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
     m_stats->rt_thread_mshr_count += inst.get_mshr_merged_count();
     m_stats->rt_intrawarp_coalescing[inst.get_coalesce_count()]++;
+    
+    m_warppool_access_stats[access.get_addr()] = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle;
 
     // Attempt to coalesce memory accesses between multiple warps
     // if (m_config->m_rt_coalesce_warps && m_config->m_rt_lock_threads) {
@@ -3435,16 +3443,16 @@ mem_stage_stall_type rt_unit::process_cache_access(
       if (m_config->m_rt_warppool && !m_config->bypassL0Complet) assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
       
       // Track memory access time
-      if (m_config->m_rt_warppool) {
-        unsigned long long waiting_time = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle - m_warppool_access_stats[address];
-        if (waiting_time/10 < 199) {
-          m_stats->rt_mem_wait_time[waiting_time/10]++;
-        } else {
-          m_stats->rt_mem_wait_time[199]++;
-        }
-        m_warppool_access_stats.erase(address);
+      unsigned long long waiting_time = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle - m_warppool_access_stats[address];
+      if (waiting_time/10 < 199) {
+        m_stats->rt_mem_wait_time[waiting_time/10]++;
+      } else {
+        m_stats->rt_mem_wait_time[199]++;
       }
+      m_warppool_access_stats.erase(address);
+      
       delete mf;
+      
     } else if (status == RESERVATION_FAIL) {
       result = BK_CONF;
       delete mf;

@@ -1298,7 +1298,7 @@ class rt_unit : public pipelined_simd_unit {
       
       void coalesce_warp_requests(mem_access_t access);
       void track_warp_mem_accesses(warp_inst_t &inst);
-      mem_access_t get_next_rt_mem_access(warp_inst_t &inst);
+      new_addr_type get_next_rt_mem_access(warp_inst_t &inst);
       
       const memory_config *m_memory_config;
       class mem_fetch_interface *m_icnt;
