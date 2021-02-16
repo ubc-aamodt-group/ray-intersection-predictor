@@ -28,6 +28,7 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   m_lookup_bandwidth = config.lookup_bandwidth;
   m_oracle_update = config.oracle_update;
   m_magic_verify = config.magic_verify;
+  m_repacking_timer = config.repacking_timer;
   
   
   m_verified_warp_id = m_core->get_config()->max_warps_per_shader;
@@ -241,7 +242,7 @@ void ray_predictor::insert(const warp_inst_t& inst) {
   if (m_repack_warps) {
     // If this is the first warp, start timer
     if (m_predictor_warps.empty()) {
-      reset_cycle_delay(m_cycle_delay);
+      reset_cycle_delay(m_repacking_timer);
     }
     m_predictor_warps.push_back(m_current_warp);
   }
@@ -317,6 +318,7 @@ warp_inst_t ray_predictor::retrieve() {
         unsigned long long current_cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle + GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
         // Create warp
         m_current_warp.issue(mask, m_unverified_warp_id, current_cycle, m_unverified_warp_id, 0xff);
+        new_warps++;
       }
       active_mask_t mask;
       mask.set();
@@ -338,6 +340,7 @@ warp_inst_t ray_predictor::retrieve() {
         unsigned long long current_cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle + GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
         // Create warp
         m_current_warp.issue(mask, m_unverified_warp_id, current_cycle, m_unverified_warp_id, 0xff);
+        new_warps++;
       }
       unverified_packets++;
       active_mask_t mask;
@@ -394,7 +397,7 @@ warp_inst_t ray_predictor::retrieve() {
     
     // Reset the timer if there are still warps in the predictor (otherwise done)
     if (!m_predictor_warps.empty()) {
-      reset_cycle_delay(20);
+      reset_cycle_delay(m_repacking_timer);
     }
     
     // Return repacked warp or empty warp
@@ -708,6 +711,7 @@ void ray_predictor::cycle() {
           unpredicted_threads.size() > 32)
     {
       m_ready = true;
+      m_cycles = -1;
     }
   }
   
@@ -752,8 +756,10 @@ void ray_predictor::print_stats(FILE* fout) {
   fprintf(fout, "Total memory access savings: %d\n", mem_access_saved);
   fprintf(fout, "Evicted entries: %d\n", num_evicted);
   fprintf(fout, "Per entry overflow: %d\n", num_entry_overflow);
-  if (m_repack_warps)
+  if (m_repack_warps) {
     fprintf(fout, "Repacked warps: Verified %d, Unverified %d, Unpredicted %d, Predicted %d, Mixed %d\n", verified_packets, unverified_packets, unpredicted_packets, predicted_packets, mixed_packets);
+    fprintf(fout, "Total additional warps generated: %d\n", new_warps);
+  }
   fprintf(fout, "--------------------------------------------\n");
 }
 

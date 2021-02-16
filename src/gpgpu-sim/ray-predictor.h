@@ -41,6 +41,7 @@ class ray_predictor {
     unsigned m_lookup_bandwidth;
     bool m_magic_verify;
     bool m_oracle_update;
+    unsigned m_repacking_timer;
     
     unsigned m_verified_warp_id;
     unsigned m_unverified_warp_id;
@@ -113,6 +114,7 @@ class ray_predictor {
     unsigned unpredicted_packets;
     unsigned predicted_packets;
     unsigned mixed_packets;
+    unsigned new_warps;
 };
 
 #endif

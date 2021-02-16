@@ -545,6 +545,7 @@ struct ray_predictor_config {
   unsigned update_bandwidth;
   bool oracle_update;
   bool magic_verify;
+  unsigned repacking_timer;
 };
 
 class gpgpu_functional_sim_config {
