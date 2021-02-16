@@ -992,6 +992,16 @@ void shader_core_stats::visualizer_print(gzFile visualizer_file) {
     gzprintf(visualizer_file, "%u ", rt_mshr_size[i]);
   gzprintf(visualizer_file, "\n");
   
+  gzprintf(visualizer_file, "rt_cur_warp_mem_size:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_cur_warp_mem_size[i]);
+  gzprintf(visualizer_file, "\n");
+  
+  gzprintf(visualizer_file, "rt_warp_id:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%i ", rt_warp_id[i]);
+  gzprintf(visualizer_file, "\n");
+  
   gzprintf(visualizer_file, "rt_active_threads:  ");
   for (unsigned i = 0; i < m_config->num_shader() * m_config->max_warps_per_shader; i++)
     gzprintf(visualizer_file, "%u ", rt_active_threads[i]);
@@ -1051,6 +1061,11 @@ void shader_core_stats::visualizer_print(gzFile visualizer_file) {
   gzprintf(visualizer_file, "rt_mf_valid:  ");
   for (unsigned i = 0; i < m_config->num_shader(); i++)
     gzprintf(visualizer_file, "%u ", rt_mf_valid[i]);
+  gzprintf(visualizer_file, "\n");
+  
+  gzprintf(visualizer_file, "rt_mf_warp_valid:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_mf_warp_valid[i]);
   gzprintf(visualizer_file, "\n");
 
   gzprintf(visualizer_file, "rt_mem_ready:  ");
@@ -3025,6 +3040,9 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
   
   m_stats->rt_mf_valid[m_sid] = 0;
   m_stats->rt_mem_ready[m_sid] = 0;
+  m_stats->rt_mf_warp_valid[m_sid] = 0;
+  m_stats->rt_cur_warp_mem_size[m_sid] = 0;
+  m_stats->rt_warp_id[m_sid] = -1;
   if (m_config->m_rt_warppool) {
     if (inst.empty()) {
       if (!m_current_warps.empty()) {
@@ -3038,6 +3056,9 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
       }
     }
     if (!inst.active_count()) return true;
+    
+    m_stats->rt_cur_warp_mem_size[m_sid] = inst.get_longest_mem_list();
+    m_stats->rt_warp_id[m_sid] = inst.warp_id();
   }
   
   else {
@@ -3057,6 +3078,8 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
           }
           // Return if none are ready
           if (inst.empty()) return true;
+          m_stats->rt_cur_warp_mem_size[m_sid] = inst.get_longest_mem_list();
+          m_stats->rt_warp_id[m_sid] = inst.warp_id();
         }
       } else {
         return true;
@@ -3071,6 +3094,9 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
     if (inst.mem_fetch_wait(m_config->m_rt_lock_threads)) return inst.rt_mem_accesses_empty();
     
   }
+  
+  m_stats->rt_mf_warp_valid[m_sid] = 1;
+  
   // If MSHR is at the "limit" don't sent new requests
   if (m_config->m_rt_max_warps > 0 && m_L0_complet->num_mshr_entries() > m_config->m_rt_max_mshr_entries) return inst.rt_mem_accesses_empty();
   

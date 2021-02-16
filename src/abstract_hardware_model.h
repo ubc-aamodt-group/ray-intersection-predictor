@@ -1259,6 +1259,8 @@ class warp_inst_t : public inst_t {
     m_next_rt_accesses_set.erase(addr);
   }
   
+  unsigned get_longest_mem_list();
+  
   void undo_rt_access(new_addr_type addr) { 
     // printf("Undo Warp %d: 0x%x\t", m_warp_id, addr);
     m_mf_awaiting_response.erase(addr);

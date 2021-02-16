@@ -758,6 +758,16 @@ void warp_inst_t::dec_thread_latency() {
   }
 }
 
+unsigned warp_inst_t::get_longest_mem_list() {
+  unsigned longest = 0;
+  for (unsigned tid=0; tid<m_config->warp_size; tid++) {
+    unsigned mem_length = m_per_scalar_thread[tid].raytrace_mem_accesses.size();
+    if (mem_length > longest) {
+      longest = mem_length;
+    }
+  }
+  return longest;
+}
 
 void warp_inst_t::set_rt_mem_accesses(unsigned int tid, const std::deque<new_addr_type>& mem_accesses) { 
   if (!m_per_scalar_thread_valid) {
