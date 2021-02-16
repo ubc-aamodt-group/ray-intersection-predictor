@@ -1883,10 +1883,16 @@ struct shader_core_stats_pod {
   unsigned* rt_unit_ready;
   // Valid memory request
   unsigned* rt_mf_valid;
+  unsigned* rt_mf_valid_cycles;
   // Valid warp in RT unit
   unsigned* rt_mf_warp_valid;
   // Memory system ready for new mf
   unsigned* rt_mem_ready;
+  
+  // RT Cache
+  unsigned* rt_cache_accesses;
+  unsigned* rt_cache_misses;
+  unsigned* rt_cache_hits;
   
   unsigned rt_average_warp_latency;
   unsigned rt_max_warp_latency;
@@ -2034,8 +2040,13 @@ class shader_core_stats : public shader_core_stats_pod {
     rt_predictor_result_valid = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_unit_ready = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_mf_valid = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_mf_valid_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_mf_warp_valid = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_mem_ready = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    
+    rt_cache_accesses = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_cache_misses = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_cache_hits = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     
     rt_cur_warp_mem_size = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_warp_id = (int *)calloc(config->num_shader(), sizeof(int));

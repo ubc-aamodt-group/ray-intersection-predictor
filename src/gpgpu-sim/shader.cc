@@ -763,6 +763,11 @@ void shader_core_stats::print(FILE *fout) const {
   }
   fprintf(fout, "\n");
   
+  for (unsigned i=0; i<m_config->num_shader(); i++) {
+    fprintf(fout, "Cycles with valid MF = %d\n", rt_mf_valid_cycles[i]);
+    fprintf(fout, "Relative cycles with valid MF = %f\n", (float)rt_mf_valid_cycles[i]/GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
+  }
+  
   fprintf(fout, "Avg Warp Latency = %d\n", rt_average_warp_latency);
   fprintf(fout, "Min Warp Latency = %d\n", rt_min_warp_latency);
   fprintf(fout, "Max Warp Latency = %d\n", rt_max_warp_latency);
@@ -1005,6 +1010,21 @@ void shader_core_stats::visualizer_print(gzFile visualizer_file) {
   gzprintf(visualizer_file, "rt_active_threads:  ");
   for (unsigned i = 0; i < m_config->num_shader() * m_config->max_warps_per_shader; i++)
     gzprintf(visualizer_file, "%u ", rt_active_threads[i]);
+  gzprintf(visualizer_file, "\n");
+  
+  gzprintf(visualizer_file, "rt_cache_accesses:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_cache_accesses[i]);
+  gzprintf(visualizer_file, "\n");
+  
+  gzprintf(visualizer_file, "rt_cache_misses:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_cache_misses[i]);
+  gzprintf(visualizer_file, "\n");
+  
+  gzprintf(visualizer_file, "rt_cache_hits:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_cache_hits[i]);
   gzprintf(visualizer_file, "\n");
   
   // Predictor Stats
@@ -2756,6 +2776,9 @@ void rt_unit::cycle() {
   m_stats->rt_mf_warp_valid[m_sid] = 0;
   m_stats->rt_cur_warp_mem_size[m_sid] = 0;
   m_stats->rt_warp_id[m_sid] = NULL;
+  // m_stats->rt_cache_accesses[m_sid] = 0;
+  // m_stats->rt_cache_misses[m_sid] = 0;
+  // m_stats->rt_cache_hits[m_sid] = 0;
   
   // // Default = 0
   // for (unsigned i=0; i<m_config->max_warps_per_shader; i++) {
@@ -3302,6 +3325,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     m_warppool_awaiting_response.insert(access.get_addr());
     
     m_stats->rt_mf_valid[m_sid] = 1;
+    m_stats->rt_mf_valid_cycles[m_sid]++;
     
     // Access cache
     mf = m_mf_allocator->alloc(
@@ -3313,6 +3337,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
   }
   else {
     m_stats->rt_mf_valid[m_sid] = 1;
+    m_stats->rt_mf_valid_cycles[m_sid]++;
     
     mem_access_t access = inst.get_next_rt_mem_access(m_config->m_rt_lock_threads);
     m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
@@ -3353,6 +3378,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
   }
   
   else {
+    m_stats->rt_cache_accesses[m_sid] += 1;
     status = cache->access(
       mf->get_addr(), mf,
       m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle,
@@ -3450,6 +3476,7 @@ mem_stage_stall_type rt_unit::process_cache_access(
         m_stats->rt_mem_wait_time[199]++;
       }
       m_warppool_access_stats.erase(address);
+      m_stats->rt_cache_hits[m_sid] += 1;
       
       delete mf;
       
@@ -3458,6 +3485,7 @@ mem_stage_stall_type rt_unit::process_cache_access(
       delete mf;
     } else {
       assert(status == MISS);
+      m_stats->rt_cache_misses[m_sid] += 1;
     }
     
     if (!inst.rt_mem_accesses_empty() && result == NO_RC_FAIL) result = COAL_STALL;
