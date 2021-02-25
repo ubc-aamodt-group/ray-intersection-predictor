@@ -1343,6 +1343,7 @@ class rt_unit : public pipelined_simd_unit {
       std::set<new_addr_type> m_reservation_fails;
       new_addr_type m_prev_reservation_fail;
       
+      std::set<new_addr_type> m_warppool_greedy_accesses;
       std::list<new_addr_type> m_warppool_fifo_list;
       
       std::set<new_addr_type> m_mem_access_list;
@@ -1527,6 +1528,7 @@ class shader_core_config : public core_config {
 
     m_rt_warppool_fifo = *m_rt_warppool_order == 'f';
     m_rt_warppool_tree = *m_rt_warppool_order == 't';
+    m_rt_warppool_greedy = *m_rt_warppool_order == 'g';
     
     char *toks = new char[100];
     char *tokd = toks;
@@ -1761,6 +1763,7 @@ class shader_core_config : public core_config {
   char * m_rt_warppool_order;
   bool m_rt_warppool_fifo;
   bool m_rt_warppool_tree;
+  bool m_rt_warppool_greedy;
   bool m_rt_accumulate_stats;
   struct ray_predictor_config m_rt_predictor_config;
   char * m_rt_predictor_config_string;
@@ -1888,6 +1891,11 @@ struct shader_core_stats_pod {
   unsigned* rt_mf_warp_valid;
   // Memory system ready for new mf
   unsigned* rt_mem_ready;
+  // New item inserted into warppool
+  unsigned* rt_warppool_insertion;
+  unsigned* rt_warppool_insertion_cycles;
+  
+  unsigned* rt_warppool_greedy_ratio;
   
   // RT Cache
   unsigned* rt_cache_accesses;
@@ -2043,6 +2051,10 @@ class shader_core_stats : public shader_core_stats_pod {
     rt_mf_valid_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_mf_warp_valid = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_mem_ready = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_warppool_insertion = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_warppool_insertion_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    
+    rt_warppool_greedy_ratio = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     
     rt_cache_accesses = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_cache_misses = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));

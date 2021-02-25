@@ -766,6 +766,13 @@ void shader_core_stats::print(FILE *fout) const {
   for (unsigned i=0; i<m_config->num_shader(); i++) {
     fprintf(fout, "Cycles with valid MF = %d\n", rt_mf_valid_cycles[i]);
     fprintf(fout, "Relative cycles with valid MF = %f\n", (float)rt_mf_valid_cycles[i]/GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
+    fprintf(fout, "Cycles with MF inserted to warp pool = %d\n", rt_warppool_insertion_cycles[i]);
+    fprintf(fout, "Relative cycles with MF inserted to warp pool = %f\n", (float)rt_warppool_insertion_cycles[i]/GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
+    
+    if (m_config->m_rt_warppool_greedy) {
+      fprintf(fout, "Greedy accesses = %d\n", rt_warppool_greedy_ratio[i]);
+      fprintf(fout, "Relative greedy accesses = %f\n", (float)rt_warppool_insertion_cycles[i]/rt_cache_accesses[i]);
+    }
   }
   
   fprintf(fout, "Avg Warp Latency = %d\n", rt_average_warp_latency);
@@ -1086,6 +1093,11 @@ void shader_core_stats::visualizer_print(gzFile visualizer_file) {
   gzprintf(visualizer_file, "rt_mf_warp_valid:  ");
   for (unsigned i = 0; i < m_config->num_shader(); i++)
     gzprintf(visualizer_file, "%u ", rt_mf_warp_valid[i]);
+  gzprintf(visualizer_file, "\n");
+  
+  gzprintf(visualizer_file, "rt_warppool_insertion:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_warppool_insertion[i]);
   gzprintf(visualizer_file, "\n");
 
   gzprintf(visualizer_file, "rt_mem_ready:  ");
@@ -2776,9 +2788,7 @@ void rt_unit::cycle() {
   m_stats->rt_mf_warp_valid[m_sid] = 0;
   m_stats->rt_cur_warp_mem_size[m_sid] = 0;
   m_stats->rt_warp_id[m_sid] = NULL;
-  // m_stats->rt_cache_accesses[m_sid] = 0;
-  // m_stats->rt_cache_misses[m_sid] = 0;
-  // m_stats->rt_cache_hits[m_sid] = 0;
+  m_stats->rt_warppool_insertion[m_sid] = 0;
   
   // // Default = 0
   // for (unsigned i=0; i<m_config->max_warps_per_shader; i++) {
@@ -2836,7 +2846,7 @@ void rt_unit::cycle() {
         
         // Make sure at least one thread accepted the response. (Other threads might still be completing intersection test)
         if (!requester_thread_found) {
-          printf("Requester not found for: 0x%x", mf->get_addr());
+          printf("Requester not found for: 0x%x\n", mf->get_addr());
         }
       } 
       
@@ -3166,6 +3176,7 @@ void rt_unit::coalesce_warp_requests(mem_access_t access) {
 // RT-CORE NOTE: Add version that re-orders next accesses in a warp depending on whether of not they're in other warps
 
 void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
+  bool mem_inserted = false;
   
   // If no more accesses, check if there were any previously stalled ones
   if (m_warppool_mem_accesses.empty()) {
@@ -3199,21 +3210,23 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
   m_stats->rt_thread_coalesced_count += inst.get_coalesce_count();
   m_stats->rt_thread_mshr_count += inst.get_mshr_merged_count();
   m_stats->rt_intrawarp_coalescing[inst.get_coalesce_count()]++;
-  std::set<new_addr_type> warp_accesses = inst.get_rt_accesses();
-  for (auto it=warp_accesses.begin(); it!=warp_accesses.end(); ++it) {
+  std::set<new_addr_type> m_warppool_greedy_accesses = inst.get_rt_accesses();
+  for (auto it=m_warppool_greedy_accesses.begin(); it!=m_warppool_greedy_accesses.end(); ++it) {
     new_addr_type addr = *it;
     new_addr_type block_addr = addr & ~(32 - 1);
     inst.clear_rt_access(addr);
     inst.set_mem_fetch_wait(block_addr);
     if (m_warppool_awaiting_response.find(block_addr) == m_warppool_awaiting_response.end()) {
       // If tracking order, also add to list
-      if (m_config->m_rt_warppool_fifo) {
-        if (m_warppool_mem_accesses.find(addr) == m_warppool_mem_accesses.end()) {
+      if (m_warppool_mem_accesses.find(addr) == m_warppool_mem_accesses.end()) {
+        if (m_config->m_rt_warppool_fifo) {
           m_warppool_fifo_list.push_back(addr);
         }
+        m_warppool_mem_accesses.insert(addr);
+        m_stats->rt_warppool_insertion[m_sid]++;
+        mem_inserted = true;
       }
       
-      m_warppool_mem_accesses.insert(addr);
       if (m_warppool_stats.find(block_addr) == m_warppool_stats.end()) {
         unsigned long long current_cycle = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle;
         m_warppool_stats[block_addr] = current_cycle;
@@ -3244,13 +3257,15 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
       inst.set_mem_fetch_wait(block_addr);
       if (m_warppool_awaiting_response.find(block_addr) == m_warppool_awaiting_response.end()) {
         // If tracking order, also add to list
-        if (m_config->m_rt_warppool_fifo) {
-          if (m_warppool_mem_accesses.find(addr) == m_warppool_mem_accesses.end()) {
+        if (m_warppool_mem_accesses.find(addr) == m_warppool_mem_accesses.end()) {
+          if (m_config->m_rt_warppool_fifo) {
             m_warppool_fifo_list.push_back(addr);
           }
+          m_warppool_mem_accesses.insert(addr);
+          m_stats->rt_warppool_insertion[m_sid]++;
+          mem_inserted = true;
         }
         
-        m_warppool_mem_accesses.insert(addr);
         if (m_warppool_stats.find(block_addr) == m_warppool_stats.end()) {
           unsigned long long current_cycle = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle;
           m_warppool_stats[block_addr] = current_cycle;
@@ -3265,6 +3280,9 @@ void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
         }
       }
     }
+  }
+  if (mem_inserted) {
+    m_stats->rt_warppool_insertion_cycles[m_sid]++;
   }
 }
 
@@ -3292,6 +3310,29 @@ new_addr_type rt_unit::get_next_rt_mem_access(warp_inst_t &inst) {
     }  
     
     m_warppool_mem_accesses.erase(next_addr);
+  }
+  
+  else if (m_config->m_rt_warppool_greedy) {
+    bool greedy;
+    do {
+      if (m_warppool_greedy_accesses.empty()) {
+        auto it = m_warppool_mem_accesses.begin();
+        next_addr = *it;
+        m_warppool_mem_accesses.erase(next_addr);
+        greedy = false;
+      }
+      else {
+        auto it = m_warppool_greedy_accesses.begin();
+        next_addr = *it;
+        m_warppool_greedy_accesses.erase(next_addr);
+        assert(m_warppool_mem_accesses.find(next_addr) != m_warppool_mem_accesses.end());
+        m_warppool_mem_accesses.erase(next_addr);
+        greedy = true;
+      }
+    } while (m_warppool_awaiting_response.find(next_addr) != m_warppool_awaiting_response.end());
+    
+    if (greedy) m_stats->rt_warppool_greedy_ratio++;
+    // assert(m_warppool_awaiting_response.find(next_addr) == m_warppool_awaiting_response.end());
   }
   
   else {

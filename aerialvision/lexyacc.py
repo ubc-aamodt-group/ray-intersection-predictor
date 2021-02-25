@@ -158,6 +158,7 @@ def parseMe(filename):
         'rt_stalled_instructions' :vc.variable('', 2, 0, "impVec"),
         'rt_warp_valid' :vc.variable('', 2, 0, "impVec"),
         'rt_mf_warp_valid' :vc.variable('', 2, 0, "impVec"),
+        'rt_warppool_insertion' :vc.variable('', 2, 0, "impVec"),
         'rt_predictor_ready' :vc.variable('', 2, 0, "impVec"),
         'rt_predictor_result_valid' :vc.variable('', 2, 0, "impVec"),
         'rt_unit_ready' :vc.variable('', 2, 0, "impVec"),
