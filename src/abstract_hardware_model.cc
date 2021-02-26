@@ -858,6 +858,17 @@ unsigned warp_inst_t::get_rt_active_threads() {
   return active_threads;
 }
 
+std::deque<unsigned> warp_inst_t::get_rt_active_thread_list() {
+  assert(m_per_scalar_thread_valid);
+  std::deque<unsigned> active_threads;
+  for (unsigned i=0; i<m_config->warp_size; i++) {
+    if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty()) {
+      active_threads.push_back(i);
+    }
+  }
+  return active_threads;
+}
+
 unsigned warp_inst_t::check_thread_divergence() {
   unsigned shortest = 10000;
   unsigned longest = 0;

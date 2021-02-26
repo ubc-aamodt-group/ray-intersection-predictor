@@ -270,6 +270,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "manage memory of all warps in rt core as one set ",
       "0");
   option_parser_register(
+      opp, "-gpgpu_rt_threadcompaction", OPT_BOOL, &m_rt_threadcompaction,
+      "manage rt unit in threads instead of warps ",
+      "0");
+  option_parser_register(
       opp, "-gpgpu_rt_intersection_latency", OPT_UINT32, &m_rt_intersection_latency,
       "latency of pipelines intersection tests ",
       "0");

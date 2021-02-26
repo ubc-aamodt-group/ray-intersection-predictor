@@ -1759,6 +1759,7 @@ class shader_core_config : public core_config {
   bool m_rt_coalesce_warps;
   bool m_rt_predictor;
   bool m_rt_warppool;
+  bool m_rt_threadcompaction;
   bool bypassL0Complet;
   char * m_rt_warppool_order;
   bool m_rt_warppool_fifo;

@@ -1239,6 +1239,7 @@ class warp_inst_t : public inst_t {
   new_addr_type rt_ray_prediction(unsigned int tid) const { return m_per_scalar_thread[tid].ray_prediction; }
   void rt_mem_accesses_pop(new_addr_type addr);
   bool rt_mem_accesses_empty();
+  bool rt_mem_accesses_empty(unsigned int tid) { return m_per_scalar_thread[tid].raytrace_mem_accesses.empty(); };
   int get_next_predictor_update();
   void set_rt_update_predictor(unsigned int tid) { m_per_scalar_thread[tid].update_predictor = true; }
   
@@ -1255,9 +1256,15 @@ class warp_inst_t : public inst_t {
     // printf("Clear Warp %d: 0x%x\t", m_warp_id, addr);
     m_mf_awaiting_response.erase(addr);
   }
+  void clear_mem_fetch_wait() {
+    m_mf_awaiting_response.clear();
+  }
   bool clear_rt_awaiting_threads(new_addr_type addr);
   void clear_rt_access(new_addr_type addr) {
     m_next_rt_accesses_set.erase(addr);
+  }
+  void clear_rt_access() {
+    m_next_rt_accesses_set.clear();
   }
   
   unsigned get_longest_mem_list();
@@ -1285,6 +1292,7 @@ class warp_inst_t : public inst_t {
   unsigned get_mshr_merged_count() { return m_mshr_merged_count; }
   
   unsigned get_rt_active_threads();
+  std::deque<unsigned> get_rt_active_thread_list();
   
   void set_start_cycle(unsigned long long cycle) { m_start_cycle = cycle; }
   unsigned long long get_start_cycle() { return m_start_cycle; }
@@ -1328,6 +1336,7 @@ class warp_inst_t : public inst_t {
   void add_thread_latency(unsigned tid, unsigned cycles) { m_per_scalar_thread[tid].intersection_delay += cycles; }
   unsigned get_thread_latency(unsigned tid) const { return m_per_scalar_thread[tid].intersection_delay; }
   void dec_thread_latency();
+  unsigned mem_list_length(unsigned tid) const { return m_per_scalar_thread[tid].raytrace_mem_accesses.size(); }
 
  protected:
   unsigned m_uid;

@@ -65,6 +65,8 @@ class ray_predictor {
     unsigned predictor_num_rays() {return num_rays; }
     void add_entry(unsigned long long hash, new_addr_type prediction);
     
+    unsigned num_predictor_warps() { return m_predictor_warps.size() + !m_current_warp.empty(); }
+    
   private:
   
     // TODO:
