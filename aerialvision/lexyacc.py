@@ -167,6 +167,7 @@ def parseMe(filename):
         'rt_cache_accesses' :vc.variable('', 2, 0, "impVec"),
         'rt_cache_misses' :vc.variable('', 2, 0, "impVec"),
         'rt_cache_hits' :vc.variable('', 2, 0, "impVec"),
+        'rt_completed_warps' :vc.variable('', 2, 0, "impVec"),
         'globalInsn':vc.variable('globalinsncount', 1, 1, 'scalar'), 
         'globalCycle':vc.variable('globalcyclecount', 1, 1, 'scalar'), 
         'shaderWarpDiv':vc.variable('shaderwarpdiv', 2, 0, 'impVec'), 

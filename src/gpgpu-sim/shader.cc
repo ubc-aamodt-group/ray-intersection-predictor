@@ -1099,6 +1099,11 @@ void shader_core_stats::visualizer_print(gzFile visualizer_file) {
   for (unsigned i = 0; i < m_config->num_shader(); i++)
     gzprintf(visualizer_file, "%u ", rt_warppool_insertion[i]);
   gzprintf(visualizer_file, "\n");
+  
+  gzprintf(visualizer_file, "rt_completed_warps:  ");
+  for (unsigned i = 0; i < m_config->num_shader(); i++)
+    gzprintf(visualizer_file, "%u ", rt_completed_warps[i]);
+  gzprintf(visualizer_file, "\n");
 
   gzprintf(visualizer_file, "rt_mem_ready:  ");
   for (unsigned i = 0; i < m_config->num_shader(); i++)
@@ -3109,6 +3114,8 @@ void rt_unit::cycle() {
     
     m_core->dec_inst_in_pipeline(warp_id);
     
+    m_stats->rt_completed_warps[m_sid]++;
+    
     // Ignore warps generated inside RT core
     if (warp_id < m_config->max_warps_per_shader) {
       n_warps--;
@@ -3118,9 +3125,11 @@ void rt_unit::cycle() {
     rt_inst.clear();
   }
   
-  unsigned n_warps_predictor = m_ray_predictor->num_predictor_warps();
-  unsigned n_warps_predictor_queue = m_predictor_queue.size();
-  assert(n_warps == m_current_warps.size() + n_warps_predictor + n_warps_predictor_queue);
+  if (m_config->m_rt_threadcompaction) {
+    unsigned n_warps_predictor = m_ray_predictor->num_predictor_warps();
+    unsigned n_warps_predictor_queue = m_predictor_queue.size();
+    assert(n_warps == m_current_warps.size() + n_warps_predictor + n_warps_predictor_queue);
+  }
   
 }
 

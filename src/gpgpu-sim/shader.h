@@ -1898,6 +1898,8 @@ struct shader_core_stats_pod {
   
   unsigned* rt_warppool_greedy_ratio;
   
+  unsigned* rt_completed_warps;
+  
   // RT Cache
   unsigned* rt_cache_accesses;
   unsigned* rt_cache_misses;
@@ -2056,6 +2058,7 @@ class shader_core_stats : public shader_core_stats_pod {
     rt_warppool_insertion_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     
     rt_warppool_greedy_ratio = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_completed_warps = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     
     rt_cache_accesses = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_cache_misses = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
