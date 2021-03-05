@@ -286,6 +286,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "ray predictor config: debug_print,latency,max_table_size,hash_type,hash_francois_bits,hash_grid_bits,hash_sphere_bits,go_up_level,max_entry_cap,replacement_policy,placement_policy,virtual,virtual_access_latency ",
       "1,2,64,f,2,5,3,0,4,f,l,d,4,0,10,256,8,d");
   option_parser_register(
+      opp, "-gpgpu_rt_predictor_sampler", OPT_BOOL, &m_rt_predictor_config.sampler,
+      "train predictor with 1 sample per warp first ",
+      "0");
+  option_parser_register(
       opp, "-gpgpu_rt_predictor_lookup_latency", OPT_UINT32, &m_rt_predictor_config.per_thread_lookup_latency,
       "latency of per-thread predictor lookup ",
       "0");

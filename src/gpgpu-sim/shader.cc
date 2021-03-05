@@ -76,9 +76,9 @@ std::list<unsigned> shader_core_ctx::get_regs_written(const inst_t &fvt) const {
 
 void exec_shader_core_ctx::create_shd_warp() {
   // Create extra warps?
-  if (!m_config->m_rt_predictor_config.repack_unpredicted_warps) {
-    m_warp.resize(m_config->max_warps_per_shader + 2);
-    for (unsigned k = 0; k < m_config->max_warps_per_shader + 2; ++k) {
+  if (!m_config->m_rt_predictor_config.repack_unpredicted_warps || m_config->m_rt_predictor_config.sampler) {
+    m_warp.resize(m_config->max_warps_per_shader + 3);
+    for (unsigned k = 0; k < m_config->max_warps_per_shader + 3; ++k) {
       m_warp[k] = new shd_warp_t(this, m_config->warp_size);
     }
   }
@@ -2993,9 +2993,16 @@ void rt_unit::cycle() {
         m_predictor_queue.pop_front();
         m_predictor_queue_set.erase(pipe_reg.get_uid());
       }
-
-      // Insert the selected warp
-      m_ray_predictor->insert(pipe_reg);
+  
+      // If using "sampler", insert to special sampler list
+      if (m_config->m_rt_predictor_config.sampler) {
+        m_ray_predictor->insert_sample(pipe_reg);
+      }
+      
+      else {
+        // Insert the selected warp
+        m_ray_predictor->insert(pipe_reg);
+      }
       
       // Move current warp out of rt-unit (it should either be in the predictor queue or in the predictor)
       m_dispatch_reg->clear();
@@ -3120,6 +3127,12 @@ void rt_unit::cycle() {
     if (warp_id < m_config->max_warps_per_shader) {
       n_warps--;
     }
+    
+    // Update sampler
+    if (warp_id == (m_config->max_warps_per_shader + 2)) {
+      m_ray_predictor->update_sample(rt_inst.get_uid());
+    }
+    
     // Track number of warps in RT core
     assert(n_warps >= 0);
     rt_inst.clear();

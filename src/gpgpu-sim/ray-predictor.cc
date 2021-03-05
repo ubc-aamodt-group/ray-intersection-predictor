@@ -29,10 +29,17 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   m_oracle_update = config.oracle_update;
   m_magic_verify = config.magic_verify;
   m_repacking_timer = config.repacking_timer;
+  m_sampler = config.sampler;
   
   
   m_verified_warp_id = m_core->get_config()->max_warps_per_shader;
   m_unverified_warp_id = m_core->get_config()->max_warps_per_shader + 1;
+  m_sample_warp_id = m_core->get_config()->max_warps_per_shader + 2;
+  
+  m_sample_warp = warp_inst_t(m_core->get_config());
+  m_sample_warp.init_rt_warp();
+  m_sample_warp.init_per_scalar_thread();
+  m_retrieved = false;
   
   m_total_threads = 0;
   
@@ -64,6 +71,45 @@ unsigned long long ray_predictor::compute_index(unsigned long long hash, unsigne
     hash >>= num_bits;
   }
   return index;
+}
+
+void ray_predictor::insert_sample(warp_inst_t& inst) {
+  
+  
+  if (!inst.empty()) {
+    if (!m_sample_warp.empty()) {
+      assert(m_retrieved);
+      m_sample_warp.clear_thread_info(0);
+      m_sample_warp.clear();
+    }
+    
+    // Copy a sample thread
+    m_sample_warp.set_thread_info(0, inst.get_thread_info(0));
+    if (m_sample_warp.rt_ray_intersect(0)) {
+      m_sample_warp.set_rt_update_predictor(0);
+    }
+    inst.clear_thread_info(0);
+    
+    // Set up warp parameters
+    active_mask_t mask;
+    mask.set();
+    unsigned long long current_cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle + GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
+    // Create warp
+    m_sample_warp.issue(mask, m_sample_warp_id, current_cycle, m_sample_warp_id, 0xff);
+    
+    m_sampler_warps[m_sample_warp.get_uid()] = inst;
+    
+    m_retrieved = false;
+    m_ready = true;
+  }
+  
+  
+}
+
+
+void ray_predictor::update_sample(unsigned warp_uid) {
+  insert(m_sampler_warps[warp_uid]);
+  m_sampler_warps.erase(warp_uid);
 }
                     
 void ray_predictor::insert(const warp_inst_t& inst) {
@@ -246,6 +292,12 @@ void ray_predictor::insert(const warp_inst_t& inst) {
     }
     m_predictor_warps.push_back(m_current_warp);
   }
+  else if (m_sampler) {
+    if (m_predictor_warps.empty()) {
+      reset_cycle_delay(m_cycle_delay);
+    }
+    m_predictor_warps.push_back(m_current_warp);
+  }
   else {
     m_busy = true;
     reset_cycle_delay(m_cycle_delay);
@@ -257,8 +309,28 @@ warp_inst_t ray_predictor::retrieve() {
   // After retrieved, no longer ready
   m_ready = false;
   
+  if (m_sampler) {
+    
+    assert(!m_sample_warp.empty() || !m_predictor_warps.empty());
+    
+    if (!m_sample_warp.empty()) {
+      m_retrieved = true;
+      return m_sample_warp;
+    }
+    else {
+      m_current_warp = m_predictor_warps.front();
+      m_predictor_warps.pop_front();
+      
+      if (!m_predictor_warps.empty()) {
+        reset_cycle_delay(m_cycle_delay);
+      }
+      
+      return m_current_warp;
+    }
+  }
+  
   // Only handles one warp at a time
-  if (!m_repack_warps) {
+  else if (!m_repack_warps) {
     return m_current_warp;
   }
   
@@ -715,6 +787,33 @@ void ray_predictor::cycle() {
     }
   }
   
+  else if (m_sampler) {
+    if (!m_sample_warp.empty()) {
+      if (!m_retrieved) {
+        m_ready = true;
+      }
+      else {
+        m_sample_warp.clear();
+        m_ready = false;
+      }
+    }
+    else if (m_cycles == 0) {
+      m_ready = true;
+      m_cycles = -1;
+    }
+    else {
+      m_ready = false;
+    }
+    
+    if (m_sampler_warps.size() + m_predictor_warps.size() >= 16) {
+      m_busy = true;
+    }
+    else {
+      m_busy = false;
+    }
+    
+  }
+  
   // For single warp predictor, full == busy
   else {
     if (m_cycles == 0) {
@@ -733,14 +832,21 @@ void ray_predictor::cycle() {
 }
 
 void ray_predictor::display_state(FILE* fout) {
+  fprintf(fout, "\n");
   if (m_repack_warps) {
-    fprintf(fout, "\n");
     for (auto it=m_predictor_warps.begin(); it!=m_predictor_warps.end(); it++) {
       fprintf(fout, "uid: %5d ", it->get_uid());
       it->print(fout);
     }
   }
-  fprintf(fout, "Temp Warp:\n");
+  if (m_sampler) {
+    fprintf(fout, "Sampler Warps:\n");
+    for (auto it=m_sampler_warps.begin(); it!=m_sampler_warps.end(); it++) {
+      fprintf(fout, "uid: %5d (%5d) ", it->second.get_uid(), it->first);
+      it->second.print(fout);
+    }
+  }
+  fprintf(fout, "Temp Warp (m_current_warp):\n");
   fprintf(fout, "uid: %5d ", m_current_warp.get_uid());
   m_current_warp.print(fout);
 }

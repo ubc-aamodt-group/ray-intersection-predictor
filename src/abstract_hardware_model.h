@@ -546,6 +546,7 @@ struct ray_predictor_config {
   bool oracle_update;
   bool magic_verify;
   unsigned repacking_timer;
+  bool sampler;
 };
 
 class gpgpu_functional_sim_config {
@@ -1230,6 +1231,15 @@ class warp_inst_t : public inst_t {
   unsigned get_schd_id() const { return m_scheduler_id; }
   active_mask_t get_warp_active_mask() const { return m_warp_active_mask; }
   
+  void init_per_scalar_thread() {
+    m_per_scalar_thread.resize(m_config->warp_size);
+    m_per_scalar_thread_valid = true;
+  }
+  void init_rt_warp() {
+    space.set_type(global_space);
+    op = RT_CORE_OP;
+    m_is_raytrace = true;
+  }
   void set_rt_mem_accesses(unsigned int tid, const std::deque<new_addr_type>& mem_accesses);
   int update_rt_mem_accesses(unsigned int tid, bool valid, const std::deque<new_addr_type> &mem_accesses);
   void set_rt_ray_properties(unsigned int tid, Ray ray, unsigned long long hash, new_addr_type prediction, bool intersect);
