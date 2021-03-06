@@ -1457,10 +1457,27 @@ void gpgpu_sim::gpu_print_stat() {
   shader_print_scheduler_stat(stdout, false);
 
   m_shader_stats->print(stdout);
-  for (unsigned i = 0; i < m_config.num_cluster(); i++) {
-    m_cluster[i]->print_predictor_stats(stdout);
-  }
   
+  float avg_hits = 0;
+  float avg_verified = 0;
+  float avg_hitrate = 0;
+  float avg_verifiedrate = 0;
+  float avg_memsavings = 0;
+  for (unsigned i = 0; i < m_config.num_cluster(); i++) {
+    predictor_stats stats = m_cluster[i]->print_predictor_stats(stdout);
+    
+    avg_hits += stats.predictor_hits;
+    avg_verified += stats.num_verified;
+    avg_hitrate += stats.predictor_hit_rate;
+    avg_verifiedrate += stats.verified_rate;
+    avg_memsavings += stats.memory_savings;
+  }
+  fprintf(stdout, "avg_predictor_hits = %f\n", avg_hits / m_config.num_cluster());
+  fprintf(stdout, "avg_verified_rays = %f\n", avg_verified / m_config.num_cluster());
+  fprintf(stdout, "avg_predictor_hit_rate = %f\n", avg_hitrate / m_config.num_cluster());
+  fprintf(stdout, "avg_predictor_verified_rate = %f\n", avg_verifiedrate / m_config.num_cluster());
+  fprintf(stdout, "avg_predictor_memory_savings = %f\n", avg_memsavings / m_config.num_cluster());
+ 
   
 #ifdef GPGPUSIM_POWER_MODEL
   if (m_config.g_power_simulation_enabled) {

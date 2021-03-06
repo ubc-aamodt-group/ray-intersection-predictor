@@ -851,7 +851,14 @@ void ray_predictor::display_state(FILE* fout) {
   m_current_warp.print(fout);
 }
 
-void ray_predictor::print_stats(FILE* fout) {
+predictor_stats ray_predictor::print_stats(FILE* fout) {
+  predictor_stats stats;
+  stats.predictor_hits = num_predicted;
+  stats.predictor_hit_rate = (float)num_predicted / num_rays;
+  stats.num_verified = num_valid;
+  stats.verified_rate = (float)num_valid / num_rays;
+  stats.memory_savings = mem_access_saved;
+  
   fprintf(fout, "Shader Core %d Predictor Stats:\n", m_sid);
   fprintf(fout, "Total ray predictor hits: %d (%.3f) + virtual: %d\n", 
           num_predicted, (float)num_predicted / num_rays, num_virtual_predicted);
@@ -867,7 +874,11 @@ void ray_predictor::print_stats(FILE* fout) {
     fprintf(fout, "Total additional warps generated: %d\n", new_warps);
   }
   fprintf(fout, "--------------------------------------------\n");
+  
+  return stats;
 }
+
+
 
 void ray_predictor::reset_stats() {
   num_rays = 0;

@@ -1280,7 +1280,7 @@ class rt_unit : public pipelined_simd_unit {
         
         void get_L0C_sub_stats(struct cache_sub_stats &css) const;
         void get_cache_stats(cache_stats &cs);
-        void print_predictor_stats(FILE *fp);
+        predictor_stats print_predictor_stats(FILE *fp);
         void reset_rt_predictor_stats();
         
     protected:
@@ -2228,7 +2228,7 @@ class shader_core_ctx : public core_t {
   const shader_core_config *get_config() const { return m_config; }
   void print_cache_stats(FILE *fp, unsigned &dl1_accesses,
                          unsigned &dl1_misses);
-  void print_predictor_stats(FILE *fp);
+  predictor_stats print_predictor_stats(FILE *fp);
   void get_cache_stats(cache_stats &cs);
   void get_rt_cache_stats(cache_stats &cs);
   void reset_rt_predictor_stats();
@@ -2627,7 +2627,7 @@ class simt_core_cluster {
   void display_rt_pipeline(unsigned sid, FILE *fout, int mask) const;
   void print_cache_stats(FILE *fp, unsigned &dl1_accesses,
                          unsigned &dl1_misses) const;
-  void print_predictor_stats(FILE *fp) const;
+  predictor_stats print_predictor_stats(FILE *fp) const;
 
   void get_cache_stats(cache_stats &cs) const;
   void get_rt_cache_stats(cache_stats &cs) const;

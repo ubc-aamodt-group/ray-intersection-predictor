@@ -2028,8 +2028,8 @@ void rt_unit::get_cache_stats(cache_stats &cs) {
   m_L0_complet->get_stats().print_rt_stats(stdout);
 }
 
-void rt_unit::print_predictor_stats(FILE *fp) {
-  m_ray_predictor->print_stats(fp);
+predictor_stats rt_unit::print_predictor_stats(FILE *fp) {
+  return m_ray_predictor->print_stats(fp);
 }
 
 void rt_unit::reset_rt_predictor_stats() {
@@ -2814,6 +2814,7 @@ void rt_unit::cycle() {
   if (!m_response_fifo.empty()) {
     
     mem_fetch *mf = m_response_fifo.front();
+    new_addr_type addr = mf->get_addr();
     
     // RT-CORE NOTE: figure out how to separate node and triangle responses
     mf->set_status(IN_SHADER_FETCHED,
@@ -5179,8 +5180,10 @@ void shader_core_ctx::reset_rt_predictor_stats() {
   m_rt_unit->reset_rt_predictor_stats();
 }
 
-void shader_core_ctx::print_predictor_stats(FILE *fp) {
-  m_rt_unit->print_predictor_stats(fp);
+predictor_stats shader_core_ctx::print_predictor_stats(FILE *fp) {
+  predictor_stats stats;
+  stats = m_rt_unit->print_predictor_stats(fp);
+  return stats;
 }
 
 void shader_core_ctx::get_L1I_sub_stats(struct cache_sub_stats &css) const {
@@ -5827,10 +5830,30 @@ void simt_core_cluster::print_cache_stats(FILE *fp, unsigned &dl1_accesses,
   }
 }
 
-void simt_core_cluster::print_predictor_stats(FILE *fp) const {
+predictor_stats simt_core_cluster::print_predictor_stats(FILE *fp) const {
+  float avg_hits = 0;
+  float avg_verified = 0;
+  float avg_hitrate = 0;
+  float avg_verifiedrate = 0;
+  float avg_memsavings = 0;
   for (unsigned i = 0; i < m_config->n_simt_cores_per_cluster; ++i) {
-    m_core[i]->print_predictor_stats(fp);
+    predictor_stats stats = m_core[i]->print_predictor_stats(fp);
+    avg_hits += stats.predictor_hits;
+    avg_verified += stats.num_verified;
+    avg_hitrate += stats.predictor_hit_rate;
+    avg_verifiedrate += stats.verified_rate;
+    avg_memsavings += stats.memory_savings;
   }
+  
+  predictor_stats stats;
+  stats.predictor_hits = avg_hits / m_config->n_simt_cores_per_cluster;
+  stats.num_verified = avg_verified / m_config->n_simt_cores_per_cluster;
+  stats.predictor_hit_rate = avg_hitrate / m_config->n_simt_cores_per_cluster;
+  stats.verified_rate = avg_verifiedrate / m_config->n_simt_cores_per_cluster;
+  stats.memory_savings = avg_memsavings / m_config->n_simt_cores_per_cluster;
+  
+  return stats;
+  
 }
 
 void simt_core_cluster::get_icnt_stats(long &n_simt_to_mem,

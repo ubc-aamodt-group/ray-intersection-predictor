@@ -12,6 +12,16 @@ struct {
     std::map<new_addr_type, unsigned long long> m_node_use_map;
 } typedef predictor_entry;
 
+
+struct {
+  unsigned predictor_hits;
+  unsigned num_verified;
+  float predictor_hit_rate;
+  float verified_rate;
+  int memory_savings;
+} typedef predictor_stats;
+
+
 class shader_core_ctx;
 
 class ray_predictor {
@@ -58,7 +68,7 @@ class ray_predictor {
     warp_inst_t retrieve();
     void cycle();
     void display_state(FILE* fout);
-    void print_stats(FILE* fout);
+    predictor_stats print_stats(FILE* fout);
     void reset_stats();
     
     unsigned predictor_table_size() {return m_predictor_table.size(); }
