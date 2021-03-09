@@ -3510,8 +3510,18 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     m_reservation_fails.insert(mf->get_uncoalesced_addr());
     m_prev_reservation_fail = mf->get_uncoalesced_addr();
     
+    // Address already in MSHR, but MSHR entry is full
     if (!m_L0_complet->probe_mshr(mf->get_addr()).empty()) {
-      printf("0x%x\n", mf->get_addr());
+      
+      // If using warp coalescing, this is irrelevant
+      if (m_config->m_rt_coalesce_warps) {
+        printf("0x%x\n", mf->get_addr());
+      }
+      
+      // Otherwise, the request cannot be handled this cycle
+      else {
+        inst.undo_rt_access(mf->get_addr());
+      }
     }
     else if (!m_L0_complet->get_bypass_rf_config()) {
       if (m_config->m_rt_warppool) {
