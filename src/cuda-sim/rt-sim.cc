@@ -447,6 +447,12 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             
             mem->read(node_start + next_node + 3*sizeof(float4), sizeof(addr_t), &child0_addr);
             mem->read(node_start + next_node + 3*sizeof(float4) + sizeof(addr_t), sizeof(addr_t), &child1_addr);
+
+            // Assume we store the go-up ancestor in the padded space
+            // Note: this value isn't actually used. We keep track of the go-up ancestor using the
+            // nodes_stack so that the BVH doesn't need to change for different go-up levels.
+            addr_t go_up_addr;
+            mem->read(node_start + next_node + 3*sizeof(float4) + 2 * sizeof(addr_t), sizeof(addr_t), &go_up_addr);
             
             if ((int)child0_addr > 0)
                 tree_level_map[node_start + child0_addr * 0x10] = current_tree_level + 1;

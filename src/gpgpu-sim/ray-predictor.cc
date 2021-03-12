@@ -83,8 +83,8 @@ void ray_predictor::insert(const warp_inst_t& inst) {
   unsigned latency = m_per_thread_latency;
   for (unsigned i=0; i<warp_size; i++) {
     // Set latency
+    latency = (1 + std::floor(i / m_lookup_bandwidth)) * m_per_thread_latency;
     m_current_warp.add_thread_latency(i, latency);
-    latency = std::floor(i / m_lookup_bandwidth) * m_per_thread_latency;
     
     unsigned long long ray_hash = m_current_warp.rt_ray_hash(i);
     
