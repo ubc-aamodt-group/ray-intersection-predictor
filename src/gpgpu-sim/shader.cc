@@ -775,6 +775,38 @@ void shader_core_stats::print(FILE *fout) const {
     }
   }
   
+  unsigned rt_counter_response_cycles_sum = 0;
+  unsigned rt_counter_full_unit_cycles_sum = 0;
+  unsigned rt_counter_empty_unit_cycles_sum = 0;
+  unsigned rt_counter_predictor_busy_cycles_sum = 0;
+  unsigned rt_counter_predictor_ready_cycles_sum = 0;
+  unsigned rt_counter_warp_avail_cycles_sum = 0;
+  unsigned rt_counter_cache_access_cycles_sum = 0;
+  unsigned rt_counter_undo_requests_sum = 0;
+  float rt_counter_avg_coalesced_requests_sum = 0;
+  
+  for (unsigned i=0; i<m_config->num_shader(); i++) {
+    rt_counter_response_cycles_sum += rt_counter_response_cycles[i];
+    rt_counter_full_unit_cycles_sum += rt_counter_full_unit_cycles[i];
+    rt_counter_empty_unit_cycles_sum += rt_counter_empty_unit_cycles[i];
+    rt_counter_predictor_busy_cycles_sum += rt_counter_predictor_busy_cycles[i];
+    rt_counter_predictor_ready_cycles_sum += rt_counter_predictor_ready_cycles[i];
+    rt_counter_warp_avail_cycles_sum += rt_counter_warp_avail_cycles[i];
+    rt_counter_cache_access_cycles_sum += rt_counter_cache_access_cycles[i];
+    rt_counter_undo_requests_sum += rt_counter_undo_requests[i];
+    rt_counter_avg_coalesced_requests_sum += rt_counter_avg_coalesced_requests[i];
+  }
+  
+  fprintf(fout, "rt_counter_response_cycles = %f\n", (float)rt_counter_response_cycles_sum / m_config->num_shader() / GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
+  fprintf(fout, "rt_counter_full_unit_cycles = %f\n", (float)rt_counter_full_unit_cycles_sum / m_config->num_shader() / GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
+  fprintf(fout, "rt_counter_empty_unit_cycles = %f\n", (float)rt_counter_empty_unit_cycles_sum / m_config->num_shader() / GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
+  fprintf(fout, "rt_counter_predictor_busy_cycles = %f\n", (float)rt_counter_predictor_busy_cycles_sum / m_config->num_shader() / GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
+  fprintf(fout, "rt_counter_predictor_ready_cycles = %f\n", (float)rt_counter_predictor_ready_cycles_sum / m_config->num_shader() / GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
+  fprintf(fout, "rt_counter_warp_avail_cycles = %f\n", (float)rt_counter_warp_avail_cycles_sum / m_config->num_shader() / GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
+  fprintf(fout, "rt_counter_cache_access_cycles = %f\n", (float)rt_counter_cache_access_cycles_sum / m_config->num_shader() / GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
+  fprintf(fout, "rt_counter_undo_requests = %f\n", (float)rt_counter_undo_requests_sum / m_config->num_shader());
+  fprintf(fout, "rt_counter_avg_coalesced_requests = %f\n", (float)rt_counter_avg_coalesced_requests_sum / m_config->num_shader());
+  
   fprintf(fout, "Avg Warp Latency = %d\n", rt_average_warp_latency);
   fprintf(fout, "Min Warp Latency = %d\n", rt_min_warp_latency);
   fprintf(fout, "Max Warp Latency = %d\n", rt_max_warp_latency);
@@ -2813,6 +2845,8 @@ void rt_unit::cycle() {
   
   if (!m_response_fifo.empty()) {
     
+    m_stats->rt_counter_response_cycles[m_sid]++;
+    
     mem_fetch *mf = m_response_fifo.front();
     new_addr_type addr = mf->get_addr();
     
@@ -2854,22 +2888,34 @@ void rt_unit::cycle() {
         if (requester_thread_found == 0) {
           printf("Requester not found for: 0x%x\n", mf->get_addr());
         }
+        
+        float prev_avg = (m_stats->rt_counter_response_cycles[m_sid] - 1) * m_stats->rt_counter_avg_coalesced_requests[m_sid];
+        m_stats->rt_counter_avg_coalesced_requests[m_sid] = (float)(prev_avg + requester_thread_found) / m_stats->rt_counter_response_cycles[m_sid];
       } 
       
       else if (!m_config->bypassL0Complet){
         // Check MSHR for all accessed to this address
         std::list<mem_fetch *> response_mf = m_L0_complet->probe_mshr(mf->get_addr());
         
+        unsigned requester_thread_found = 0;
         for (auto it=response_mf.begin(); it!=response_mf.end(); ++it) {
           mem_fetch* response = *it;
           // Check all the warps
           for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
             if (it->second.warp_id() == response->get_wid()) {
               it->second.clear_mem_fetch_wait(mf->get_addr());
-              if (!m_config->m_rt_lock_threads) it->second.clear_rt_awaiting_threads(mf->get_addr());
+              if (!m_config->m_rt_lock_threads) requester_thread_found += it->second.clear_rt_awaiting_threads(mf->get_addr());
             }
           }
         }
+        
+        // Make sure at least one thread accepted the response. (Other threads might still be completing intersection test)
+        if (requester_thread_found == 0) {
+          printf("Requester not found for: 0x%x\n", mf->get_addr());
+        }
+        
+        float prev_avg = (m_stats->rt_counter_response_cycles[m_sid] - 1) * m_stats->rt_counter_avg_coalesced_requests[m_sid];
+        m_stats->rt_counter_avg_coalesced_requests[m_sid] = (float)(prev_avg + requester_thread_found) / m_stats->rt_counter_response_cycles[m_sid];
       }
       
       else {
@@ -2911,7 +2957,21 @@ void rt_unit::cycle() {
   // if (m_config->m_L0_complet_config.l1_latency > 0) l0c_latency_queue_cycle();
   // if (m_config->m_L0_tri_config.l1_latency > 0) l0t_latency_queue_cycle();
   
+  unsigned max_warps = m_config->m_rt_predictor_config.repack_warps ? 
+            m_config->m_rt_max_warps + m_config->m_rt_predictor_config.repack_max_warps :
+            m_config->m_rt_max_warps;
+  if (m_current_warps.size() < max_warps) {
+    m_stats->rt_unit_ready[m_sid] = 1;
+  }
+  else {
+    m_stats->rt_unit_ready[m_sid] = 0;
+    m_stats->rt_counter_full_unit_cycles[m_sid]++;
+  }
+  
   if (m_config->m_rt_predictor) {
+    
+    if (m_ray_predictor->ready()) m_stats->rt_counter_predictor_ready_cycles[m_sid]++;
+    if (m_ray_predictor->busy()) m_stats->rt_counter_predictor_busy_cycles[m_sid]++;
     
     // Check for predictor entry updates
     unsigned updates_per_cycle = m_config->m_rt_predictor_config.update_bandwidth;
@@ -2935,12 +2995,6 @@ void rt_unit::cycle() {
     }
     
     m_stats->rt_predictor_result_valid[m_sid] = 0;
-    if (m_current_warps.size() < (m_config->m_rt_max_warps + m_config->m_rt_predictor_config.repack_max_warps)) {
-      m_stats->rt_unit_ready[m_sid] = 1;
-    }
-    else {
-      m_stats->rt_unit_ready[m_sid] = 0;
-    }
     // If there's a warp ready in the predictor, fetch it. 
     if (m_ray_predictor->ready() && m_current_warps.size() < (m_config->m_rt_max_warps + m_config->m_rt_predictor_config.repack_max_warps)) {
       
@@ -3032,6 +3086,9 @@ void rt_unit::cycle() {
     rt_inst = pipe_reg;
     m_dispatch_reg->clear();
   }
+  
+  if (m_current_warps.empty()) m_stats->rt_counter_empty_unit_cycles[m_sid]++;
+  
   // RT-CORE NOTE: How to cycle both complet cache and triangle cache?
   done &= memory_cycle(rt_inst, rc_fail, type);
   m_mem_rc = rc_fail;
@@ -3212,6 +3269,7 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
   }
   
   m_stats->rt_mf_warp_valid[m_sid] = 1;
+  m_stats->rt_counter_warp_avail_cycles[m_sid]++;
   
   // If MSHR is at the "limit" don't sent new requests
   if (m_config->m_rt_max_warps > 0 && m_L0_complet->num_mshr_entries() > m_config->m_rt_max_mshr_entries) return inst.rt_mem_accesses_empty();
@@ -3509,6 +3567,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
       m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle,
       events
     );
+    m_stats->rt_counter_cache_access_cycles[m_sid]++;
   }
   
   // fprintf(m_cache_reuse_log_file, "%d: 0x%x\n", m_sid, mf->get_addr());
@@ -3537,6 +3596,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
       // Otherwise, the request cannot be handled this cycle
       else {
         inst.undo_rt_access(mf->get_addr());
+        m_stats->rt_counter_undo_requests[m_sid]++;
       }
     }
     else if (!m_L0_complet->get_bypass_rf_config()) {
@@ -3549,6 +3609,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
       else {
         // Remove from m_mf_awaiting_response 
         inst.undo_rt_access(mf->get_addr());
+        m_stats->rt_counter_undo_requests[m_sid]++;
         // Remove the unnecessary list of next_rt_accesses (not the set)
         // if (m_config->m_rt_lock_threads) 
       }

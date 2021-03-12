@@ -1896,6 +1896,20 @@ struct shader_core_stats_pod {
   unsigned* rt_warppool_insertion;
   unsigned* rt_warppool_insertion_cycles;
   
+  
+  // More RT Unit stat counters
+  unsigned* rt_counter_response_cycles;
+  unsigned* rt_counter_full_unit_cycles;
+  unsigned* rt_counter_empty_unit_cycles;
+  unsigned* rt_counter_predictor_busy_cycles;
+  unsigned* rt_counter_predictor_ready_cycles;
+  unsigned* rt_counter_warp_avail_cycles;
+  unsigned* rt_counter_cache_access_cycles;
+  
+  unsigned* rt_counter_undo_requests;
+  float* rt_counter_avg_coalesced_requests;
+  
+  
   unsigned* rt_warppool_greedy_ratio;
   
   unsigned* rt_completed_warps;
@@ -2063,6 +2077,17 @@ class shader_core_stats : public shader_core_stats_pod {
     rt_cache_accesses = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_cache_misses = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_cache_hits = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    
+    rt_counter_response_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_counter_full_unit_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_counter_empty_unit_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_counter_predictor_busy_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_counter_predictor_ready_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_counter_warp_avail_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_counter_cache_access_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_counter_undo_requests = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_counter_avg_coalesced_requests = (float *)calloc(config->num_shader(), sizeof(float));
+        
     
     rt_cur_warp_mem_size = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_warp_id = (int *)calloc(config->num_shader(), sizeof(int));
