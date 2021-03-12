@@ -2833,15 +2833,15 @@ void rt_unit::cycle() {
     if (m_config->m_rt_max_warps > 0) {
       // Clear all warps if coalesced
       if (m_config->m_rt_coalesce_warps) {
-        bool requester_thread_found = false;
+        unsigned requester_thread_found = 0;
         pipe_reg.clear_mem_fetch_wait(mf->get_addr());
         if (!m_config->m_rt_lock_threads) {
-          requester_thread_found |= pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
+          requester_thread_found += pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
         }
         for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
           (it->second).clear_mem_fetch_wait(mf->get_addr());
           if (!m_config->m_rt_lock_threads) {
-            requester_thread_found |= (it->second).clear_rt_awaiting_threads(mf->get_addr());
+            requester_thread_found += (it->second).clear_rt_awaiting_threads(mf->get_addr());
           }
         }
         if (m_config->m_rt_warppool) {
@@ -2851,7 +2851,7 @@ void rt_unit::cycle() {
         }
         
         // Make sure at least one thread accepted the response. (Other threads might still be completing intersection test)
-        if (!requester_thread_found) {
+        if (requester_thread_found == 0) {
           printf("Requester not found for: 0x%x\n", mf->get_addr());
         }
       } 
@@ -3039,46 +3039,57 @@ void rt_unit::cycle() {
   bool repacked = false;
   
   if (!done && !rt_inst.empty()) {
+    
     unsigned warp_id = rt_inst.warp_id();
     
-    std::deque<unsigned> rt_active_thread_list;
-    if (m_config->m_rt_threadcompaction) {
+    // Skip compaction for sampler warps
+    if (warp_id != (m_config->max_warps_per_shader + 2)) {
       
-      // Get a list of the still active threads in the warp
-      rt_active_thread_list = rt_inst.get_rt_active_thread_list();
-      assert(!rt_active_thread_list.empty());
-      
-      // Loop through all other warps to see if there are empty slots
-      for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
-        for (unsigned i=0; i<m_config->warp_size; i++) {
-          
-          // If there's a completed thread, swap
-          if (it->second.rt_mem_accesses_empty(i)) {
-            unsigned next_thread = rt_active_thread_list.front();
-            it->second.set_thread_info(i, rt_inst.get_thread_info(next_thread));
-            rt_inst.clear_thread_info(next_thread);
-            rt_active_thread_list.pop_front();
+      std::deque<unsigned> rt_active_thread_list;
+      if (m_config->m_rt_threadcompaction) {
+        
+        // Get a list of the still active threads in the warp
+        rt_active_thread_list = rt_inst.get_rt_active_thread_list();
+        assert(!rt_active_thread_list.empty());
+        
+        // Loop through all other warps to see if there are empty slots
+        for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
+          for (unsigned i=0; i<m_config->warp_size; i++) {
+            
+            // If there's a completed thread, swap
+            if (it->second.rt_mem_accesses_empty(i)) {
+              unsigned next_thread = rt_active_thread_list.front();
+              it->second.set_thread_info(i, rt_inst.get_thread_info(next_thread));
+              rt_inst.clear_thread_info(next_thread);
+              rt_active_thread_list.pop_front();
+            }
+            
+            // If the list becomes empty, the warp is complete.
+            if (rt_active_thread_list.empty()) {
+              break;
+            }
           }
-          
-          // If the list becomes empty, the warp is complete.
           if (rt_active_thread_list.empty()) {
             break;
           }
         }
-        if (rt_active_thread_list.empty()) {
-          break;
-        }
       }
-    }
-    
-    
-    if (m_config->m_rt_threadcompaction && rt_active_thread_list.empty()) {
-      rt_inst.clear_mem_fetch_wait();
-      rt_inst.clear_rt_access();
-      // Check that the warp is complete
-      assert(!rt_inst.mem_fetch_wait(m_config->m_rt_lock_threads));
-      assert(!rt_inst.empty());
-      repacked = true;
+      
+      
+      if (m_config->m_rt_threadcompaction && rt_active_thread_list.empty()) {
+        rt_inst.clear_mem_fetch_wait();
+        rt_inst.clear_rt_access();
+        // Check that the warp is complete
+        assert(!rt_inst.mem_fetch_wait(m_config->m_rt_lock_threads));
+        assert(!rt_inst.empty());
+        repacked = true;
+      }
+      else {
+        // Move unconditionally to m_current_warps
+        m_current_warps[rt_inst.get_uid()] = rt_inst;
+        rt_inst.clear();
+        return;
+      }
     }
     else {
       // Move unconditionally to m_current_warps
@@ -3214,6 +3225,11 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
     fail_type = RT_C_MEM;
   }
   
+  if (m_config->m_rt_threadcompaction) {
+    // Clear RT accesses for thread compaction because this is affected by swapping threads
+    // Should not affect the system because m_next_rt_accesses_set is regenerated each cycle
+    inst.clear_rt_access();
+  }
   // Done if no more rt mem accesses
   return inst.rt_mem_accesses_empty();
 }

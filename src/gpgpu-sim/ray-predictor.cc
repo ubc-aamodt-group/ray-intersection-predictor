@@ -126,11 +126,10 @@ void ray_predictor::insert(const warp_inst_t& inst) {
   num_rays += inst.active_count();
   m_total_threads += inst.active_count();
   
-  unsigned latency = m_per_thread_latency;
   for (unsigned i=0; i<warp_size; i++) {
     // Set latency
+    unsigned latency = (1 + std::floor(i / m_lookup_bandwidth)) * m_per_thread_latency;
     m_current_warp.add_thread_latency(i, latency);
-    latency = std::floor(i / m_lookup_bandwidth) * m_per_thread_latency;
     
     unsigned long long ray_hash = m_current_warp.rt_ray_hash(i);
     
@@ -309,31 +308,35 @@ warp_inst_t ray_predictor::retrieve() {
   // After retrieved, no longer ready
   m_ready = false;
   
+  // Only handles one warp at a time
+  if (!m_repack_warps && !m_sampler) {
+    return m_current_warp;
+  }
+  
+  // If using the sampler, check for sample warps first
   if (m_sampler) {
-    
     assert(!m_sample_warp.empty() || !m_predictor_warps.empty());
     
     if (!m_sample_warp.empty()) {
       m_retrieved = true;
+      if (!m_predictor_warps.empty() && m_cycles < 0) m_cycles = 0;
       return m_sample_warp;
-    }
-    else {
-      m_current_warp = m_predictor_warps.front();
-      m_predictor_warps.pop_front();
-      
-      if (!m_predictor_warps.empty()) {
-        reset_cycle_delay(m_cycle_delay);
-      }
-      
-      return m_current_warp;
     }
   }
   
-  // Only handles one warp at a time
-  else if (!m_repack_warps) {
+  // If not returned, then must not be any sampler warps
+  if (!m_repack_warps) {
+    m_current_warp = m_predictor_warps.front();
+    m_predictor_warps.pop_front();
+    
+    if (!m_predictor_warps.empty()) {
+      reset_cycle_delay(m_cycle_delay);
+    }
+    
     return m_current_warp;
   }
   
+  // If not returned, then must be repacking
   else {
     // If repacking warps, check if there are any ready warps
     
@@ -763,64 +766,54 @@ void ray_predictor::evict_entry() {
 
 void ray_predictor::cycle() {
   
-  // Check if predictor is full
-  if (m_repack_warps) {
-    if (m_predictor_warps.size() >= 16) {
+  // For single warp predictor, full == busy
+  if (!m_repack_warps && !m_sampler) {
+    if (m_cycles == 0) {
+      m_busy = false;
+      m_ready = true;
+      m_cycles = -1;
+    }
+  }
+  
+  else {
+    // Check if predictor is full
+    if (m_sampler_warps.size() + m_predictor_warps.size() >= 16) {
+      m_busy = true;
+    }
+    else if (!m_sample_warp.empty() && !m_retrieved) {
       m_busy = true;
     }
     else {
       m_busy = false;
     }
     
-    // Check if timer expired or if any categories are ready
-    if (m_cycles == 0) {
-      m_ready = true;
-      m_cycles = -1;
-    }
-    else if (verified_threads.size() > 32 ||
-          unverified_threads.size() > 32 ||
-          predicted_threads.size() > 32 ||
-          unpredicted_threads.size() > 32)
-    {
-      m_ready = true;
-      m_cycles = -1;
-    }
-  }
-  
-  else if (m_sampler) {
-    if (!m_sample_warp.empty()) {
-      if (!m_retrieved) {
+    // Initialize to false and check for any true conditions
+    m_ready = false;
+
+    if (!m_sample_warp.empty() && m_retrieved) m_sample_warp.clear();
+    
+    // Check for any sample warps
+    if (!m_sample_warp.empty() && !m_retrieved) {
         m_ready = true;
-      }
-      else {
-        m_sample_warp.clear();
-        m_ready = false;
-      }
     }
+    
+    // Check if timer expired or if any categories are ready
     else if (m_cycles == 0) {
       m_ready = true;
       m_cycles = -1;
     }
-    else {
-      m_ready = false;
-    }
     
-    if (m_sampler_warps.size() + m_predictor_warps.size() >= 16) {
-      m_busy = true;
-    }
-    else {
-      m_busy = false;
-    }
-    
-  }
-  
-  // For single warp predictor, full == busy
-  else {
-    if (m_cycles == 0) {
-      m_busy = false;
+    // Check for any full categories
+    else if (m_repack_warps && (
+          verified_threads.size() > 32 ||
+          unverified_threads.size() > 32 ||
+          predicted_threads.size() > 32 ||
+          unpredicted_threads.size() > 32))
+    {
       m_ready = true;
       m_cycles = -1;
     }
+    
   }
   
   // Decrement timer

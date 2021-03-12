@@ -1269,7 +1269,7 @@ class warp_inst_t : public inst_t {
   void clear_mem_fetch_wait() {
     m_mf_awaiting_response.clear();
   }
-  bool clear_rt_awaiting_threads(new_addr_type addr);
+  unsigned clear_rt_awaiting_threads(new_addr_type addr);
   void clear_rt_access(new_addr_type addr) {
     m_next_rt_accesses_set.erase(addr);
   }
@@ -1291,6 +1291,8 @@ class warp_inst_t : public inst_t {
   void set_mem_fetch_wait(new_addr_type addr) {
     m_mf_awaiting_response.insert(addr);
   }
+  
+  void print_rt_accesses();
   
   std::set<new_addr_type> get_rt_accesses() { return m_next_rt_accesses_set; }
   
