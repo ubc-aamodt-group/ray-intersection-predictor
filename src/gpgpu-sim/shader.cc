@@ -3207,12 +3207,6 @@ void rt_unit::cycle() {
     rt_inst.clear();
   }
   
-  if (m_config->m_rt_threadcompaction) {
-    unsigned n_warps_predictor = m_ray_predictor->num_predictor_warps();
-    unsigned n_warps_predictor_queue = m_predictor_queue.size();
-    assert(n_warps == m_current_warps.size() + n_warps_predictor + n_warps_predictor_queue);
-  }
-  
 }
 
 bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem_stage_access_type &fail_type) {

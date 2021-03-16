@@ -787,8 +787,6 @@ void ray_predictor::cycle() {
       m_busy = false;
     }
     
-    // Initialize to false and check for any true conditions
-    m_ready = false;
 
     if (!m_sample_warp.empty() && m_retrieved) m_sample_warp.clear();
     
