@@ -3054,8 +3054,10 @@ void rt_unit::cycle() {
       // If there is an update
       if (thread > -1) {
         new_addr_type predict_node = (it->second).rt_ray_prediction(thread);
-        unsigned long long ray_hash = (it->second).rt_ray_hash(thread);
-        m_ray_predictor->add_entry(ray_hash, predict_node);
+        const std::vector<unsigned long long>& ray_hashes = (it->second).rt_ray_hashes(thread);
+        for (uint64_t ray_hash : ray_hashes) {
+          m_ray_predictor->add_entry(ray_hash, predict_node);
+        }
         updates++;
       }
     }

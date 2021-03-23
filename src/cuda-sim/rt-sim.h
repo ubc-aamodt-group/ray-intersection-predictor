@@ -24,7 +24,8 @@ float magic_min7(float a0, float a1, float b0, float b1, float c0, float c1, flo
 float3 get_t_bound(float3 box, float3 origin, float3 idirection);
 
 // Predictor
-unsigned long long compute_hash(Ray ray, const float3& world_min, const float3& world_max);
+typedef uint64_t(*HashFunc)(const Ray&, const float3&, const float3&);
+std::vector<unsigned long long> get_ray_hashes(const Ray&, const float3&, const float3&);
 
 // Ray Data Types
 struct Hit

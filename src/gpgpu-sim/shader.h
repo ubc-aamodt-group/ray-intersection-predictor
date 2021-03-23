@@ -1597,9 +1597,14 @@ class shader_core_config : public core_config {
     }
     
     bool print_ray_predictor_settings;
-    sscanf(m_rt_predictor_config_string, "%u,%u,%u,%c,%u,%u,%u,%u,%u,%c,%c,%c,%u,%u,%u,%u,%u,%c", &print_ray_predictor_settings, &m_rt_predictor_config.latency,
-            &m_rt_predictor_config.max_size, &m_rt_predictor_config.hash_type, &m_rt_predictor_config.hash_francois_bits,
+    sscanf(m_rt_predictor_config_string, "%u,%u,%u,%u,%u,%u,%u,%u,%u,%f,%u,%u,%c,%c,%c,%u,%u,%u,%u,%u,%c", &print_ray_predictor_settings, &m_rt_predictor_config.latency,
+            &m_rt_predictor_config.max_size,
+            &m_rt_predictor_config.hash_use_francois,
+            &m_rt_predictor_config.hash_use_grid_spherical,
+            &m_rt_predictor_config.hash_use_two_point,
+            &m_rt_predictor_config.hash_francois_bits,
             &m_rt_predictor_config.hash_grid_bits, &m_rt_predictor_config.hash_sphere_bits,
+            &m_rt_predictor_config.hash_two_point_est_length_ratio,
             &m_rt_predictor_config.go_up_level, &m_rt_predictor_config.entry_cap, &m_rt_predictor_config.entry_replacement_policy,
             &m_rt_predictor_config.replacement_policy, &m_rt_predictor_config.placement_policy, &m_rt_predictor_config.n_ways,
             &m_rt_predictor_config.virtualize, &m_rt_predictor_config.virtualize_delay, &m_rt_predictor_config.virtual_table_size,
@@ -1609,10 +1614,13 @@ class shader_core_config : public core_config {
       printf("GPGPU-Sim: Ray Predictor Settings:\n");
       printf("\tLatency: %d\n", m_rt_predictor_config.latency);
       printf("\tTable size: %d\n", m_rt_predictor_config.max_size);
-      printf("\tHash type: %c\n", m_rt_predictor_config.hash_type);
+      printf("\tUse francois hash: %s\n", m_rt_predictor_config.hash_use_francois ? "yes" : "no");
+      printf("\tUse grid-spherical hash: %s\n", m_rt_predictor_config.hash_use_grid_spherical ? "yes" : "no");
+      printf("\tUse two-point hash: %s\n", m_rt_predictor_config.hash_use_two_point ? "yes" : "no");
       printf("\tHash francois bits (loose vs. tight): %d\n", m_rt_predictor_config.hash_francois_bits);
       printf("\tHash grid bits: %d\n", m_rt_predictor_config.hash_grid_bits);
       printf("\tHash sphere bits: %d\n", m_rt_predictor_config.hash_sphere_bits);
+      printf("\tHash two-point estimated length ratio: %f\n", m_rt_predictor_config.hash_two_point_est_length_ratio);
       printf("\tGo up level: %d\n", m_rt_predictor_config.go_up_level);
       printf("\tMax nodes per entry: %d\n", m_rt_predictor_config.entry_cap);
       printf("\tNode replacement policy: %c\n", m_rt_predictor_config.entry_replacement_policy);

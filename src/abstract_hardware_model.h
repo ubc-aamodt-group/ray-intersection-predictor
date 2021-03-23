@@ -526,10 +526,13 @@ struct textureReferenceAttr {
 struct ray_predictor_config {
   unsigned latency;
   unsigned max_size;
-  char hash_type;
+  unsigned hash_use_francois;
+  unsigned hash_use_grid_spherical;
+  unsigned hash_use_two_point;
   unsigned hash_francois_bits;
   unsigned hash_grid_bits;
   unsigned hash_sphere_bits;
+  float hash_two_point_est_length_ratio;
   unsigned go_up_level;
   unsigned entry_cap;
   char entry_replacement_policy;
@@ -1249,8 +1252,8 @@ class warp_inst_t : public inst_t {
   }
   void set_rt_mem_accesses(unsigned int tid, const std::deque<new_addr_type>& mem_accesses);
   int update_rt_mem_accesses(unsigned int tid, bool valid, const std::deque<new_addr_type> &mem_accesses);
-  void set_rt_ray_properties(unsigned int tid, Ray ray, unsigned long long hash, new_addr_type prediction, bool intersect, int num_nodes_accessed, int num_triangles_accessed);
-  unsigned long long rt_ray_hash(unsigned int tid) const { return m_per_scalar_thread[tid].ray_hash; }
+  void set_rt_ray_properties(unsigned int tid, Ray ray, const std::vector<unsigned long long>& hashes, new_addr_type prediction, bool intersect, int num_nodes_accessed, int num_triangles_accessed);
+  const std::vector<unsigned long long>& rt_ray_hashes(unsigned int tid) const { return m_per_scalar_thread[tid].ray_hashes; }
   bool rt_ray_intersect(unsigned int tid) const { return m_per_scalar_thread[tid].ray_intersect; }
   Ray rt_ray_properties(unsigned int tid) const { return m_per_scalar_thread[tid].ray_properties; }
   new_addr_type rt_ray_prediction(unsigned int tid) const { return m_per_scalar_thread[tid].ray_prediction; }
@@ -1341,7 +1344,7 @@ class warp_inst_t : public inst_t {
     std::deque<new_addr_type> raytrace_mem_accesses;
     bool ray_intersect;
     new_addr_type ray_prediction;
-    unsigned long long ray_hash;
+    std::vector<unsigned long long> ray_hashes;
     Ray ray_properties;
     unsigned intersection_delay;
     bool update_predictor;

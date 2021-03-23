@@ -131,19 +131,19 @@ void ray_predictor::insert(const warp_inst_t& inst) {
     unsigned latency = (1 + std::floor(i / m_lookup_bandwidth)) * m_per_thread_latency;
     m_current_warp.add_thread_latency(i, latency);
     
-    unsigned long long ray_hash = m_current_warp.rt_ray_hash(i);
+    const std::vector<unsigned long long>& ray_hashes = m_current_warp.rt_ray_hashes(i);
     
     // Check if valid ray
     if (!m_current_warp.active(i)) continue;
     
-    unsigned long long index;
+    std::vector<unsigned long long> indexes;
     // Check predictor table
-    if (check_table(ray_hash, index)) {
+    if (check_table(ray_hashes, indexes)) {
       // If predictor hit, iterate through predictions
       num_predicted++;
       
       // Read list of predictions from predictor table
-      std::vector<new_addr_type> prediction_list = get_prediction_list(index);
+      std::vector<new_addr_type> prediction_list = get_prediction_list(indexes);
       
       // Magic version where all predictions are valid
       if (m_magic_verify) {
@@ -160,7 +160,9 @@ void ray_predictor::insert(const warp_inst_t& inst) {
         
         
       if (valid) {
-        update_entry_use(index, hit_node);
+        for (unsigned long long index : indexes) {
+          update_entry_use(index, hit_node);
+        }
         num_valid++;
         
         // Add this thread to list of verified threads
@@ -207,10 +209,14 @@ void ray_predictor::insert(const warp_inst_t& inst) {
           // Update predictor table
           if (m_oracle_update) {
             new_addr_type predict_node = m_current_warp.rt_ray_prediction(i);
-            add_entry(ray_hash, predict_node);
+            for (uint64_t ray_hash : ray_hashes) {
+              add_entry(ray_hash, predict_node);
+            }
             
             if (m_virtualize) {
-              m_core->get_cluster()->add_ray_predictor_entry(ray_hash, predict_node);
+              for (uint64_t ray_hash : ray_hashes) {
+                m_core->get_cluster()->add_ray_predictor_entry(ray_hash, predict_node);
+              }
             }
           }
           // Mark as needing update
@@ -238,7 +244,8 @@ void ray_predictor::insert(const warp_inst_t& inst) {
       if (m_virtualize) {
         // Check second level table
         reset_cycle_delay(m_cycle_delay + m_virtualize_delay);
-        predictor_entry virtual_entry = m_core->get_cluster()->check_ray_predictor_table(ray_hash);
+        // TODO: Use multiple hash functions
+        predictor_entry virtual_entry = m_core->get_cluster()->check_ray_predictor_table(ray_hashes[0]);
         bool valid;
         
         // If hit in virtual table, validate
@@ -265,7 +272,7 @@ void ray_predictor::insert(const warp_inst_t& inst) {
           if (!virtual_entry.m_valid) num_virtual_miss++;
           if (m_current_warp.rt_ray_intersect(i)) {
             new_addr_type predict_node = m_current_warp.rt_ray_prediction(i);
-            m_core->get_cluster()->add_ray_predictor_entry(ray_hash, predict_node);
+            m_core->get_cluster()->add_ray_predictor_entry(ray_hashes[0], predict_node);
           }
           GPGPU_Context()->func_sim->g_actual_raytrace_node_accesses += m_current_warp.rt_num_nodes_accessed(i);
           GPGPU_Context()->func_sim->g_actual_raytrace_triangle_accesses += m_current_warp.rt_num_triangles_accessed(i);
@@ -280,7 +287,9 @@ void ray_predictor::insert(const warp_inst_t& inst) {
         // Update now
         if (m_oracle_update) {
           new_addr_type predict_node = m_current_warp.rt_ray_prediction(i);
-          add_entry(ray_hash, predict_node);
+          for (uint64_t ray_hash : ray_hashes) {
+            add_entry(ray_hash, predict_node);
+          }
         }
         // Mark as need update
         else {
@@ -488,52 +497,62 @@ warp_inst_t ray_predictor::retrieve() {
   }
 }
 
-bool ray_predictor::check_table(unsigned long long hash, unsigned long long &index) {
+bool ray_predictor::check_table(const std::vector<unsigned long long>& hashes, std::vector<unsigned long long>& indexes) {
   unsigned long long cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle +
     GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
 
   // Direct mapped predictor
   if (m_placement_policy == 'd') {
-    index = compute_index(hash, std::log2(m_table_size));
-    if (m_predictor_table.find(index) != m_predictor_table.end())
-      return (m_predictor_table[index].m_tag == hash && m_predictor_table[index].m_valid);
-    else
-      return false;
+    for (uint64_t hash : hashes) {
+      unsigned long long index = compute_index(hash, std::log2(m_table_size));
+      if (m_predictor_table.find(index) != m_predictor_table.end() &&
+          m_predictor_table[index].m_tag == hash && m_predictor_table[index].m_valid)
+        indexes.push_back(index);
+    }
+    return !indexes.empty();
   }
   
   // Fully associative predictor
   else if (m_placement_policy == 'a') {
-    index = hash;
-    bool hit = (m_predictor_table.find(hash) != m_predictor_table.end());
-    
-    if (hit) assert(m_predictor_table[hash].m_valid);
-    
-    // Update LRU
-    if (hit && m_placement_policy == 'a' && m_replacement_policy == 'l') {
-      m_predictor_table[hash].m_timestamp = cycle;
+    for (uint64_t hash : hashes) {
+      unsigned long long index = hash;
+      bool hit = (m_predictor_table.find(hash) != m_predictor_table.end());
+      
+      if (hit) {
+        assert(m_predictor_table[hash].m_valid);
+        indexes.push_back(index);
+      }
+      
+      // Update LRU
+      if (hit && m_placement_policy == 'a' && m_replacement_policy == 'l') {
+        m_predictor_table[hash].m_timestamp = cycle;
+      }
     }
     
-    return hit;
+    return !indexes.empty();
   }
   
   // Set associative predictor
   else if (m_placement_policy == 's') {
-    unsigned i = compute_index(hash, std::log2(m_table_size/m_ways));
-    
-    // Check each way
-    for (unsigned way=0; way<m_ways; way++) {
-      if (m_predictor_table[i + way*m_table_size/m_ways].m_valid && m_predictor_table[i + way*m_table_size/m_ways].m_tag == hash) {
-        // Update LRU
-        if (m_replacement_policy == 'l') {
-          m_predictor_table[i + way*m_table_size/m_ways].m_timestamp = cycle;
+    for (uint64_t hash : hashes) {
+      unsigned i = compute_index(hash, std::log2(m_table_size/m_ways));
+      
+      // Check each way
+      for (unsigned way=0; way<m_ways; way++) {
+        if (m_predictor_table[i + way*m_table_size/m_ways].m_valid && m_predictor_table[i + way*m_table_size/m_ways].m_tag == hash) {
+          // Update LRU
+          if (m_replacement_policy == 'l') {
+            m_predictor_table[i + way*m_table_size/m_ways].m_timestamp = cycle;
+          }
+          // Update index
+          unsigned long long index = i + way*m_table_size/m_ways;
+          indexes.push_back(index);
+          break;
         }
-        // Update index
-        index = i + way*m_table_size/m_ways;
-        return true;
       }
     }
-    // Otherwise miss
-    return false;
+
+    return !indexes.empty();
   }
   
   assert(0);
@@ -602,35 +621,80 @@ void ray_predictor::add_node_to_predictor_entry(unsigned long long index, new_ad
   }
 }
 
-std::vector<new_addr_type> ray_predictor::get_prediction_list(unsigned long long index) const {
-  const predictor_entry& entry = m_predictor_table.at(index);
-  std::vector<new_addr_type> nodes(entry.m_nodes.begin(), entry.m_nodes.end());
+std::vector<new_addr_type> ray_predictor::get_prediction_list(const std::vector<unsigned long long>& indexes) const {
+  // map that stores (node -> count, replacement counter) pairs
+  std::unordered_map<new_addr_type, std::pair<int, unsigned long long>> unprocessed_nodes;
 
-  switch (m_node_replacement_policy) {
-    // Sort into insertion order
-    case 'n':
-    case 'f':
-      std::sort(nodes.begin(), nodes.end(), [&](new_addr_type a, new_addr_type b) {
-        return entry.m_node_use_map.at(a) < entry.m_node_use_map.at(b);
-      });
-      break;
-    // LRU: sort most recently used first
-    // Least used: sort most used first
-    case 'l':
-    case 'u':
-      std::sort(nodes.begin(), nodes.end(), [&](new_addr_type a, new_addr_type b) {
-        return entry.m_node_use_map.at(a) > entry.m_node_use_map.at(b);
-      });
-      break;
-    default:
-      assert(false);
+  for (unsigned long long index : indexes) {
+    const predictor_entry& entry = m_predictor_table.at(index);
+
+    for (new_addr_type n : entry.m_nodes) {
+      auto node_it = unprocessed_nodes.find(n);
+      if (node_it == unprocessed_nodes.end()) {
+        unprocessed_nodes[n] = { 1, entry.m_node_use_map.at(n) };
+      } else {
+        auto& node_it_pair = node_it->second;
+        node_it_pair.first++; // Increment count
+
+        switch (m_node_replacement_policy) {
+          // Insertion order
+          case 'n':
+          case 'f':
+            node_it_pair.second = std::min(node_it_pair.second, entry.m_node_use_map.at(n));
+            break;
+          case 'l':
+          case 'u':
+            // Max priority
+            node_it_pair.second = std::max(node_it_pair.second, entry.m_node_use_map.at(n));
+            break;
+          default:
+            assert(false);
+        }
+      }
+    }
   }
+
+  std::vector<new_addr_type> nodes;
+
+  for (const auto& node_it : unprocessed_nodes) {
+    nodes.push_back(node_it.first);
+  }
+
+  std::sort(nodes.begin(), nodes.end(), [&](new_addr_type a, new_addr_type b) {
+    const auto& n_a = unprocessed_nodes.at(a);
+    const auto& n_b = unprocessed_nodes.at(b);
+
+    // Sort first by count
+    if (n_a.first != n_b.first) {
+      return n_a.first > n_b.first;
+    }
+
+    // Then by counter
+    switch (m_node_replacement_policy) {
+      // Sort into insertion order
+      case 'n':
+      case 'f':
+        return n_a.second < n_b.second;
+      // LRU: sort most recently used first
+      // Least used: sort most used first
+      case 'l':
+      case 'u':
+        return n_a.second > n_b.second;
+      default:
+        assert(false);
+    }
+  });
 
   return nodes;
 }
 
 void ray_predictor::update_entry_use(unsigned long long index, new_addr_type node) {
   predictor_entry& entry = m_predictor_table[index];
+
+  if (entry.m_node_use_map.find(node) == entry.m_node_use_map.end()) {
+    return;
+  }
+
   unsigned long long cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle +
     GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
 
@@ -640,11 +704,9 @@ void ray_predictor::update_entry_use(unsigned long long index, new_addr_type nod
       // Do nothing
       break;
     case 'l':
-      assert(entry.m_node_use_map.find(node) != entry.m_node_use_map.end());
       entry.m_node_use_map[node] = cycle;
       break;
     case 'u':
-      assert(entry.m_node_use_map.find(node) != entry.m_node_use_map.end());
       entry.m_node_use_map[node]++;
       break;
     default:

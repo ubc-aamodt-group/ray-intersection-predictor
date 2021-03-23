@@ -3,6 +3,8 @@
 #include "rt-sim.h"
 #include "../../libcuda/gpgpu_context.h"
 
+typedef uint64_t(*HashFunc)(const Ray&, const float3&, const float3&);
+
 void decode_space( memory_space_t &space, ptx_thread_info *thread, const operand_info &op, memory_space *&mem, addr_t &addr);
 
 void print_float4(float4 printVal) {
@@ -358,9 +360,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     }
 
     // Compute ray hash
-    unsigned long long ray_hash;
-    ray_hash = compute_hash(ray_properties, world_min, world_max);
-    thread->add_ray_hash(ray_hash);
+    std::vector<unsigned long long> ray_hashes;
+    ray_hashes = get_ray_hashes(ray_properties, world_min, world_max);
+    thread->add_ray_hashes(ray_hashes);
     thread->add_ray_properties(ray_properties);
     
     // Traversal stack
@@ -895,72 +897,75 @@ uint64_t hash_francois_grid_spherical(const Ray &ray,
          hash_francois(ray, num_francois_bits);
 }
 
-unsigned long long compute_hash(Ray ray, const float3& world_min, const float3& world_max) { 
-  const ray_predictor_config& config = GPGPU_Context()->the_gpgpusim->g_the_gpu->get_config().get_ray_predictor_config();
+uint64_t hash_two_point(const Ray &ray,
+                        const float3& min,
+                        const float3& max,
+                        uint32_t num_grid_bits,
+                        float est_length_ratio) {
+  uint64_t hash_1 = hash_origin_grid(ray.get_origin(), min, max, num_grid_bits);
+  float3 d = max - min;
+  float max_extent_length = std::max(std::max(d.x, d.y), d.z);
+  float3 est_target = ray.get_origin() + est_length_ratio * max_extent_length * ray.get_direction();
+  uint64_t hash_2 = hash_origin_grid(est_target, min, max, num_grid_bits);
+  return hash_1 ^ hash_2;
+}
+
+const std::vector<HashFunc>& get_hash_functions() {
+  static std::vector<HashFunc> hash_funcs;
+
+  if (!hash_funcs.empty()) {
+    return hash_funcs;
+  }
+
+  const ray_predictor_config& config =
+    GPGPU_Context()->the_gpgpusim->g_the_gpu->get_config().get_ray_predictor_config();
 
   // Hash type
-  char hash_type = config.hash_type;
-  unsigned hash_francois_bits = config.hash_francois_bits;
-  unsigned hash_grid_bits = config.hash_grid_bits;
-  unsigned hash_sphere_bits = config.hash_sphere_bits;
-  unsigned long long hash;
-  
-  switch (hash_type) {
-    case 'f': {
-        hash = hash_francois(ray, hash_francois_bits);
-        break;
-    }
-    case 's': {
-      hash = hash_grid_spherical(ray, world_min, world_max, hash_grid_bits, hash_sphere_bits);
-      break;
-    }
-    case 'c': {
-      hash = hash_francois_grid_spherical(ray, world_min, world_max, hash_francois_bits,
-                                          hash_grid_bits, hash_sphere_bits);
-      break;
-    }
-    case 'x': {
-      // ProfilePhase p(Prof::PredictorHash);
+  bool hash_use_francois = config.hash_use_francois;
+  bool hash_use_grid_spherical = config.hash_use_grid_spherical;
+  bool hash_use_two_point = config.hash_use_two_point;
 
-      unsigned long long hash_o_x = static_cast<unsigned long long>(hash_comp(ray.get_origin().x, 2));
-      unsigned long long hash_o_y = static_cast<unsigned long long>(hash_comp(ray.get_origin().y, 2));
-      unsigned long long hash_o_z = static_cast<unsigned long long>(hash_comp(ray.get_origin().z, 2));
-      unsigned long long hash_d_x = static_cast<unsigned long long>(hash_comp(ray.get_direction().x, 2));
-      unsigned long long hash_d_y = static_cast<unsigned long long>(hash_comp(ray.get_direction().y, 2));
-      unsigned long long hash_d_z = static_cast<unsigned long long>(hash_comp(ray.get_direction().z, 2));
-
-      // unsigned long long can fit 8 bytes = 8 * uint8_t = 4 * uint16_t
-
-      unsigned long long hash_0 = hash_o_x ^ hash_d_z;
-      unsigned long long hash_1 = hash_o_y ^ hash_d_y;
-      unsigned long long hash_2 = hash_o_z ^ hash_d_x;
-
-      hash = (hash_0 << 0) |
-            (hash_1 << 16) |
-            (hash_2 << 32);
-      break;
-    }
-      
-    default: {
-
-      // Debugging hash
-      unsigned long long hash_o_x = (int)std::floor(ray.get_origin().x) & 0xF;
-      unsigned long long hash_o_y = (int)std::floor(ray.get_origin().y) & 0xF;
-      unsigned long long hash_o_z = (int)std::floor(ray.get_origin().z) & 0xF;
-      unsigned long long hash_d_x = (int)std::floor(ray.get_direction().x) & 0xF;
-      unsigned long long hash_d_y = (int)std::floor(ray.get_direction().y) & 0xF;
-      unsigned long long hash_d_z = (int)std::floor(ray.get_direction().z) & 0xF;
-      
-      hash = (hash_o_x << 0) |
-                                (hash_o_y << 4) |
-                                (hash_o_z << 8) |
-                                (hash_d_x << 12) |
-                                (hash_d_y << 16) |
-                                (hash_d_z << 20);
-      break;
-    }
-
+  if (hash_use_francois) {
+    hash_funcs.push_back(
+      [](const Ray& ray, const float3& min, const float3& max) -> uint64_t {
+        const ray_predictor_config& config =
+          GPGPU_Context()->the_gpgpusim->g_the_gpu->get_config().get_ray_predictor_config();
+        return hash_francois(ray, config.hash_francois_bits);
+      }
+    );
   }
-  return hash; 
+  if (hash_use_grid_spherical) {
+    hash_funcs.push_back(
+      [](const Ray& ray, const float3& min, const float3& max) {
+        const ray_predictor_config& config =
+          GPGPU_Context()->the_gpgpusim->g_the_gpu->get_config().get_ray_predictor_config();
+        return hash_grid_spherical(ray, min, max, config.hash_grid_bits, config.hash_sphere_bits);
+      }
+    );
+  }
+  if (hash_use_two_point) {
+    hash_funcs.push_back(
+      [](const Ray& ray, const float3& min, const float3& max) -> uint64_t {
+        const ray_predictor_config& config =
+          GPGPU_Context()->the_gpgpusim->g_the_gpu->get_config().get_ray_predictor_config();
+        return hash_two_point(ray, min, max, config.hash_grid_bits, config.hash_two_point_est_length_ratio);
+      }
+    );
+  }
+
+  return hash_funcs;
 }
- 
+
+std::vector<unsigned long long> get_ray_hashes(const Ray &ray, const float3& min, const float3& max) {
+  std::vector<unsigned long long> ray_hashes;
+
+  const std::vector<HashFunc>& hash_funcs = get_hash_functions();
+  for (HashFunc func : hash_funcs) {
+    uint64_t hash = func(ray, min, max);
+    if (std::find(ray_hashes.begin(), ray_hashes.end(), hash) == ray_hashes.end()) {
+      ray_hashes.push_back(hash);
+    }
+  }
+
+  return ray_hashes;
+}

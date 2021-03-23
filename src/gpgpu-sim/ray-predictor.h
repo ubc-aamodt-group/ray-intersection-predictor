@@ -85,13 +85,13 @@ class ray_predictor {
   
     // TODO:
     void evict_entry();
-    bool check_table(unsigned long long hash, unsigned long long &index);
+    bool check_table(const std::vector<unsigned long long>& hashes, std::vector<unsigned long long>& indexes);
     void reset_cycle_delay(unsigned delay) { m_cycles = delay; };
     bool validate_prediction(const std::vector<new_addr_type>& prediction_list, const Ray ray_properties, unsigned tid, new_addr_type& hit_node);
     bool traverse_intersect(const new_addr_type prediction, const Ray ray_properties, std::deque<new_addr_type> &mem_accesses, unsigned& num_nodes_tested, unsigned& num_triangles_tested);
 
     void add_node_to_predictor_entry(unsigned long long index, new_addr_type node);
-    std::vector<new_addr_type> get_prediction_list(unsigned long long index) const;
+    std::vector<new_addr_type> get_prediction_list(const std::vector<unsigned long long>& indexes) const;
     void update_entry_use(unsigned long long index, new_addr_type node);
 
     unsigned long long compute_index(unsigned long long hash, unsigned num_bits) const;
