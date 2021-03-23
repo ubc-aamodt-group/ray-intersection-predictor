@@ -1282,6 +1282,7 @@ class rt_unit : public pipelined_simd_unit {
         void get_cache_stats(cache_stats &cs);
         predictor_stats print_predictor_stats(FILE *fp);
         void reset_rt_predictor_stats();
+        void reset_rt_stats();
         
     protected:
       bool memory_cycle(  warp_inst_t &inst, 
@@ -1345,7 +1346,7 @@ class rt_unit : public pipelined_simd_unit {
       
       std::set<new_addr_type> m_warppool_greedy_accesses;
       std::list<new_addr_type> m_warppool_fifo_list;
-      
+    
       std::set<new_addr_type> m_mem_access_list;
 };
 
@@ -1866,6 +1867,7 @@ struct shader_core_stats_pod {
   unsigned* rt_tot_thread_divergence;
   unsigned rt_warp_coalesced_count;
   unsigned rt_repeated_accesses;
+  unsigned* rt_total_unique_accesses;
   unsigned rt_consecutive_reservation_fails;
   unsigned rt_repeated_reservation_fails;
   
@@ -1900,6 +1902,7 @@ struct shader_core_stats_pod {
   // More RT Unit stat counters
   unsigned* rt_counter_response_cycles;
   unsigned* rt_counter_full_unit_cycles;
+  unsigned* rt_counter_awaiting_predictor_cycles;
   unsigned* rt_counter_empty_unit_cycles;
   unsigned* rt_counter_predictor_busy_cycles;
   unsigned* rt_counter_predictor_ready_cycles;
@@ -1909,6 +1912,7 @@ struct shader_core_stats_pod {
   unsigned* rt_counter_undo_requests;
   float* rt_counter_avg_coalesced_requests;
   
+  unsigned long long* rt_counter_active_threads;
   
   unsigned* rt_warppool_greedy_ratio;
   
@@ -1941,8 +1945,6 @@ struct shader_core_stats_pod {
   
   unsigned rt_warppool_wait_time[200];
   unsigned rt_mem_wait_time[200];
-  
-  std::set<new_addr_type> rt_unique_accesses;
   
   std::set<new_addr_type> rt_cache_unused;
   std::map<new_addr_type, unsigned> rt_cache_usefulness;
@@ -2077,9 +2079,12 @@ class shader_core_stats : public shader_core_stats_pod {
     rt_cache_accesses = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_cache_misses = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_cache_hits = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+
+    rt_total_unique_accesses = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     
     rt_counter_response_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_counter_full_unit_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    rt_counter_awaiting_predictor_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_counter_empty_unit_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_counter_predictor_busy_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_counter_predictor_ready_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
@@ -2087,7 +2092,7 @@ class shader_core_stats : public shader_core_stats_pod {
     rt_counter_cache_access_cycles = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_counter_undo_requests = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_counter_avg_coalesced_requests = (float *)calloc(config->num_shader(), sizeof(float));
-        
+    rt_counter_active_threads = (unsigned long long*)calloc(config->num_shader(), sizeof(unsigned long long));
     
     rt_cur_warp_mem_size = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_warp_id = (int *)calloc(config->num_shader(), sizeof(int));
@@ -2256,7 +2261,7 @@ class shader_core_ctx : public core_t {
   predictor_stats print_predictor_stats(FILE *fp);
   void get_cache_stats(cache_stats &cs);
   void get_rt_cache_stats(cache_stats &cs);
-  void reset_rt_predictor_stats();
+  void reset_rt_stats();
   void get_L1I_sub_stats(struct cache_sub_stats &css) const;
   void get_L1D_sub_stats(struct cache_sub_stats &css) const;
   void get_L1C_sub_stats(struct cache_sub_stats &css) const;
@@ -2656,7 +2661,7 @@ class simt_core_cluster {
 
   void get_cache_stats(cache_stats &cs) const;
   void get_rt_cache_stats(cache_stats &cs) const;
-  void reset_rt_predictor_stats();
+  void reset_rt_stats();
   void get_L1I_sub_stats(struct cache_sub_stats &css) const;
   void get_L1D_sub_stats(struct cache_sub_stats &css) const;
   void get_L1C_sub_stats(struct cache_sub_stats &css) const;

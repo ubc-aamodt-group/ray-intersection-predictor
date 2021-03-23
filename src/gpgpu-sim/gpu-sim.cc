@@ -1169,7 +1169,7 @@ void gpgpu_sim::update_stats() {
   gpu_occupancy = occupancy_stats();
   
   for (unsigned i = 0; i < m_shader_config->n_simt_clusters; i++) {
-    m_cluster[i]->reset_rt_predictor_stats();
+    m_cluster[i]->reset_rt_stats();
   }
 }
 

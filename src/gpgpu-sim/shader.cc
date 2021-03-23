@@ -728,6 +728,10 @@ void shader_core_stats::print(FILE *fout) const {
   fprintf(fout, "rt_consecutive_reservation_fails = %d\n", rt_consecutive_reservation_fails);
   fprintf(fout, "rt_repeated_reservation_fails = %d\n", rt_repeated_reservation_fails);
   
+  for (unsigned i=0; i<m_config->num_shader(); i++) {
+    fprintf(fout, "rt_unique_accesses = %d\n", rt_total_unique_accesses[i]);
+  }
+  
   fprintf(fout, "rt_predictor_update_bandwidth_overflow = ");
   for (unsigned i=0; i<m_config->num_shader(); i++) {
     fprintf(fout, "%d\t", rt_predictor_update_bandwidth_overflow[i]);
@@ -777,33 +781,42 @@ void shader_core_stats::print(FILE *fout) const {
   
   unsigned rt_counter_response_cycles_sum = 0;
   unsigned rt_counter_full_unit_cycles_sum = 0;
+  unsigned rt_counter_awaiting_predictor_cycles_sum = 0;
   unsigned rt_counter_empty_unit_cycles_sum = 0;
   unsigned rt_counter_predictor_busy_cycles_sum = 0;
   unsigned rt_counter_predictor_ready_cycles_sum = 0;
   unsigned rt_counter_warp_avail_cycles_sum = 0;
   unsigned rt_counter_cache_access_cycles_sum = 0;
   unsigned rt_counter_undo_requests_sum = 0;
+  unsigned rt_counter_active_threads_sum = 0;
   float rt_counter_avg_coalesced_requests_sum = 0;
   
   for (unsigned i=0; i<m_config->num_shader(); i++) {
     rt_counter_response_cycles_sum += rt_counter_response_cycles[i];
     rt_counter_full_unit_cycles_sum += rt_counter_full_unit_cycles[i];
+    rt_counter_awaiting_predictor_cycles_sum += rt_counter_awaiting_predictor_cycles[i];
     rt_counter_empty_unit_cycles_sum += rt_counter_empty_unit_cycles[i];
     rt_counter_predictor_busy_cycles_sum += rt_counter_predictor_busy_cycles[i];
     rt_counter_predictor_ready_cycles_sum += rt_counter_predictor_ready_cycles[i];
     rt_counter_warp_avail_cycles_sum += rt_counter_warp_avail_cycles[i];
     rt_counter_cache_access_cycles_sum += rt_counter_cache_access_cycles[i];
     rt_counter_undo_requests_sum += rt_counter_undo_requests[i];
+    rt_counter_active_threads_sum += rt_counter_active_threads[i];
     rt_counter_avg_coalesced_requests_sum += rt_counter_avg_coalesced_requests[i];
   }
   
-  fprintf(fout, "rt_counter_response_cycles = %f\n", (float)rt_counter_response_cycles_sum / m_config->num_shader() / GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
-  fprintf(fout, "rt_counter_full_unit_cycles = %f\n", (float)rt_counter_full_unit_cycles_sum / m_config->num_shader() / GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
-  fprintf(fout, "rt_counter_empty_unit_cycles = %f\n", (float)rt_counter_empty_unit_cycles_sum / m_config->num_shader() / GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
-  fprintf(fout, "rt_counter_predictor_busy_cycles = %f\n", (float)rt_counter_predictor_busy_cycles_sum / m_config->num_shader() / GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
-  fprintf(fout, "rt_counter_predictor_ready_cycles = %f\n", (float)rt_counter_predictor_ready_cycles_sum / m_config->num_shader() / GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
-  fprintf(fout, "rt_counter_warp_avail_cycles = %f\n", (float)rt_counter_warp_avail_cycles_sum / m_config->num_shader() / GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
-  fprintf(fout, "rt_counter_cache_access_cycles = %f\n", (float)rt_counter_cache_access_cycles_sum / m_config->num_shader() / GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle);
+  
+  unsigned long long cycles = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
+  
+  fprintf(fout, "rt_counter_response_cycles = %f\n", (float)rt_counter_response_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_full_unit_cycles = %f\n", (float)rt_counter_full_unit_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_awaiting_predictor_cycles = %f\n", (float)rt_counter_awaiting_predictor_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_empty_unit_cycles = %f\n", (float)rt_counter_empty_unit_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_predictor_busy_cycles = %f\n", (float)rt_counter_predictor_busy_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_predictor_ready_cycles = %f\n", (float)rt_counter_predictor_ready_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_warp_avail_cycles = %f\n", (float)rt_counter_warp_avail_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_cache_access_cycles = %f\n", (float)rt_counter_cache_access_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_active_threads = %f\n", (float)rt_counter_active_threads_sum / m_config->num_shader() / cycles);
   fprintf(fout, "rt_counter_undo_requests = %f\n", (float)rt_counter_undo_requests_sum / m_config->num_shader());
   fprintf(fout, "rt_counter_avg_coalesced_requests = %f\n", (float)rt_counter_avg_coalesced_requests_sum / m_config->num_shader());
   
@@ -2068,6 +2081,22 @@ void rt_unit::reset_rt_predictor_stats() {
   m_ray_predictor->reset_stats();
 }
 
+void rt_unit::reset_rt_stats() {
+  
+  for (unsigned i=0; i<m_config->num_shader(); i++) {
+    m_stats->rt_counter_response_cycles[i] = 0;
+    m_stats->rt_counter_full_unit_cycles[i] = 0;
+    m_stats->rt_counter_empty_unit_cycles[i] = 0;
+    m_stats->rt_counter_predictor_busy_cycles[i] = 0;
+    m_stats->rt_counter_predictor_ready_cycles[i] = 0;
+    m_stats->rt_counter_warp_avail_cycles[i] = 0;
+    m_stats->rt_counter_cache_access_cycles[i] = 0;
+    m_stats->rt_counter_undo_requests[i] = 0;
+    m_stats->rt_counter_avg_coalesced_requests[i] = 0;
+    m_stats->rt_counter_active_threads[i] = 0;
+  }
+}
+
 void ldst_unit::get_L1D_sub_stats(struct cache_sub_stats &css) const {
   if (m_L1D) m_L1D->get_sub_stats(css);
 }
@@ -2800,8 +2829,6 @@ void rt_unit::cycle() {
     m_stats->rt_warp_valid[m_sid] = 0;
   }
   
-  // RT-CORE NOTE
-  // Add cycling for intersection units?
   occupied >>=1;
   
   if (m_current_warps.size() > m_stats->rt_max_warps[m_sid]) m_stats->rt_max_warps[m_sid] = m_current_warps.size();
@@ -2827,16 +2854,18 @@ void rt_unit::cycle() {
   m_stats->rt_warp_id[m_sid] = NULL;
   m_stats->rt_warppool_insertion[m_sid] = 0;
   
-  // // Default = 0
-  // for (unsigned i=0; i<m_config->max_warps_per_shader; i++) {
-  //     m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + i] = 0;
-  // }
-  // // Check current warps
-  // for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
-  //   if (it->second.warp_id() < m_config->max_warps_per_shader) { 
-  //     m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + it->second.warp_id()] = it->second.get_rt_active_threads();
-  //   }
-  // }
+  // Default = 0
+  for (unsigned i=0; i<m_config->max_warps_per_shader; i++) {
+      m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + i] = 0;
+  }
+  // Check current warps
+  for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
+    unsigned active = it->second.get_rt_active_threads();
+    m_stats->rt_counter_active_threads[m_sid] += active;
+    if (it->second.warp_id() < m_config->max_warps_per_shader) { 
+      m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + it->second.warp_id()] = active;
+    }
+  }
   
   // Cycle intersection tests
   for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
@@ -2962,6 +2991,9 @@ void rt_unit::cycle() {
             m_config->m_rt_max_warps;
   if (m_current_warps.size() < max_warps) {
     m_stats->rt_unit_ready[m_sid] = 1;
+    if (m_ray_predictor->num_predictor_warps() > 0) {
+      m_stats->rt_counter_awaiting_predictor_cycles[m_sid]++;
+    }
   }
   else {
     m_stats->rt_unit_ready[m_sid] = 0;
@@ -3618,6 +3650,10 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     }
     else {
       m_mem_access_list.insert(mem_access_addr);
+      m_stats->rt_total_unique_accesses[m_sid]++;
+      if (m_mem_access_list.size() != m_stats->rt_total_unique_accesses[m_sid]) {
+        printf("Unique accesses inconsistent %d:%d\n", m_mem_access_list.size(), m_stats->rt_total_unique_accesses[m_sid]);
+      }
     }
     
     if (m_config->m_rt_warppool) {
@@ -5257,7 +5293,8 @@ void shader_core_ctx::get_rt_cache_stats(cache_stats &cs) {
   m_rt_unit->get_cache_stats(cs);
 }
 
-void shader_core_ctx::reset_rt_predictor_stats() {
+void shader_core_ctx::reset_rt_stats() {
+  m_rt_unit->reset_rt_stats();
   m_rt_unit->reset_rt_predictor_stats();
 }
 
@@ -5960,9 +5997,9 @@ void simt_core_cluster::get_rt_cache_stats(cache_stats &cs) const {
   }
 }
 
-void simt_core_cluster::reset_rt_predictor_stats() {
+void simt_core_cluster::reset_rt_stats() {
   for (unsigned i = 0; i < m_config->n_simt_cores_per_cluster; ++i) {
-    m_core[i]->reset_rt_predictor_stats();
+    m_core[i]->reset_rt_stats();
   }
 }
 
