@@ -951,7 +951,7 @@ int warp_inst_t::get_next_predictor_update() {
     // If the thread is done, and the intersection unit delay is over
     if (m_per_scalar_thread[i].raytrace_mem_accesses.empty() && m_per_scalar_thread[i].intersection_delay == 0) {
       // Check if the predictor needs to be updated (hit a triangle but not verified by predictor)
-      if (m_per_scalar_thread[i].ray_intersect && m_per_scalar_thread[i].update_predictor) {
+      if (m_per_scalar_thread[i].update_predictor) {
         m_per_scalar_thread[i].update_predictor = false;
         return i;
       }

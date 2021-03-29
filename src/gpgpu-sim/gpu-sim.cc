@@ -291,8 +291,8 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "0");
   option_parser_register(
       opp, "-gpgpu_rt_predictor_config", OPT_CSTR, &m_rt_predictor_config_string,
-      "ray predictor config: debug_print,latency,max_table_size,hash_use_francois,hash_use_grid_spherical,hash_use_two_point,hash_francois_bits,hash_grid_bits,hash_sphere_bits,hash_two_point_est_length_ratio,go_up_level,max_entry_cap,replacement_policy,placement_policy,virtual,virtual_access_latency ",
-      "1,2,64,1,1,1,2,5,3,0.25,0,4,f,l,d,4,0,10,256,8,d");
+      "ray predictor config: debug_print,latency,max_table_size,hash_use_francois,hash_use_grid_spherical,hash_use_two_point,hash_francois_bits,hash_grid_bits,hash_sphere_bits,hash_two_point_est_length_ratio,go_up_level,miss_node,max_entry_cap,replacement_policy,placement_policy,virtual,virtual_access_latency ",
+      "1,2,4096,0,1,0,2,5,3,0.25,0,0,4,l,l,d,1,0,10,256,8,d");
   option_parser_register(
       opp, "-gpgpu_rt_predictor_sampler", OPT_BOOL, &m_rt_predictor_config.sampler,
       "train predictor with 1 sample per warp first ",
@@ -1191,6 +1191,7 @@ void gpgpu_sim::update_stats() {
   gpgpu_ctx->func_sim->g_total_raytrace_perfect_verified_node_accesses = 0;
   gpgpu_ctx->func_sim->g_total_raytrace_perfect_verified_triangle_accesses = 0;
   gpgpu_ctx->func_sim->g_total_raytrace_verified_rays = 0;
+  gpgpu_ctx->func_sim->g_total_miss_node_removed_predictions = 0;
 }
 
 void gpgpu_sim::print_stats() {
@@ -1460,6 +1461,8 @@ void gpgpu_sim::gpu_print_stat() {
          gpgpu_ctx->func_sim->g_total_raytrace_perfect_verified_triangle_accesses);
   printf("\nrt_total_verified_rays = %d\n",
          gpgpu_ctx->func_sim->g_total_raytrace_verified_rays);
+  printf("\nrt_total_miss_node_removed_predictions = %d\n",
+         gpgpu_ctx->func_sim->g_total_miss_node_removed_predictions);
   
   // Print threads if any accesses were saved
   for (auto it=g_rt_memory_accesses.begin(); it!=g_rt_memory_accesses.end(); it++) {

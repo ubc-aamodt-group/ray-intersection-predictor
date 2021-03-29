@@ -535,6 +535,7 @@ struct ray_predictor_config {
   float hash_two_point_est_length_ratio;
   unsigned go_up_level;
   unsigned entry_cap;
+  unsigned miss_node;
   char entry_replacement_policy;
   char replacement_policy;
   char placement_policy;

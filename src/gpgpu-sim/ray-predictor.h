@@ -3,7 +3,6 @@
 
 #include "../abstract_hardware_model.h"
 
-
 struct {
     bool m_valid;
     unsigned long long m_tag;
@@ -29,12 +28,14 @@ class ray_predictor {
     ray_predictor(unsigned sid, struct ray_predictor_config config, shader_core_ctx *core);
     ~ray_predictor();
     
+    static constexpr int32_t MISS_NODE = INT32_MAX;
     
     // Backwards pointer
     shader_core_ctx *m_core;
     
     // TODO: Implement these parameters
     unsigned m_go_up_level;
+    unsigned m_miss_node;
     unsigned m_number_of_entries_cap;
     char m_node_replacement_policy;
     char m_replacement_policy;

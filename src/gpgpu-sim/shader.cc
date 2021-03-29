@@ -3056,7 +3056,11 @@ void rt_unit::cycle() {
         new_addr_type predict_node = (it->second).rt_ray_prediction(thread);
         const std::vector<unsigned long long>& ray_hashes = (it->second).rt_ray_hashes(thread);
         for (uint64_t ray_hash : ray_hashes) {
-          m_ray_predictor->add_entry(ray_hash, predict_node);
+          if (!(it->second).rt_ray_intersect(thread) && m_config->m_rt_predictor_config.miss_node) {
+            m_ray_predictor->add_entry(ray_hash, m_ray_predictor->MISS_NODE);
+          } else {
+            m_ray_predictor->add_entry(ray_hash, predict_node);
+          }
         }
         updates++;
       }

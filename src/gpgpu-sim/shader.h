@@ -1597,7 +1597,7 @@ class shader_core_config : public core_config {
     }
     
     bool print_ray_predictor_settings;
-    sscanf(m_rt_predictor_config_string, "%u,%u,%u,%u,%u,%u,%u,%u,%u,%f,%u,%u,%c,%c,%c,%u,%u,%u,%u,%u,%c", &print_ray_predictor_settings, &m_rt_predictor_config.latency,
+    sscanf(m_rt_predictor_config_string, "%u,%u,%u,%u,%u,%u,%u,%u,%u,%f,%u,%u,%u,%c,%c,%c,%u,%u,%u,%u,%u,%c", &print_ray_predictor_settings, &m_rt_predictor_config.latency,
             &m_rt_predictor_config.max_size,
             &m_rt_predictor_config.hash_use_francois,
             &m_rt_predictor_config.hash_use_grid_spherical,
@@ -1605,7 +1605,9 @@ class shader_core_config : public core_config {
             &m_rt_predictor_config.hash_francois_bits,
             &m_rt_predictor_config.hash_grid_bits, &m_rt_predictor_config.hash_sphere_bits,
             &m_rt_predictor_config.hash_two_point_est_length_ratio,
-            &m_rt_predictor_config.go_up_level, &m_rt_predictor_config.entry_cap, &m_rt_predictor_config.entry_replacement_policy,
+            &m_rt_predictor_config.go_up_level,
+            &m_rt_predictor_config.miss_node,
+            &m_rt_predictor_config.entry_cap, &m_rt_predictor_config.entry_replacement_policy,
             &m_rt_predictor_config.replacement_policy, &m_rt_predictor_config.placement_policy, &m_rt_predictor_config.n_ways,
             &m_rt_predictor_config.virtualize, &m_rt_predictor_config.virtualize_delay, &m_rt_predictor_config.virtual_table_size,
             &m_rt_predictor_config.virtual_entry_cap, &m_rt_predictor_config.virtual_placement_policy);
@@ -1622,6 +1624,7 @@ class shader_core_config : public core_config {
       printf("\tHash sphere bits: %d\n", m_rt_predictor_config.hash_sphere_bits);
       printf("\tHash two-point estimated length ratio: %f\n", m_rt_predictor_config.hash_two_point_est_length_ratio);
       printf("\tGo up level: %d\n", m_rt_predictor_config.go_up_level);
+      printf("\tUse miss node: %d\n", m_rt_predictor_config.miss_node);
       printf("\tMax nodes per entry: %d\n", m_rt_predictor_config.entry_cap);
       printf("\tNode replacement policy: %c\n", m_rt_predictor_config.entry_replacement_policy);
       printf("\tReplacement policy: %c\n", m_rt_predictor_config.replacement_policy);

@@ -12,6 +12,7 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   m_cycles = -1;
   
   m_go_up_level = config.go_up_level;
+  m_miss_node = config.miss_node;
   m_number_of_entries_cap = config.entry_cap;
   m_replacement_policy = config.replacement_policy;
   m_placement_policy = config.placement_policy;
@@ -137,14 +138,21 @@ void ray_predictor::insert(const warp_inst_t& inst) {
     if (!m_current_warp.active(i)) continue;
     
     std::vector<unsigned long long> indexes;
-    // Check predictor table
+
+    std::vector<new_addr_type> prediction_list;
+
+    // Check predictor table and read list of predictions
     if (check_table(ray_hashes, indexes)) {
+      prediction_list = get_prediction_list(indexes);
+    }
+
+    if (!prediction_list.empty()) {
       // If predictor hit, iterate through predictions
       num_predicted++;
       
       // Read list of predictions from predictor table
       std::vector<new_addr_type> prediction_list = get_prediction_list(indexes);
-      
+
       // Magic version where all predictions are valid
       if (m_magic_verify) {
         if (m_current_warp.rt_ray_intersect(i)) {
@@ -223,6 +231,15 @@ void ray_predictor::insert(const warp_inst_t& inst) {
           else {
             m_current_warp.set_rt_update_predictor(i);
           }
+        } else if (m_miss_node) {
+          // TODO: Miss node for virtual table
+          if (m_oracle_update) {
+            for (uint64_t ray_hash : ray_hashes) {
+              add_entry(ray_hash, MISS_NODE);
+            }
+          } else {
+            m_current_warp.set_rt_update_predictor(i);
+          }
         }
 
         GPGPU_Context()->func_sim->g_actual_raytrace_node_accesses += m_current_warp.rt_num_nodes_accessed(i);
@@ -256,6 +273,7 @@ void ray_predictor::insert(const warp_inst_t& inst) {
 
           // Sort into insertion order
           // TODO: This should be sorted based on the node replacement policy
+          // TODO: Miss node
           std::sort(prediction_list.begin(), prediction_list.end(),
             [&](new_addr_type a, new_addr_type b) {
               return virtual_entry.m_node_use_map.at(a) < virtual_entry.m_node_use_map.at(b);
@@ -293,6 +311,14 @@ void ray_predictor::insert(const warp_inst_t& inst) {
         }
         // Mark as need update
         else {
+          m_current_warp.set_rt_update_predictor(i);
+        }
+      } else if (m_miss_node) {
+        if (m_oracle_update) {
+          for (uint64_t ray_hash : ray_hashes) {
+            add_entry(ray_hash, MISS_NODE);
+          }
+        } else {
           m_current_warp.set_rt_update_predictor(i);
         }
       }
@@ -563,6 +589,11 @@ void ray_predictor::add_node_to_predictor_entry(unsigned long long index, new_ad
   unsigned long long cycle = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_tot_sim_cycle +
     GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
 
+  if (entry.m_nodes.find(node) != entry.m_nodes.end()) {
+    update_entry_use(index, node);
+    return;
+  }
+
   // Entry full: need to evict a node
   if (entry.m_nodes.size() >= m_number_of_entries_cap) {
     num_entry_overflow++;
@@ -684,6 +715,45 @@ std::vector<new_addr_type> ray_predictor::get_prediction_list(const std::vector<
         assert(false);
     }
   });
+
+  if (m_miss_node) {
+    auto miss_node_it = std::find(nodes.begin(), nodes.end(), MISS_NODE);
+    if (miss_node_it != nodes.end()) {
+      int miss_node_counter = unprocessed_nodes.at(MISS_NODE).second;
+
+      // Find the first node that has a lower priority than the miss node
+      auto it = miss_node_it + 1;
+      for (; it != nodes.end(); ++it) {
+        bool done = false;
+        switch (m_node_replacement_policy) {
+          case 'l':
+          case 'u':
+            if (unprocessed_nodes.at(*it).second < miss_node_counter) {
+              done = true;
+            }
+            break;
+          case 'f':
+            if (unprocessed_nodes.at(*it).second > miss_node_counter) {
+              done = true;
+            }
+            break;
+          default:
+            throw std::logic_error("Can't use miss node without replacement policy!");
+        }
+        if (done) {
+          break;
+        }
+      }
+      
+      // Delete the miss node and all nodes that have lower priority than the miss node
+      nodes.erase(it, nodes.end());
+      nodes.erase(miss_node_it);
+
+      if (nodes.empty()) {
+        GPGPU_Context()->func_sim->g_total_miss_node_removed_predictions++;
+      }
+    }
+  }
 
   return nodes;
 }
