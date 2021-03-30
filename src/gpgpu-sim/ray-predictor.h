@@ -54,6 +54,7 @@ class ray_predictor {
     bool m_oracle_update;
     unsigned m_repacking_timer;
     bool m_sampler;
+    unsigned m_num_hash_funcs;
     
     unsigned m_verified_warp_id;
     unsigned m_unverified_warp_id;

@@ -31,6 +31,7 @@ ray_predictor::ray_predictor(unsigned sid, ray_predictor_config config, shader_c
   m_magic_verify = config.magic_verify;
   m_repacking_timer = config.repacking_timer;
   m_sampler = config.sampler;
+  m_num_hash_funcs = config.hash_use_francois + config.hash_use_grid_spherical + config.hash_use_two_point;
   
   
   m_verified_warp_id = m_core->get_config()->max_warps_per_shader;
@@ -129,7 +130,7 @@ void ray_predictor::insert(const warp_inst_t& inst) {
   
   for (unsigned i=0; i<warp_size; i++) {
     // Set latency
-    unsigned latency = (1 + std::floor(i / m_lookup_bandwidth)) * m_per_thread_latency;
+    unsigned latency = (1 + std::floor(i / m_lookup_bandwidth)) * m_per_thread_latency * m_num_hash_funcs;
     m_current_warp.add_thread_latency(i, latency);
     
     const std::vector<unsigned long long>& ray_hashes = m_current_warp.rt_ray_hashes(i);
@@ -214,6 +215,8 @@ void ray_predictor::insert(const warp_inst_t& inst) {
         
         // Add to table if ray intersects with something
         if (m_current_warp.rt_ray_intersect(i)) {
+          m_current_warp.add_thread_latency(i, m_per_thread_latency * m_num_hash_funcs);
+
           // Update predictor table
           if (m_oracle_update) {
             new_addr_type predict_node = m_current_warp.rt_ray_prediction(i);
@@ -232,6 +235,8 @@ void ray_predictor::insert(const warp_inst_t& inst) {
             m_current_warp.set_rt_update_predictor(i);
           }
         } else if (m_miss_node) {
+          m_current_warp.add_thread_latency(i, m_per_thread_latency * m_num_hash_funcs);
+
           // TODO: Miss node for virtual table
           if (m_oracle_update) {
             for (uint64_t ray_hash : ray_hashes) {
@@ -302,6 +307,8 @@ void ray_predictor::insert(const warp_inst_t& inst) {
       
       // Add to table if ray intersects with something
       if (m_current_warp.rt_ray_intersect(i)) {
+        m_current_warp.add_thread_latency(i, m_per_thread_latency * m_num_hash_funcs);
+
         // Update now
         if (m_oracle_update) {
           new_addr_type predict_node = m_current_warp.rt_ray_prediction(i);
@@ -314,6 +321,8 @@ void ray_predictor::insert(const warp_inst_t& inst) {
           m_current_warp.set_rt_update_predictor(i);
         }
       } else if (m_miss_node) {
+        m_current_warp.add_thread_latency(i, m_per_thread_latency * m_num_hash_funcs);
+
         if (m_oracle_update) {
           for (uint64_t ray_hash : ray_hashes) {
             add_entry(ray_hash, MISS_NODE);
