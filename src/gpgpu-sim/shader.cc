@@ -3043,14 +3043,14 @@ void rt_unit::cycle() {
     unsigned updates_per_cycle = m_config->m_rt_predictor_config.update_bandwidth;
     unsigned updates = 0;
     for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
-      int thread = (it->second).get_next_predictor_update();
-      // If no thread in warp has updates, move to next warp
-      if (thread == -1) continue;
       // Can only update a certain amount per cycle
       if (updates >= updates_per_cycle) {
         m_stats->rt_predictor_update_bandwidth_overflow[m_sid]++;
         break;
       }
+      int thread = (it->second).get_next_predictor_update();
+      // If no thread in warp has updates, move to next warp
+      if (thread == -1) continue;
       // If there is an update
       if (thread > -1) {
         new_addr_type predict_node = (it->second).rt_ray_prediction(thread);
@@ -3065,7 +3065,7 @@ void rt_unit::cycle() {
         updates++;
       }
     }
-    
+
     m_stats->rt_predictor_result_valid[m_sid] = 0;
     // If there's a warp ready in the predictor, fetch it. 
     if (m_ray_predictor->ready() && m_current_warps.size() < (m_config->m_rt_max_warps + m_config->m_rt_predictor_config.repack_max_warps)) {
