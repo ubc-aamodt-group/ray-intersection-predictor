@@ -2824,6 +2824,20 @@ void rt_unit::cycle() {
                         m_core->get_gpu()->gpu_tot_sim_cycle);
                         
     m_stats->rt_warp_valid[m_sid] = 1;
+    
+    if (m_config->m_rt_print_threads) {
+      for (unsigned i=0; i<m_config->warp_size; i++) {
+        if (pipe_reg.active(i)) {
+          printf("New Thread: %d\t", pipe_reg.get_thread_info(i).ray_properties.id);
+          std::deque<new_addr_type> mem_accesses = pipe_reg.get_thread_info(i).raytrace_mem_accesses;
+          for (auto it=mem_accesses.begin(); it!=mem_accesses.end(); it++) {
+            printf("0x%x\t", *it);
+          }
+          printf("\n");
+        }
+      }
+    }
+    
   }
   else {
     m_stats->rt_warp_valid[m_sid] = 0;
@@ -2899,12 +2913,12 @@ void rt_unit::cycle() {
         unsigned requester_thread_found = 0;
         pipe_reg.clear_mem_fetch_wait(mf->get_addr());
         if (!m_config->m_rt_lock_threads) {
-          requester_thread_found += pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
+          requester_thread_found += pipe_reg.clear_rt_awaiting_threads(mf->get_addr(), 'f');
         }
         for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
           (it->second).clear_mem_fetch_wait(mf->get_addr());
           if (!m_config->m_rt_lock_threads) {
-            requester_thread_found += (it->second).clear_rt_awaiting_threads(mf->get_addr());
+            requester_thread_found += (it->second).clear_rt_awaiting_threads(mf->get_addr(), 'f');
           }
         }
         if (m_config->m_rt_warppool) {
@@ -2933,7 +2947,19 @@ void rt_unit::cycle() {
           for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
             if (it->second.warp_id() == response->get_wid()) {
               it->second.clear_mem_fetch_wait(mf->get_addr());
-              if (!m_config->m_rt_lock_threads) requester_thread_found += it->second.clear_rt_awaiting_threads(mf->get_addr());
+              if (!m_config->m_rt_lock_threads) {
+                if (requester_thread_found > 0) {
+                  requester_thread_found += it->second.clear_rt_awaiting_threads(mf->get_addr(), 'm');
+                }
+                else {
+                  if (mf->check_unique()) {
+                    requester_thread_found += it->second.clear_rt_awaiting_threads(mf->get_addr(), 'u');
+                  }
+                  else {
+                    requester_thread_found += it->second.clear_rt_awaiting_threads(mf->get_addr(), 'f');
+                  }
+                }
+              }
             }
           }
         }
@@ -2951,7 +2977,7 @@ void rt_unit::cycle() {
         for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
           if (it->second.warp_id() == mf->get_wid()) {
             it->second.clear_mem_fetch_wait(mf->get_addr());
-            if (!m_config->m_rt_lock_threads) it->second.clear_rt_awaiting_threads(mf->get_addr());
+            if (!m_config->m_rt_lock_threads) it->second.clear_rt_awaiting_threads(mf->get_addr(), 'f');
           }
         }
       }
@@ -2959,7 +2985,7 @@ void rt_unit::cycle() {
     else {
       // Clear response from list of in flight mem accesses
       pipe_reg.clear_mem_fetch_wait(mf->get_addr());
-      if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
+      if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(mf->get_addr(), 'f');
     }   
     
     // Reservation fails stats tracking
@@ -3047,6 +3073,19 @@ void rt_unit::cycle() {
         else {
           // Add warp to RT core warps
           m_current_warps[predicted_inst.get_uid()] = predicted_inst;
+          
+          if (m_config->m_rt_print_threads) {
+            for (unsigned i=0; i<m_config->warp_size; i++) {
+              if (predicted_inst.active(i)) {
+                printf("Predictor Thread: %d\t", predicted_inst.get_thread_info(i).ray_properties.id);
+                std::deque<new_addr_type> mem_accesses = predicted_inst.get_thread_info(i).raytrace_mem_accesses;
+                for (auto it=mem_accesses.begin(); it!=mem_accesses.end(); it++) {
+                  printf("0x%x\t", *it);
+                }
+                printf("\n");
+              }
+            }
+          }
           
           // Check if newly generated warp for warp reformation
           if (predicted_inst.warp_id() >= m_config->max_warps_per_shader) {
@@ -3651,6 +3690,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     else {
       m_mem_access_list.insert(mem_access_addr);
       m_stats->rt_total_unique_accesses[m_sid]++;
+      mf->mark_unique();
       if (m_mem_access_list.size() != m_stats->rt_total_unique_accesses[m_sid]) {
         printf("Unique accesses inconsistent %d:%d\n", m_mem_access_list.size(), m_stats->rt_total_unique_accesses[m_sid]);
       }
@@ -3684,11 +3724,21 @@ mem_stage_stall_type rt_unit::process_cache_access(
     
     if (status == HIT) {
       inst.clear_mem_fetch_wait(address);
-      if (!m_config->m_rt_lock_threads) inst.clear_rt_awaiting_threads(address);
+      unsigned found = 0;
+      if (!m_config->m_rt_lock_threads) {
+        found += inst.clear_rt_awaiting_threads(address, 'h');
+      }
       if (m_config->m_rt_coalesce_warps) {
         for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
           (it->second).clear_mem_fetch_wait(address);
-          if (!m_config->m_rt_lock_threads) (it->second).clear_rt_awaiting_threads(address);
+          if (!m_config->m_rt_lock_threads) {
+            if (found > 0) {
+              (it->second).clear_rt_awaiting_threads(address, 'c');
+            }
+            else {
+              (it->second).clear_rt_awaiting_threads(address, 'h');
+            }
+          }
         }
       }
       if (m_config->m_rt_warppool) m_warppool_awaiting_response.erase(address);

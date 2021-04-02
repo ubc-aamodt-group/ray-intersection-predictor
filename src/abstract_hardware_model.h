@@ -185,6 +185,7 @@ struct Ray
 	float4 dir_tmax;
 	
 	bool anyhit;
+  unsigned id;
 
   float3 get_origin() const { return {origin_tmin.x, origin_tmin.y, origin_tmin.z}; }
   void set_origin(float3 new_origin) { origin_tmin = {new_origin.x, new_origin.y, new_origin.z, origin_tmin.w}; }
@@ -379,6 +380,7 @@ class core_config {
 
   bool m_valid;
   unsigned warp_size;
+  bool m_rt_print_threads;
   // backward pointer
   class gpgpu_context *gpgpu_ctx;
 
@@ -618,6 +620,8 @@ class gpgpu_t {
   // Move some cycle core stats here instead of being global
   unsigned long long gpu_sim_cycle;
   unsigned long long gpu_tot_sim_cycle;
+  
+  std::map<unsigned, std::deque<char> > g_rt_memory_accesses;
 
   void *gpu_malloc(size_t size);
   void *gpu_mallocarray(size_t count);
@@ -1269,7 +1273,7 @@ class warp_inst_t : public inst_t {
   void clear_mem_fetch_wait() {
     m_mf_awaiting_response.clear();
   }
-  unsigned clear_rt_awaiting_threads(new_addr_type addr);
+  unsigned clear_rt_awaiting_threads(new_addr_type addr, char cat);
   void clear_rt_access(new_addr_type addr) {
     m_next_rt_accesses_set.erase(addr);
   }

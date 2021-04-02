@@ -1594,7 +1594,6 @@ class shader_core_config : public core_config {
         break;  // we only accept continuous specialized_units, i.e., 1,2,3,4
     }
     
-    
     bool print_ray_predictor_settings;
     sscanf(m_rt_predictor_config_string, "%u,%u,%u,%c,%u,%u,%u,%u,%u,%c,%c,%c,%u,%u,%u,%u,%u,%c", &print_ray_predictor_settings, &m_rt_predictor_config.latency,
             &m_rt_predictor_config.max_size, &m_rt_predictor_config.hash_type, &m_rt_predictor_config.hash_francois_bits,
