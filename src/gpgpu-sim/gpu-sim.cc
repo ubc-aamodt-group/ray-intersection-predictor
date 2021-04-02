@@ -254,6 +254,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "print memory access list for every thread (for debugging) ",
       "0");
   option_parser_register(
+      opp, "-gpgpu_rt_bandwidth", OPT_UINT32, &m_rt_bandwidth,
+      "number of memory accesses per RT unit cycle ",
+      "1");
+  option_parser_register(
       opp, "-gpgpu_rt_max_warps", OPT_UINT32, &m_rt_max_warps,
       "max number of warps concurrently in one rt core ",
       "0");

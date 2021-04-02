@@ -1753,6 +1753,7 @@ class shader_core_config : public core_config {
   mutable std::vector<specialized_unit_params> m_specialized_unit;
   unsigned m_specialized_unit_num;
   
+  unsigned m_rt_bandwidth;
   unsigned m_rt_max_warps;
   unsigned m_rt_max_mshr_entries;
   bool m_rt_lock_threads;

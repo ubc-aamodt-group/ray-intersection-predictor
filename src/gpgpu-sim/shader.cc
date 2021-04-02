@@ -3161,7 +3161,10 @@ void rt_unit::cycle() {
   if (m_current_warps.empty()) m_stats->rt_counter_empty_unit_cycles[m_sid]++;
   
   // RT-CORE NOTE: How to cycle both complet cache and triangle cache?
-  done &= memory_cycle(rt_inst, rc_fail, type);
+  for (unsigned i=0; i<m_config->m_rt_bandwidth; i++) {
+    done &= memory_cycle(rt_inst, rc_fail, type);
+    if (done) break;
+  }
   m_mem_rc = rc_fail;
   
   bool repacked = false;
