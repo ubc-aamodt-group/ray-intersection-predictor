@@ -332,6 +332,9 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     assert(size == 8);
     addr_t tri_start;
     thread->m_local_mem->read(from_addr, size, &tri_start);
+
+    thread->set_node_start(node_start);
+    thread->set_tri_start(tri_start);
     
     // Global memory
     memory_space *mem=NULL;
@@ -367,6 +370,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     // addr_t* stack_ptr = &traversal_stack[0];
     
     std::list<addr_t> traversal_stack;
+    std::vector<addr_t> nodes_stack;
     
     // Initialize
     addr_t child0_addr = 0;
@@ -385,12 +389,20 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     // Map of address to tree level
     std::map<new_addr_type, unsigned> tree_level_map;
     tree_level_map[node_start] = 1;
+
+    std::map<unsigned long long, int> tree_depth_map;
+    tree_depth_map[0] = 0;
+
+    int num_nodes_accessed = 0;
+    int num_triangles_accessed = 0;
         
     do {
 
         // Check not a leaf node and not empty traversal stack (Leaf nodes start with 0xf...)
         while ((int)next_node >= 0)
         {
+            nodes_stack.push_back(next_node);
+
             if (next_node != 0) next_node *= 0x10;
             // Get top node data
             // const float4 n0xy = __ldg(localBVHTreeNodes + nodeAddr + 0); // (c0.lo.x, c0.hi.x, c0.lo.y, c0.hi.y)
@@ -407,6 +419,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             // TODO: Figure out if node_start + next_node + 2 also should be recorded
             thread->add_raytrace_mem_access(node_start + next_node);
             GPGPU_Context()->func_sim->g_total_raytrace_node_accesses++;
+            num_nodes_accessed++;
             
             #ifdef DEBUG_PRINT
             printf("Node data: \n");
@@ -434,11 +447,20 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             
             mem->read(node_start + next_node + 3*sizeof(float4), sizeof(addr_t), &child0_addr);
             mem->read(node_start + next_node + 3*sizeof(float4) + sizeof(addr_t), sizeof(addr_t), &child1_addr);
+
+            // Assume we store the go-up ancestor in the padded space
+            // Note: this value isn't actually used. We keep track of the go-up ancestor using the
+            // nodes_stack so that the BVH doesn't need to change for different go-up levels.
+            addr_t go_up_addr;
+            mem->read(node_start + next_node + 3*sizeof(float4) + 2 * sizeof(addr_t), sizeof(addr_t), &go_up_addr);
             
             if ((int)child0_addr > 0)
                 tree_level_map[node_start + child0_addr * 0x10] = current_tree_level + 1;
             if ((int)child1_addr > 0)
                 tree_level_map[node_start + child1_addr * 0x10] = current_tree_level + 1;
+
+            tree_depth_map[child0_addr * 0x10] = tree_depth_map[next_node] + 1;
+            tree_depth_map[child1_addr * 0x10] = tree_depth_map[next_node] + 1;
             
             #ifdef DEBUG_PRINT
             printf("Child 0 offset: 0x%x \t", child0_addr);
@@ -448,6 +470,8 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             
             // Miss
             if (!child0_hit && !child1_hit) {
+                nodes_stack.pop_back();
+
                 if (traversal_stack.empty()) {
                     next_node = EMPTY_STACK;
                     break;
@@ -456,6 +480,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 // Pop next node from stack
                 next_node = traversal_stack.back();
                 traversal_stack.pop_back();
+                nodes_stack.resize(tree_depth_map[next_node * 0x10]);
                 #ifdef DEBUG_PRINT
                 printf("Traversal Stack: \n");
                 print_stack(traversal_stack);
@@ -528,6 +553,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 
                 thread->add_raytrace_mem_access(tri_start + tri_addr);
                 GPGPU_Context()->func_sim->g_total_raytrace_triangle_accesses++;
+                num_triangles_accessed++;
                 
                 // RT-CORE NOTE: Fix for triangles
                 tree_level_map[tri_start + tri_addr] = 0xff;
@@ -539,7 +565,16 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                     #endif
                     *(int*) &ray_payload.t_triId_u_v.y = tri_addr >> 4;
                     
-                    predict_node = tri_start + (~next_node << 4);
+                    predict_node = next_node;
+                    if (predictor_config.go_up_level > 0) {
+                        size_t go_up_index =
+                            std::max(0, (int) nodes_stack.size() - (int) predictor_config.go_up_level);
+                        predict_node = nodes_stack[go_up_index];
+
+                        assert(
+                            tree_depth_map[next_node * 0x10] - tree_depth_map[predict_node * 0x10] == nodes_stack.size() - go_up_index);
+                    }
+
                     if (ray_properties.anyhit) {
                         traversal_stack.clear();
                         next_node = EMPTY_STACK;
@@ -566,6 +601,7 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             // Pop next node off stack
             next_node = traversal_stack.back();
             traversal_stack.pop_back();
+            nodes_stack.resize(tree_depth_map[next_node * 0x10]);
             #ifdef DEBUG_PRINT
             printf("Traversal Stack: \n");
             print_stack(traversal_stack);
@@ -593,6 +629,8 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     }
 
     thread->set_tree_level_map(tree_level_map);
+    thread->set_num_nodes_accessed(num_nodes_accessed);
+    thread->set_num_triangles_accessed(num_triangles_accessed);
 }
 
 bool ray_box_test_cwbvh(float3 low, float3 high, float3 idir, float3 origin, float tmin, float tmax, float& thit) 

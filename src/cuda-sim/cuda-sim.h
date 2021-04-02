@@ -124,6 +124,8 @@ class cuda_sim {
     g_total_raytrace_hits = 0;
     g_total_raytrace_node_accesses = 0;
     g_total_raytrace_triangle_accesses = 0;
+    g_actual_raytrace_node_accesses = 0;
+    g_actual_raytrace_triangle_accesses = 0;
     g_total_raytrace_perfect_verified_node_accesses = 0;
     g_total_raytrace_perfect_verified_triangle_accesses = 0;
     g_total_raytrace_verified_rays = 0;
@@ -163,6 +165,8 @@ class cuda_sim {
   unsigned g_additional_rt_mem_accesses;
   unsigned g_total_raytrace_node_accesses;
   unsigned g_total_raytrace_triangle_accesses;
+  unsigned g_actual_raytrace_node_accesses;
+  unsigned g_actual_raytrace_triangle_accesses;
   unsigned g_total_raytrace_perfect_verified_node_accesses;
   unsigned g_total_raytrace_perfect_verified_triangle_accesses;
   unsigned g_total_raytrace_verified_rays;

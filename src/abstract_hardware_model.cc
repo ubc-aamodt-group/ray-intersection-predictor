@@ -778,11 +778,13 @@ void warp_inst_t::set_rt_mem_accesses(unsigned int tid, const std::deque<new_add
   m_per_scalar_thread[tid].raytrace_mem_accesses = mem_accesses; 
 }
 
-void warp_inst_t::set_rt_ray_properties(unsigned int tid, Ray ray, unsigned long long hash, new_addr_type prediction, bool intersect) {
+void warp_inst_t::set_rt_ray_properties(unsigned int tid, Ray ray, unsigned long long hash, new_addr_type prediction, bool intersect, int num_nodes_accessed, int num_triangles_accessed) {
   assert(m_per_scalar_thread_valid);
   m_per_scalar_thread[tid].ray_properties = ray;
   m_per_scalar_thread[tid].ray_hash = hash; 
   m_per_scalar_thread[tid].ray_intersect = intersect;
+  m_per_scalar_thread[tid].num_nodes_accessed = num_nodes_accessed;
+  m_per_scalar_thread[tid].num_triangles_accessed = num_triangles_accessed;
   if (intersect) m_per_scalar_thread[tid].ray_prediction = prediction;
   else m_per_scalar_thread[tid].ray_prediction = 0x0;
 }

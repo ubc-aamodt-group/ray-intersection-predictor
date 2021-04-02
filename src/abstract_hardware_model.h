@@ -1242,11 +1242,13 @@ class warp_inst_t : public inst_t {
   }
   void set_rt_mem_accesses(unsigned int tid, const std::deque<new_addr_type>& mem_accesses);
   int update_rt_mem_accesses(unsigned int tid, bool valid, const std::deque<new_addr_type> &mem_accesses);
-  void set_rt_ray_properties(unsigned int tid, Ray ray, unsigned long long hash, new_addr_type prediction, bool intersect);
+  void set_rt_ray_properties(unsigned int tid, Ray ray, unsigned long long hash, new_addr_type prediction, bool intersect, int num_nodes_accessed, int num_triangles_accessed);
   unsigned long long rt_ray_hash(unsigned int tid) const { return m_per_scalar_thread[tid].ray_hash; }
   bool rt_ray_intersect(unsigned int tid) const { return m_per_scalar_thread[tid].ray_intersect; }
   Ray rt_ray_properties(unsigned int tid) const { return m_per_scalar_thread[tid].ray_properties; }
   new_addr_type rt_ray_prediction(unsigned int tid) const { return m_per_scalar_thread[tid].ray_prediction; }
+  int rt_num_nodes_accessed(unsigned int tid) const { return m_per_scalar_thread[tid].num_nodes_accessed; }
+  int rt_num_triangles_accessed(unsigned int tid) const { return m_per_scalar_thread[tid].num_triangles_accessed; }
   void rt_mem_accesses_pop(new_addr_type addr);
   bool rt_mem_accesses_empty();
   bool rt_mem_accesses_empty(unsigned int tid) { return m_per_scalar_thread[tid].raytrace_mem_accesses.empty(); };
@@ -1334,6 +1336,8 @@ class warp_inst_t : public inst_t {
     Ray ray_properties;
     unsigned intersection_delay;
     bool update_predictor;
+    int num_nodes_accessed;
+    int num_triangles_accessed;
     
     void clear_mem_accesses() {
       raytrace_mem_accesses.clear();
