@@ -728,6 +728,10 @@ void shader_core_stats::print(FILE *fout) const {
   fprintf(fout, "rt_consecutive_reservation_fails = %d\n", rt_consecutive_reservation_fails);
   fprintf(fout, "rt_repeated_reservation_fails = %d\n", rt_repeated_reservation_fails);
   
+  for (unsigned i=0; i<m_config->num_shader(); i++) {
+    fprintf(fout, "rt_unique_accesses = %d\n", rt_total_unique_accesses[i]);
+  }
+  
   fprintf(fout, "rt_predictor_update_bandwidth_overflow = ");
   for (unsigned i=0; i<m_config->num_shader(); i++) {
     fprintf(fout, "%d\t", rt_predictor_update_bandwidth_overflow[i]);
@@ -774,6 +778,47 @@ void shader_core_stats::print(FILE *fout) const {
       fprintf(fout, "Relative greedy accesses = %f\n", (float)rt_warppool_insertion_cycles[i]/rt_cache_accesses[i]);
     }
   }
+  
+  unsigned rt_counter_response_cycles_sum = 0;
+  unsigned rt_counter_full_unit_cycles_sum = 0;
+  unsigned rt_counter_awaiting_predictor_cycles_sum = 0;
+  unsigned rt_counter_empty_unit_cycles_sum = 0;
+  unsigned rt_counter_predictor_busy_cycles_sum = 0;
+  unsigned rt_counter_predictor_ready_cycles_sum = 0;
+  unsigned rt_counter_warp_avail_cycles_sum = 0;
+  unsigned rt_counter_cache_access_cycles_sum = 0;
+  unsigned rt_counter_undo_requests_sum = 0;
+  unsigned rt_counter_active_threads_sum = 0;
+  float rt_counter_avg_coalesced_requests_sum = 0;
+  
+  for (unsigned i=0; i<m_config->num_shader(); i++) {
+    rt_counter_response_cycles_sum += rt_counter_response_cycles[i];
+    rt_counter_full_unit_cycles_sum += rt_counter_full_unit_cycles[i];
+    rt_counter_awaiting_predictor_cycles_sum += rt_counter_awaiting_predictor_cycles[i];
+    rt_counter_empty_unit_cycles_sum += rt_counter_empty_unit_cycles[i];
+    rt_counter_predictor_busy_cycles_sum += rt_counter_predictor_busy_cycles[i];
+    rt_counter_predictor_ready_cycles_sum += rt_counter_predictor_ready_cycles[i];
+    rt_counter_warp_avail_cycles_sum += rt_counter_warp_avail_cycles[i];
+    rt_counter_cache_access_cycles_sum += rt_counter_cache_access_cycles[i];
+    rt_counter_undo_requests_sum += rt_counter_undo_requests[i];
+    rt_counter_active_threads_sum += rt_counter_active_threads[i];
+    rt_counter_avg_coalesced_requests_sum += rt_counter_avg_coalesced_requests[i];
+  }
+  
+  
+  unsigned long long cycles = GPGPU_Context()->the_gpgpusim->g_the_gpu->gpu_sim_cycle;
+  
+  fprintf(fout, "rt_counter_response_cycles = %f\n", (float)rt_counter_response_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_full_unit_cycles = %f\n", (float)rt_counter_full_unit_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_awaiting_predictor_cycles = %f\n", (float)rt_counter_awaiting_predictor_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_empty_unit_cycles = %f\n", (float)rt_counter_empty_unit_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_predictor_busy_cycles = %f\n", (float)rt_counter_predictor_busy_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_predictor_ready_cycles = %f\n", (float)rt_counter_predictor_ready_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_warp_avail_cycles = %f\n", (float)rt_counter_warp_avail_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_cache_access_cycles = %f\n", (float)rt_counter_cache_access_cycles_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_active_threads = %f\n", (float)rt_counter_active_threads_sum / m_config->num_shader() / cycles);
+  fprintf(fout, "rt_counter_undo_requests = %f\n", (float)rt_counter_undo_requests_sum / m_config->num_shader());
+  fprintf(fout, "rt_counter_avg_coalesced_requests = %f\n", (float)rt_counter_avg_coalesced_requests_sum / m_config->num_shader());
   
   fprintf(fout, "Avg Warp Latency = %d\n", rt_average_warp_latency);
   fprintf(fout, "Min Warp Latency = %d\n", rt_min_warp_latency);
@@ -2036,6 +2081,22 @@ void rt_unit::reset_rt_predictor_stats() {
   m_ray_predictor->reset_stats();
 }
 
+void rt_unit::reset_rt_stats() {
+  
+  for (unsigned i=0; i<m_config->num_shader(); i++) {
+    m_stats->rt_counter_response_cycles[i] = 0;
+    m_stats->rt_counter_full_unit_cycles[i] = 0;
+    m_stats->rt_counter_empty_unit_cycles[i] = 0;
+    m_stats->rt_counter_predictor_busy_cycles[i] = 0;
+    m_stats->rt_counter_predictor_ready_cycles[i] = 0;
+    m_stats->rt_counter_warp_avail_cycles[i] = 0;
+    m_stats->rt_counter_cache_access_cycles[i] = 0;
+    m_stats->rt_counter_undo_requests[i] = 0;
+    m_stats->rt_counter_avg_coalesced_requests[i] = 0;
+    m_stats->rt_counter_active_threads[i] = 0;
+  }
+}
+
 void ldst_unit::get_L1D_sub_stats(struct cache_sub_stats &css) const {
   if (m_L1D) m_L1D->get_sub_stats(css);
 }
@@ -2763,13 +2824,25 @@ void rt_unit::cycle() {
                         m_core->get_gpu()->gpu_tot_sim_cycle);
                         
     m_stats->rt_warp_valid[m_sid] = 1;
+    
+    if (m_config->m_rt_print_threads) {
+      for (unsigned i=0; i<m_config->warp_size; i++) {
+        if (pipe_reg.active(i)) {
+          printf("New Thread: %d\t", pipe_reg.get_thread_info(i).ray_properties.id);
+          std::deque<new_addr_type> mem_accesses = pipe_reg.get_thread_info(i).raytrace_mem_accesses;
+          for (auto it=mem_accesses.begin(); it!=mem_accesses.end(); it++) {
+            printf("0x%x\t", *it);
+          }
+          printf("\n");
+        }
+      }
+    }
+    
   }
   else {
     m_stats->rt_warp_valid[m_sid] = 0;
   }
   
-  // RT-CORE NOTE
-  // Add cycling for intersection units?
   occupied >>=1;
   
   if (m_current_warps.size() > m_stats->rt_max_warps[m_sid]) m_stats->rt_max_warps[m_sid] = m_current_warps.size();
@@ -2795,16 +2868,18 @@ void rt_unit::cycle() {
   m_stats->rt_warp_id[m_sid] = NULL;
   m_stats->rt_warppool_insertion[m_sid] = 0;
   
-  // // Default = 0
-  // for (unsigned i=0; i<m_config->max_warps_per_shader; i++) {
-  //     m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + i] = 0;
-  // }
-  // // Check current warps
-  // for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
-  //   if (it->second.warp_id() < m_config->max_warps_per_shader) { 
-  //     m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + it->second.warp_id()] = it->second.get_rt_active_threads();
-  //   }
-  // }
+  // Default = 0
+  for (unsigned i=0; i<m_config->max_warps_per_shader; i++) {
+      m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + i] = 0;
+  }
+  // Check current warps
+  for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
+    unsigned active = it->second.get_rt_active_threads();
+    m_stats->rt_counter_active_threads[m_sid] += active;
+    if (it->second.warp_id() < m_config->max_warps_per_shader) { 
+      m_stats->rt_active_threads[m_sid*m_config->max_warps_per_shader + it->second.warp_id()] = active;
+    }
+  }
   
   // Cycle intersection tests
   for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
@@ -2812,6 +2887,8 @@ void rt_unit::cycle() {
   }
   
   if (!m_response_fifo.empty()) {
+    
+    m_stats->rt_counter_response_cycles[m_sid]++;
     
     mem_fetch *mf = m_response_fifo.front();
     new_addr_type addr = mf->get_addr();
@@ -2833,15 +2910,15 @@ void rt_unit::cycle() {
     if (m_config->m_rt_max_warps > 0) {
       // Clear all warps if coalesced
       if (m_config->m_rt_coalesce_warps) {
-        bool requester_thread_found = false;
+        unsigned requester_thread_found = 0;
         pipe_reg.clear_mem_fetch_wait(mf->get_addr());
         if (!m_config->m_rt_lock_threads) {
-          requester_thread_found |= pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
+          requester_thread_found += pipe_reg.clear_rt_awaiting_threads(mf->get_addr(), 'f');
         }
         for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
           (it->second).clear_mem_fetch_wait(mf->get_addr());
           if (!m_config->m_rt_lock_threads) {
-            requester_thread_found |= (it->second).clear_rt_awaiting_threads(mf->get_addr());
+            requester_thread_found += (it->second).clear_rt_awaiting_threads(mf->get_addr(), 'f');
           }
         }
         if (m_config->m_rt_warppool) {
@@ -2851,32 +2928,56 @@ void rt_unit::cycle() {
         }
         
         // Make sure at least one thread accepted the response. (Other threads might still be completing intersection test)
-        if (!requester_thread_found) {
+        if (requester_thread_found == 0) {
           printf("Requester not found for: 0x%x\n", mf->get_addr());
         }
+        
+        float prev_avg = (m_stats->rt_counter_response_cycles[m_sid] - 1) * m_stats->rt_counter_avg_coalesced_requests[m_sid];
+        m_stats->rt_counter_avg_coalesced_requests[m_sid] = (float)(prev_avg + requester_thread_found) / m_stats->rt_counter_response_cycles[m_sid];
       } 
       
       else if (!m_config->bypassL0Complet){
         // Check MSHR for all accessed to this address
         std::list<mem_fetch *> response_mf = m_L0_complet->probe_mshr(mf->get_addr());
         
+        unsigned requester_thread_found = 0;
         for (auto it=response_mf.begin(); it!=response_mf.end(); ++it) {
           mem_fetch* response = *it;
           // Check all the warps
           for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
             if (it->second.warp_id() == response->get_wid()) {
               it->second.clear_mem_fetch_wait(mf->get_addr());
-              if (!m_config->m_rt_lock_threads) it->second.clear_rt_awaiting_threads(mf->get_addr());
+              if (!m_config->m_rt_lock_threads) {
+                if (requester_thread_found > 0) {
+                  requester_thread_found += it->second.clear_rt_awaiting_threads(mf->get_addr(), 'm');
+                }
+                else {
+                  if (mf->check_unique()) {
+                    requester_thread_found += it->second.clear_rt_awaiting_threads(mf->get_addr(), 'u');
+                  }
+                  else {
+                    requester_thread_found += it->second.clear_rt_awaiting_threads(mf->get_addr(), 'f');
+                  }
+                }
+              }
             }
           }
         }
+        
+        // Make sure at least one thread accepted the response. (Other threads might still be completing intersection test)
+        if (requester_thread_found == 0) {
+          printf("Requester not found for: 0x%x\n", mf->get_addr());
+        }
+        
+        float prev_avg = (m_stats->rt_counter_response_cycles[m_sid] - 1) * m_stats->rt_counter_avg_coalesced_requests[m_sid];
+        m_stats->rt_counter_avg_coalesced_requests[m_sid] = (float)(prev_avg + requester_thread_found) / m_stats->rt_counter_response_cycles[m_sid];
       }
       
       else {
         for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
           if (it->second.warp_id() == mf->get_wid()) {
             it->second.clear_mem_fetch_wait(mf->get_addr());
-            if (!m_config->m_rt_lock_threads) it->second.clear_rt_awaiting_threads(mf->get_addr());
+            if (!m_config->m_rt_lock_threads) it->second.clear_rt_awaiting_threads(mf->get_addr(), 'f');
           }
         }
       }
@@ -2884,7 +2985,7 @@ void rt_unit::cycle() {
     else {
       // Clear response from list of in flight mem accesses
       pipe_reg.clear_mem_fetch_wait(mf->get_addr());
-      if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(mf->get_addr());
+      if (!m_config->m_rt_lock_threads) pipe_reg.clear_rt_awaiting_threads(mf->get_addr(), 'f');
     }   
     
     // Reservation fails stats tracking
@@ -2911,7 +3012,24 @@ void rt_unit::cycle() {
   // if (m_config->m_L0_complet_config.l1_latency > 0) l0c_latency_queue_cycle();
   // if (m_config->m_L0_tri_config.l1_latency > 0) l0t_latency_queue_cycle();
   
+  unsigned max_warps = m_config->m_rt_predictor_config.repack_warps ? 
+            m_config->m_rt_max_warps + m_config->m_rt_predictor_config.repack_max_warps :
+            m_config->m_rt_max_warps;
+  if (m_current_warps.size() < max_warps) {
+    m_stats->rt_unit_ready[m_sid] = 1;
+    if (m_ray_predictor->num_predictor_warps() > 0) {
+      m_stats->rt_counter_awaiting_predictor_cycles[m_sid]++;
+    }
+  }
+  else {
+    m_stats->rt_unit_ready[m_sid] = 0;
+    m_stats->rt_counter_full_unit_cycles[m_sid]++;
+  }
+  
   if (m_config->m_rt_predictor) {
+    
+    if (m_ray_predictor->ready()) m_stats->rt_counter_predictor_ready_cycles[m_sid]++;
+    if (m_ray_predictor->busy()) m_stats->rt_counter_predictor_busy_cycles[m_sid]++;
     
     // Check for predictor entry updates
     unsigned updates_per_cycle = m_config->m_rt_predictor_config.update_bandwidth;
@@ -2935,12 +3053,6 @@ void rt_unit::cycle() {
     }
     
     m_stats->rt_predictor_result_valid[m_sid] = 0;
-    if (m_current_warps.size() < (m_config->m_rt_max_warps + m_config->m_rt_predictor_config.repack_max_warps)) {
-      m_stats->rt_unit_ready[m_sid] = 1;
-    }
-    else {
-      m_stats->rt_unit_ready[m_sid] = 0;
-    }
     // If there's a warp ready in the predictor, fetch it. 
     if (m_ray_predictor->ready() && m_current_warps.size() < (m_config->m_rt_max_warps + m_config->m_rt_predictor_config.repack_max_warps)) {
       
@@ -2961,6 +3073,19 @@ void rt_unit::cycle() {
         else {
           // Add warp to RT core warps
           m_current_warps[predicted_inst.get_uid()] = predicted_inst;
+          
+          if (m_config->m_rt_print_threads) {
+            for (unsigned i=0; i<m_config->warp_size; i++) {
+              if (predicted_inst.active(i)) {
+                printf("Predictor Thread: %d\t", predicted_inst.get_thread_info(i).ray_properties.id);
+                std::deque<new_addr_type> mem_accesses = predicted_inst.get_thread_info(i).raytrace_mem_accesses;
+                for (auto it=mem_accesses.begin(); it!=mem_accesses.end(); it++) {
+                  printf("0x%x\t", *it);
+                }
+                printf("\n");
+              }
+            }
+          }
           
           // Check if newly generated warp for warp reformation
           if (predicted_inst.warp_id() >= m_config->max_warps_per_shader) {
@@ -3032,53 +3157,70 @@ void rt_unit::cycle() {
     rt_inst = pipe_reg;
     m_dispatch_reg->clear();
   }
+  
+  if (m_current_warps.empty()) m_stats->rt_counter_empty_unit_cycles[m_sid]++;
+  
   // RT-CORE NOTE: How to cycle both complet cache and triangle cache?
-  done &= memory_cycle(rt_inst, rc_fail, type);
+  for (unsigned i=0; i<m_config->m_rt_bandwidth; i++) {
+    done &= memory_cycle(rt_inst, rc_fail, type);
+    if (done) break;
+  }
   m_mem_rc = rc_fail;
   
   bool repacked = false;
   
   if (!done && !rt_inst.empty()) {
+    
     unsigned warp_id = rt_inst.warp_id();
     
-    std::deque<unsigned> rt_active_thread_list;
-    if (m_config->m_rt_threadcompaction) {
+    // Skip compaction for sampler warps
+    if (warp_id != (m_config->max_warps_per_shader + 2)) {
       
-      // Get a list of the still active threads in the warp
-      rt_active_thread_list = rt_inst.get_rt_active_thread_list();
-      assert(!rt_active_thread_list.empty());
-      
-      // Loop through all other warps to see if there are empty slots
-      for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
-        for (unsigned i=0; i<m_config->warp_size; i++) {
-          
-          // If there's a completed thread, swap
-          if (it->second.rt_mem_accesses_empty(i)) {
-            unsigned next_thread = rt_active_thread_list.front();
-            it->second.set_thread_info(i, rt_inst.get_thread_info(next_thread));
-            rt_inst.clear_thread_info(next_thread);
-            rt_active_thread_list.pop_front();
+      std::deque<unsigned> rt_active_thread_list;
+      if (m_config->m_rt_threadcompaction) {
+        
+        // Get a list of the still active threads in the warp
+        rt_active_thread_list = rt_inst.get_rt_active_thread_list();
+        assert(!rt_active_thread_list.empty());
+        
+        // Loop through all other warps to see if there are empty slots
+        for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); it++) {
+          for (unsigned i=0; i<m_config->warp_size; i++) {
+            
+            // If there's a completed thread, swap
+            if (it->second.rt_mem_accesses_empty(i)) {
+              unsigned next_thread = rt_active_thread_list.front();
+              it->second.set_thread_info(i, rt_inst.get_thread_info(next_thread));
+              rt_inst.clear_thread_info(next_thread);
+              rt_active_thread_list.pop_front();
+            }
+            
+            // If the list becomes empty, the warp is complete.
+            if (rt_active_thread_list.empty()) {
+              break;
+            }
           }
-          
-          // If the list becomes empty, the warp is complete.
           if (rt_active_thread_list.empty()) {
             break;
           }
         }
-        if (rt_active_thread_list.empty()) {
-          break;
-        }
       }
-    }
-    
-    
-    if (m_config->m_rt_threadcompaction && rt_active_thread_list.empty()) {
-      rt_inst.clear_mem_fetch_wait();
-      rt_inst.clear_rt_access();
-      // Check that the warp is complete
-      assert(!rt_inst.mem_fetch_wait(m_config->m_rt_lock_threads));
-      assert(!rt_inst.empty());
-      repacked = true;
+      
+      
+      if (m_config->m_rt_threadcompaction && rt_active_thread_list.empty()) {
+        rt_inst.clear_mem_fetch_wait();
+        rt_inst.clear_rt_access();
+        // Check that the warp is complete
+        assert(!rt_inst.mem_fetch_wait(m_config->m_rt_lock_threads));
+        assert(!rt_inst.empty());
+        repacked = true;
+      }
+      else {
+        // Move unconditionally to m_current_warps
+        m_current_warps[rt_inst.get_uid()] = rt_inst;
+        rt_inst.clear();
+        return;
+      }
     }
     else {
       // Move unconditionally to m_current_warps
@@ -3139,12 +3281,6 @@ void rt_unit::cycle() {
     rt_inst.clear();
   }
   
-  if (m_config->m_rt_threadcompaction) {
-    unsigned n_warps_predictor = m_ray_predictor->num_predictor_warps();
-    unsigned n_warps_predictor_queue = m_predictor_queue.size();
-    assert(n_warps == m_current_warps.size() + n_warps_predictor + n_warps_predictor_queue);
-  }
-  
 }
 
 bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem_stage_access_type &fail_type) {
@@ -3201,6 +3337,7 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
   }
   
   m_stats->rt_mf_warp_valid[m_sid] = 1;
+  m_stats->rt_counter_warp_avail_cycles[m_sid]++;
   
   // If MSHR is at the "limit" don't sent new requests
   if (m_config->m_rt_max_warps > 0 && m_L0_complet->num_mshr_entries() > m_config->m_rt_max_mshr_entries) return inst.rt_mem_accesses_empty();
@@ -3214,6 +3351,11 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
     fail_type = RT_C_MEM;
   }
   
+  if (m_config->m_rt_threadcompaction) {
+    // Clear RT accesses for thread compaction because this is affected by swapping threads
+    // Should not affect the system because m_next_rt_accesses_set is regenerated each cycle
+    inst.clear_rt_access();
+  }
   // Done if no more rt mem accesses
   return inst.rt_mem_accesses_empty();
 }
@@ -3493,6 +3635,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
       m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle,
       events
     );
+    m_stats->rt_counter_cache_access_cycles[m_sid]++;
   }
   
   // fprintf(m_cache_reuse_log_file, "%d: 0x%x\n", m_sid, mf->get_addr());
@@ -3521,6 +3664,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
       // Otherwise, the request cannot be handled this cycle
       else {
         inst.undo_rt_access(mf->get_addr());
+        m_stats->rt_counter_undo_requests[m_sid]++;
       }
     }
     else if (!m_L0_complet->get_bypass_rf_config()) {
@@ -3533,6 +3677,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
       else {
         // Remove from m_mf_awaiting_response 
         inst.undo_rt_access(mf->get_addr());
+        m_stats->rt_counter_undo_requests[m_sid]++;
         // Remove the unnecessary list of next_rt_accesses (not the set)
         // if (m_config->m_rt_lock_threads) 
       }
@@ -3547,6 +3692,11 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     }
     else {
       m_mem_access_list.insert(mem_access_addr);
+      m_stats->rt_total_unique_accesses[m_sid]++;
+      mf->mark_unique();
+      if (m_mem_access_list.size() != m_stats->rt_total_unique_accesses[m_sid]) {
+        printf("Unique accesses inconsistent %d:%d\n", m_mem_access_list.size(), m_stats->rt_total_unique_accesses[m_sid]);
+      }
     }
     
     if (m_config->m_rt_warppool) {
@@ -3577,11 +3727,21 @@ mem_stage_stall_type rt_unit::process_cache_access(
     
     if (status == HIT) {
       inst.clear_mem_fetch_wait(address);
-      if (!m_config->m_rt_lock_threads) inst.clear_rt_awaiting_threads(address);
+      unsigned found = 0;
+      if (!m_config->m_rt_lock_threads) {
+        found += inst.clear_rt_awaiting_threads(address, 'h');
+      }
       if (m_config->m_rt_coalesce_warps) {
         for (auto it=m_current_warps.begin(); it!=m_current_warps.end(); ++it) {
           (it->second).clear_mem_fetch_wait(address);
-          if (!m_config->m_rt_lock_threads) (it->second).clear_rt_awaiting_threads(address);
+          if (!m_config->m_rt_lock_threads) {
+            if (found > 0) {
+              (it->second).clear_rt_awaiting_threads(address, 'c');
+            }
+            else {
+              (it->second).clear_rt_awaiting_threads(address, 'h');
+            }
+          }
         }
       }
       if (m_config->m_rt_warppool) m_warppool_awaiting_response.erase(address);
@@ -5186,7 +5346,8 @@ void shader_core_ctx::get_rt_cache_stats(cache_stats &cs) {
   m_rt_unit->get_cache_stats(cs);
 }
 
-void shader_core_ctx::reset_rt_predictor_stats() {
+void shader_core_ctx::reset_rt_stats() {
+  m_rt_unit->reset_rt_stats();
   m_rt_unit->reset_rt_predictor_stats();
 }
 
@@ -5889,9 +6050,9 @@ void simt_core_cluster::get_rt_cache_stats(cache_stats &cs) const {
   }
 }
 
-void simt_core_cluster::reset_rt_predictor_stats() {
+void simt_core_cluster::reset_rt_stats() {
   for (unsigned i = 0; i < m_config->n_simt_cores_per_cluster; ++i) {
-    m_core[i]->reset_rt_predictor_stats();
+    m_core[i]->reset_rt_stats();
   }
 }
 

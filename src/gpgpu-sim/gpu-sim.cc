@@ -250,6 +250,14 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "manage memory of all warps in rt core as one set ",
       "0");
   option_parser_register(
+      opp, "-gpgpu_rt_print_threads", OPT_BOOL, &m_rt_print_threads,
+      "print memory access list for every thread (for debugging) ",
+      "0");
+  option_parser_register(
+      opp, "-gpgpu_rt_bandwidth", OPT_UINT32, &m_rt_bandwidth,
+      "number of memory accesses per RT unit cycle ",
+      "1");
+  option_parser_register(
       opp, "-gpgpu_rt_max_warps", OPT_UINT32, &m_rt_max_warps,
       "max number of warps concurrently in one rt core ",
       "0");
@@ -1169,7 +1177,7 @@ void gpgpu_sim::update_stats() {
   gpu_occupancy = occupancy_stats();
   
   for (unsigned i = 0; i < m_shader_config->n_simt_clusters; i++) {
-    m_cluster[i]->reset_rt_predictor_stats();
+    m_cluster[i]->reset_rt_stats();
   }
   gpgpu_ctx->func_sim->g_total_raytrace_mem_accesses = 0;
   for (unsigned i=0; i<50; i++) {
@@ -1453,6 +1461,14 @@ void gpgpu_sim::gpu_print_stat() {
   printf("\nrt_total_verified_rays = %d\n",
          gpgpu_ctx->func_sim->g_total_raytrace_verified_rays);
   
+  // Print threads if any accesses were saved
+  for (auto it=g_rt_memory_accesses.begin(); it!=g_rt_memory_accesses.end(); it++) {
+    printf("Thread %d:\t", it->first);
+    for (auto jt=it->second.begin(); jt!=it->second.end(); jt++) {
+      printf("%c\t", *jt);
+    }
+    printf("\n");
+  }
   
   cache_stats core_cache_stats;
   core_cache_stats.clear();

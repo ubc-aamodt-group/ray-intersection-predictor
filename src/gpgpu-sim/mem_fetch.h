@@ -102,6 +102,8 @@ class mem_fetch {
   enum mf_type get_type() const { return m_type; }
   bool isatomic() const;
   bool israytrace() const { return m_inst.m_is_raytrace; }
+  void mark_unique() { m_unique = true; }
+  bool check_unique() const { return m_unique; }
 
   void set_return_timestamp(unsigned t) { m_timestamp2 = t; }
   void set_icnt_receive_time(unsigned t) { m_icnt_receive_time = t; }
@@ -140,6 +142,8 @@ class mem_fetch {
   unsigned m_sid;
   unsigned m_tpc;
   unsigned m_wid;
+  
+  bool m_unique;
 
   // where is this request now?
   enum mem_fetch_status m_status;
