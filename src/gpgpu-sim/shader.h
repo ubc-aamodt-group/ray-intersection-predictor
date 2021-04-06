@@ -1348,6 +1348,8 @@ class rt_unit : public pipelined_simd_unit {
       std::list<new_addr_type> m_warppool_fifo_list;
     
       std::set<new_addr_type> m_mem_access_list;
+      
+      unsigned m_cache_hit_counter;
 };
 
 class ldst_unit : public pipelined_simd_unit {
@@ -1923,6 +1925,8 @@ struct shader_core_stats_pod {
   unsigned* rt_cache_misses;
   unsigned* rt_cache_hits;
   
+  unsigned* rt_cache_consecutive_hits;
+  
   unsigned rt_average_warp_latency;
   unsigned rt_max_warp_latency;
   unsigned rt_min_warp_latency;
@@ -2079,6 +2083,8 @@ class shader_core_stats : public shader_core_stats_pod {
     rt_cache_accesses = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_cache_misses = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     rt_cache_hits = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+    
+    rt_cache_consecutive_hits = (unsigned *)calloc(m_config->m_rt_bandwidth + 1, sizeof(unsigned));
 
     rt_total_unique_accesses = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
     

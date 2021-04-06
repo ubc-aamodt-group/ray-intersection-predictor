@@ -824,6 +824,12 @@ void shader_core_stats::print(FILE *fout) const {
   fprintf(fout, "Min Warp Latency = %d\n", rt_min_warp_latency);
   fprintf(fout, "Max Warp Latency = %d\n", rt_max_warp_latency);
   
+  fprintf(fout, "Consecutive Cache Hits:\n");
+  for (unsigned i=0; i<=m_config->m_rt_bandwidth; i++) {
+    fprintf(fout, "%d = %d\n", i, rt_cache_consecutive_hits[i]);
+  }
+  
+  
   if(!m_config->m_rt_accumulate_stats) {
     fprintf(fout, "(1 shader stats)\n");
   }
@@ -3161,11 +3167,15 @@ void rt_unit::cycle() {
   if (m_current_warps.empty()) m_stats->rt_counter_empty_unit_cycles[m_sid]++;
   
   // RT-CORE NOTE: How to cycle both complet cache and triangle cache?
+  
+  m_cache_hit_counter = 0;
   for (unsigned i=0; i<m_config->m_rt_bandwidth; i++) {
     done &= memory_cycle(rt_inst, rc_fail, type);
     if (done) break;
   }
   m_mem_rc = rc_fail;
+  
+  m_stats->rt_cache_consecutive_hits[m_cache_hit_counter]++;
   
   bool repacked = false;
   
@@ -3726,6 +3736,7 @@ mem_stage_stall_type rt_unit::process_cache_access(
     // RT-CORE NOTE Assume no writes sent?
     
     if (status == HIT) {
+      m_cache_hit_counter++;
       inst.clear_mem_fetch_wait(address);
       unsigned found = 0;
       if (!m_config->m_rt_lock_threads) {
