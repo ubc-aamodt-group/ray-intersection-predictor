@@ -28,7 +28,7 @@ class ray_predictor {
     ray_predictor(unsigned sid, struct ray_predictor_config config, shader_core_ctx *core);
     ~ray_predictor();
     
-    static constexpr int32_t MISS_NODE = INT32_MAX;
+    const int32_t MISS_NODE = INT32_MAX;
     
     // Backwards pointer
     shader_core_ctx *m_core;

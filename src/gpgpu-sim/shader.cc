@@ -3059,6 +3059,7 @@ void rt_unit::cycle() {
           if (!(it->second).rt_ray_intersect(thread) && m_config->m_rt_predictor_config.miss_node) {
             m_ray_predictor->add_entry(ray_hash, m_ray_predictor->MISS_NODE);
           } else {
+            assert(it->second.rt_ray_intersect(thread));
             m_ray_predictor->add_entry(ray_hash, predict_node);
           }
         }

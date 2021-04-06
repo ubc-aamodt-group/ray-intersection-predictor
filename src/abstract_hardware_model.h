@@ -202,6 +202,13 @@ struct Ray
   void print() const {
     printf("Direction: %f %f %f \tOrigin: %f %f %f\tTmin: %f\tTmax: %f\n", dir_tmax.x, dir_tmax.y, dir_tmax.z, origin_tmin.x, origin_tmin.y, origin_tmin.z, origin_tmin.w, dir_tmax.w);
   }
+
+  std::string to_string() const {
+    char buf[100];
+    sprintf(buf, "Direction: %f %f %f Origin: %f %f %f",
+      dir_tmax.x, dir_tmax.y, dir_tmax.z, origin_tmin.x, origin_tmin.y, origin_tmin.z);
+    return std::string(buf);
+  }
 };
 
 void increment_x_then_y_then_z(dim3 &i, const dim3 &bound);
@@ -1332,6 +1339,7 @@ class warp_inst_t : public inst_t {
         memreqaddr[i] = 0;
         
         intersection_delay = 0;
+        update_predictor = false;
     }
     dram_callback_t callback;
     new_addr_type
