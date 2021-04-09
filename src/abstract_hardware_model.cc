@@ -847,8 +847,10 @@ unsigned warp_inst_t::clear_rt_awaiting_threads(new_addr_type addr, char cat) {
       if (block_addr == addr) {
         // Only remove accesses from threads that have completed their previous intersection test
         if (m_per_scalar_thread[i].intersection_delay == 0) {
-          unsigned ray_id = m_per_scalar_thread[i].ray_properties.id;
           m_per_scalar_thread[i].raytrace_mem_accesses.pop_front();
+          
+          #ifdef INCLUDE_RAY_ID
+          unsigned ray_id = m_per_scalar_thread[i].ray_properties.id;
           
           if (m_config->m_rt_print_threads) {
             if (thread_found == 0) {
@@ -858,6 +860,7 @@ unsigned warp_inst_t::clear_rt_awaiting_threads(new_addr_type addr, char cat) {
               GPGPU_Context()->the_gpgpusim->g_the_gpu->g_rt_memory_accesses[ray_id].push_back('c');
             }
           }
+          #endif
           
           // Set up delay of next intersection test
           m_per_scalar_thread[i].intersection_delay += m_config->m_rt_intersection_latency;
