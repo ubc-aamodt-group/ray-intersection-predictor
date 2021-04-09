@@ -2831,6 +2831,7 @@ void rt_unit::cycle() {
                         
     m_stats->rt_warp_valid[m_sid] = 1;
     
+    #ifdef INCLUDE_RAY_ID
     if (m_config->m_rt_print_threads) {
       for (unsigned i=0; i<m_config->warp_size; i++) {
         if (pipe_reg.active(i)) {
@@ -2843,6 +2844,7 @@ void rt_unit::cycle() {
         }
       }
     }
+    #endif
     
   }
   else {
@@ -3080,6 +3082,7 @@ void rt_unit::cycle() {
           // Add warp to RT core warps
           m_current_warps[predicted_inst.get_uid()] = predicted_inst;
           
+          #ifdef INCLUDE_RAY_ID
           if (m_config->m_rt_print_threads) {
             for (unsigned i=0; i<m_config->warp_size; i++) {
               if (predicted_inst.active(i)) {
@@ -3092,6 +3095,7 @@ void rt_unit::cycle() {
               }
             }
           }
+          #endif
           
           // Check if newly generated warp for warp reformation
           if (predicted_inst.warp_id() >= m_config->max_warps_per_shader) {

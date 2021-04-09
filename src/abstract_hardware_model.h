@@ -185,7 +185,10 @@ struct Ray
 	float4 dir_tmax;
 	
 	bool anyhit;
+  
+  #ifdef INCLUDE_RAY_ID
   unsigned id;
+  #endif
 
   float3 get_origin() const { return {origin_tmin.x, origin_tmin.y, origin_tmin.z}; }
   void set_origin(float3 new_origin) { origin_tmin = {new_origin.x, new_origin.y, new_origin.z, origin_tmin.w}; }
