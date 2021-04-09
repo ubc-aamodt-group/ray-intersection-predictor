@@ -250,6 +250,14 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "manage memory of all warps in rt core as one set ",
       "0");
   option_parser_register(
+      opp, "-gpgpu_rt_print_threads", OPT_BOOL, &m_rt_print_threads,
+      "print memory access list for every thread (for debugging) ",
+      "0");
+  option_parser_register(
+      opp, "-gpgpu_rt_bandwidth", OPT_UINT32, &m_rt_bandwidth,
+      "number of memory accesses per RT unit cycle ",
+      "1");
+  option_parser_register(
       opp, "-gpgpu_rt_max_warps", OPT_UINT32, &m_rt_max_warps,
       "max number of warps concurrently in one rt core ",
       "0");
@@ -285,6 +293,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       opp, "-gpgpu_rt_predictor_config", OPT_CSTR, &m_rt_predictor_config_string,
       "ray predictor config: debug_print,latency,max_table_size,hash_type,hash_francois_bits,hash_grid_bits,hash_sphere_bits,go_up_level,max_entry_cap,replacement_policy,placement_policy,virtual,virtual_access_latency ",
       "1,2,64,f,2,5,3,0,4,f,l,d,4,0,10,256,8,d");
+  option_parser_register(
+      opp, "-gpgpu_rt_predictor_sampler", OPT_BOOL, &m_rt_predictor_config.sampler,
+      "train predictor with 1 sample per warp first ",
+      "0");
   option_parser_register(
       opp, "-gpgpu_rt_predictor_lookup_latency", OPT_UINT32, &m_rt_predictor_config.per_thread_lookup_latency,
       "latency of per-thread predictor lookup ",
@@ -1165,7 +1177,7 @@ void gpgpu_sim::update_stats() {
   gpu_occupancy = occupancy_stats();
   
   for (unsigned i = 0; i < m_shader_config->n_simt_clusters; i++) {
-    m_cluster[i]->reset_rt_predictor_stats();
+    m_cluster[i]->reset_rt_stats();
   }
   gpgpu_ctx->func_sim->g_total_raytrace_mem_accesses = 0;
   for (unsigned i=0; i<50; i++) {
@@ -1449,6 +1461,14 @@ void gpgpu_sim::gpu_print_stat() {
   printf("\nrt_total_verified_rays = %d\n",
          gpgpu_ctx->func_sim->g_total_raytrace_verified_rays);
   
+  // Print threads if any accesses were saved
+  for (auto it=g_rt_memory_accesses.begin(); it!=g_rt_memory_accesses.end(); it++) {
+    printf("Thread %d:\t", it->first);
+    for (auto jt=it->second.begin(); jt!=it->second.end(); jt++) {
+      printf("%c\t", *jt);
+    }
+    printf("\n");
+  }
   
   cache_stats core_cache_stats;
   core_cache_stats.clear();
@@ -1474,10 +1494,27 @@ void gpgpu_sim::gpu_print_stat() {
   shader_print_scheduler_stat(stdout, false);
 
   m_shader_stats->print(stdout);
-  for (unsigned i = 0; i < m_config.num_cluster(); i++) {
-    m_cluster[i]->print_predictor_stats(stdout);
-  }
   
+  float avg_hits = 0;
+  float avg_verified = 0;
+  float avg_hitrate = 0;
+  float avg_verifiedrate = 0;
+  float avg_memsavings = 0;
+  for (unsigned i = 0; i < m_config.num_cluster(); i++) {
+    predictor_stats stats = m_cluster[i]->print_predictor_stats(stdout);
+    
+    avg_hits += stats.predictor_hits;
+    avg_verified += stats.num_verified;
+    avg_hitrate += stats.predictor_hit_rate;
+    avg_verifiedrate += stats.verified_rate;
+    avg_memsavings += stats.memory_savings;
+  }
+  fprintf(stdout, "avg_predictor_hits = %f\n", avg_hits / m_config.num_cluster());
+  fprintf(stdout, "avg_verified_rays = %f\n", avg_verified / m_config.num_cluster());
+  fprintf(stdout, "avg_predictor_hit_rate = %f\n", avg_hitrate / m_config.num_cluster());
+  fprintf(stdout, "avg_predictor_verified_rate = %f\n", avg_verifiedrate / m_config.num_cluster());
+  fprintf(stdout, "avg_predictor_memory_savings = %f\n", avg_memsavings / m_config.num_cluster());
+ 
   
 #ifdef GPGPUSIM_POWER_MODEL
   if (m_config.g_power_simulation_enabled) {

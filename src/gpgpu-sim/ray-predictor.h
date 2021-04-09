@@ -12,6 +12,16 @@ struct {
     std::map<new_addr_type, unsigned long long> m_node_use_map;
 } typedef predictor_entry;
 
+
+struct {
+  unsigned predictor_hits;
+  unsigned num_verified;
+  float predictor_hit_rate;
+  float verified_rate;
+  int memory_savings;
+} typedef predictor_stats;
+
+
 class shader_core_ctx;
 
 class ray_predictor {
@@ -42,19 +52,23 @@ class ray_predictor {
     bool m_magic_verify;
     bool m_oracle_update;
     unsigned m_repacking_timer;
+    bool m_sampler;
     
     unsigned m_verified_warp_id;
     unsigned m_unverified_warp_id;
+    unsigned m_sample_warp_id;
     
     unsigned m_sid;
     
     bool busy() { return m_busy; }
     bool ready() { return m_ready; }
     void insert(const warp_inst_t& inst);
+    void insert_sample(warp_inst_t& inst);
+    void update_sample(unsigned warp_uid);
     warp_inst_t retrieve();
     void cycle();
     void display_state(FILE* fout);
-    void print_stats(FILE* fout);
+    predictor_stats print_stats(FILE* fout);
     void reset_stats();
     
     unsigned predictor_table_size() {return m_predictor_table.size(); }
@@ -86,6 +100,12 @@ class ray_predictor {
     warp_inst_t m_current_warp;
     
     std::deque<warp_inst_t> m_predictor_warps;
+    
+    // List of warps waiting for their sample to train the predictor
+    std::map<unsigned, warp_inst_t> m_sampler_warps;
+    // Special warp with 1 sample thread per warp
+    warp_inst_t m_sample_warp;
+    bool m_retrieved;
     
     // Requires oracle knowledge
     std::deque<struct warp_inst_t::per_thread_info> verified_threads;

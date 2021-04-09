@@ -185,6 +185,7 @@ struct Ray
 	float4 dir_tmax;
 	
 	bool anyhit;
+  unsigned id;
 
   float3 get_origin() const { return {origin_tmin.x, origin_tmin.y, origin_tmin.z}; }
   void set_origin(float3 new_origin) { origin_tmin = {new_origin.x, new_origin.y, new_origin.z, origin_tmin.w}; }
@@ -379,6 +380,7 @@ class core_config {
 
   bool m_valid;
   unsigned warp_size;
+  bool m_rt_print_threads;
   // backward pointer
   class gpgpu_context *gpgpu_ctx;
 
@@ -546,6 +548,7 @@ struct ray_predictor_config {
   bool oracle_update;
   bool magic_verify;
   unsigned repacking_timer;
+  bool sampler;
 };
 
 class gpgpu_functional_sim_config {
@@ -617,6 +620,8 @@ class gpgpu_t {
   // Move some cycle core stats here instead of being global
   unsigned long long gpu_sim_cycle;
   unsigned long long gpu_tot_sim_cycle;
+  
+  std::map<unsigned, std::deque<char> > g_rt_memory_accesses;
 
   void *gpu_malloc(size_t size);
   void *gpu_mallocarray(size_t count);
@@ -1230,6 +1235,15 @@ class warp_inst_t : public inst_t {
   unsigned get_schd_id() const { return m_scheduler_id; }
   active_mask_t get_warp_active_mask() const { return m_warp_active_mask; }
   
+  void init_per_scalar_thread() {
+    m_per_scalar_thread.resize(m_config->warp_size);
+    m_per_scalar_thread_valid = true;
+  }
+  void init_rt_warp() {
+    space.set_type(global_space);
+    op = RT_CORE_OP;
+    m_is_raytrace = true;
+  }
   void set_rt_mem_accesses(unsigned int tid, const std::deque<new_addr_type>& mem_accesses);
   int update_rt_mem_accesses(unsigned int tid, bool valid, const std::deque<new_addr_type> &mem_accesses);
   void set_rt_ray_properties(unsigned int tid, Ray ray, unsigned long long hash, new_addr_type prediction, bool intersect, int num_nodes_accessed, int num_triangles_accessed);
@@ -1261,7 +1275,7 @@ class warp_inst_t : public inst_t {
   void clear_mem_fetch_wait() {
     m_mf_awaiting_response.clear();
   }
-  bool clear_rt_awaiting_threads(new_addr_type addr);
+  unsigned clear_rt_awaiting_threads(new_addr_type addr, char cat);
   void clear_rt_access(new_addr_type addr) {
     m_next_rt_accesses_set.erase(addr);
   }
@@ -1283,6 +1297,8 @@ class warp_inst_t : public inst_t {
   void set_mem_fetch_wait(new_addr_type addr) {
     m_mf_awaiting_response.insert(addr);
   }
+  
+  void print_rt_accesses();
   
   std::set<new_addr_type> get_rt_accesses() { return m_next_rt_accesses_set; }
   
