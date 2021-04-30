@@ -251,7 +251,6 @@ void shader_core_ctx::create_schedulers() {
 
 void shader_core_ctx::create_exec_pipeline() {
   // op collector configuration
-  // RT-CORE NOTE: Add to this?
   enum { SP_CUS, DP_CUS, SFU_CUS, TENSOR_CORE_CUS, INT_CUS, MEM_CUS, GEN_CUS };
 
   opndcoll_rfu_t::port_vector_t in_ports;
@@ -827,11 +826,6 @@ void shader_core_stats::print(FILE *fout) const {
   fprintf(fout, "Consecutive Cache Hits:\n");
   for (unsigned i=0; i<=m_config->m_rt_bandwidth; i++) {
     fprintf(fout, "%d = %d\n", i, rt_cache_consecutive_hits[i]);
-  }
-  
-  
-  if(!m_config->m_rt_accumulate_stats) {
-    fprintf(fout, "(1 shader stats)\n");
   }
   
   if (!rt_readded_reservation_fails.empty()) {
@@ -2739,7 +2733,6 @@ rt_unit::rt_unit(mem_fetch_interface *icnt,
                      shader_core_stats *stats,
                      unsigned sid, unsigned tpc)
     : pipelined_simd_unit(NULL, config, config->rt_core_latency, core) {
-    // RT-CORE NOTE: Mimic ldst_unit -> no result port?
     
   // m_memory_config = mem_config;
   m_icnt = icnt;
@@ -2753,38 +2746,15 @@ rt_unit::rt_unit(mem_fetch_interface *icnt,
   
   n_warps = 0;
   
-  // RT-CORE NOTE: Make the type of cache (tex, constant, data) configurable?
   m_L0_complet = new read_only_cache( "L0Complet", m_config->m_L0C_config, m_sid,
                                       get_shader_constant_cache_id(), icnt, 
                                       IN_L1C_MISS_QUEUE);
-                                      // QUESTION: It starts off in miss queue status?
-  m_L0_tri = new read_only_cache( "L0Triangle", m_config->m_L0T_config, m_sid,
-                                  get_shader_constant_cache_id(), icnt, 
-                                  IN_L1C_MISS_QUEUE);
                                 
-  // TODO: Get the configurations from m_config 
   m_ray_predictor = new ray_predictor(m_sid, m_config->m_rt_predictor_config, m_core);
-
-  // l0c_latency_queue.resize(m_config->m_L0C_config.)
 
   m_mem_rc = NO_RC_FAIL;
   m_name = "RT_CORE";
   
-  // // CACHE REUSE DISTANCE LOG
-  // char * m_log_file_filename;
-  // time_t curr_time;
-  // time(&curr_time);
-  // char *date = ctime(&curr_time);
-  // char *s = date;
-  // while (*s) {
-  //   if (*s == ' ' || *s == '\t' || *s == ':') *s = '-';
-  //   if (*s == '\n' || *s == '\r') *s = 0;
-  //   s++;
-  // }
-  // char buf[1024];
-  // snprintf(buf, 1024, "cache_reuse_distance_test__%s.log", date);
-  // m_log_file_filename = strdup(buf);
-  // m_cache_reuse_log_file = fopen(m_log_file_filename, "w+");
 }
 
 
@@ -2801,9 +2771,7 @@ bool rt_unit::can_issue(const warp_inst_t &inst) const {
         
 void rt_unit::issue(register_set &reg_set) {
   warp_inst_t *inst = *(reg_set.get_ready());
-  // RT-CORE NOTE: MEM__OP? RT__OP?
   inst->op_pipe = MEM__OP;
-  // RT-CORE NOTE: Add stats
   pipelined_simd_unit::issue(reg_set);
   
   if (!m_config->m_rt_predictor) {
@@ -2894,6 +2862,7 @@ void rt_unit::cycle() {
     (it->second).dec_thread_latency();
   }
   
+  // Check memory request responses
   if (!m_response_fifo.empty()) {
     
     m_stats->rt_counter_response_cycles[m_sid]++;
@@ -2901,11 +2870,12 @@ void rt_unit::cycle() {
     mem_fetch *mf = m_response_fifo.front();
     new_addr_type addr = mf->get_addr();
     
-    // RT-CORE NOTE: figure out how to separate node and triangle responses
+    // Update MF
     mf->set_status(IN_SHADER_FETCHED,
                    m_core->get_gpu()->gpu_sim_cycle +
                    m_core->get_gpu()->gpu_tot_sim_cycle);
-                   
+                
+    // Update cache
     if (!m_config->bypassL0Complet) {
       m_L0_complet->fill( mf, m_core->get_gpu()->gpu_sim_cycle +
                         m_core->get_gpu()->gpu_tot_sim_cycle);
@@ -2913,8 +2883,7 @@ void rt_unit::cycle() {
                         
     m_response_fifo.pop_front();
 
-    // printf("\nShader %d: 0x%x\t", m_sid, mf->get_addr());
-    
+    // If more than 1 warp in RT unit:
     if (m_config->m_rt_max_warps > 0) {
       // Clear all warps if coalesced
       if (m_config->m_rt_coalesce_warps) {
@@ -2937,6 +2906,7 @@ void rt_unit::cycle() {
         
         // Make sure at least one thread accepted the response. (Other threads might still be completing intersection test)
         if (requester_thread_found == 0) {
+          // Might occur in warp coalescing in rare cases when multiple requests were sent, but only 1 was necessary
           printf("Requester not found for: 0x%x\n", mf->get_addr());
         }
         
@@ -3011,14 +2981,11 @@ void rt_unit::cycle() {
   }
     
   writeback();
+  
   if (m_config->m_rt_warppool && !m_config->bypassL0Complet) assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());
   
   // Cycle caches
   m_L0_complet->cycle();
-  m_L0_tri->cycle();
-  
-  // if (m_config->m_L0_complet_config.l1_latency > 0) l0c_latency_queue_cycle();
-  // if (m_config->m_L0_tri_config.l1_latency > 0) l0t_latency_queue_cycle();
   
   unsigned max_warps = m_config->m_rt_predictor_config.repack_warps ? 
             m_config->m_rt_max_warps + m_config->m_rt_predictor_config.repack_max_warps :
@@ -3034,6 +3001,7 @@ void rt_unit::cycle() {
     m_stats->rt_counter_full_unit_cycles[m_sid]++;
   }
   
+  // Handle RT predictor
   if (m_config->m_rt_predictor) {
     
     if (m_ray_predictor->ready()) m_stats->rt_counter_predictor_ready_cycles[m_sid]++;
@@ -3177,8 +3145,6 @@ void rt_unit::cycle() {
   
   if (m_current_warps.empty()) m_stats->rt_counter_empty_unit_cycles[m_sid]++;
   
-  // RT-CORE NOTE: How to cycle both complet cache and triangle cache?
-  
   m_cache_hit_counter = 0;
   for (unsigned i=0; i<m_config->m_rt_bandwidth; i++) {
     done &= memory_cycle(rt_inst, rc_fail, type);
@@ -3197,6 +3163,7 @@ void rt_unit::cycle() {
     // Skip compaction for sampler warps
     if (warp_id != (m_config->max_warps_per_shader + 2)) {
       
+      // Manage thread compaction
       std::deque<unsigned> rt_active_thread_list;
       if (m_config->m_rt_threadcompaction) {
         
@@ -3277,14 +3244,8 @@ void rt_unit::cycle() {
       }
     }
 
-    // Skip checking for pending writes (no WAW hazard?)
-   
     m_core->warp_inst_complete(rt_inst);
-    // RT-CORE NOTE check if this is still needed
-    // m_scoreboard->releaseRegisters(m_dispatch_reg);
-    
     m_core->dec_inst_in_pipeline(warp_id);
-    
     m_stats->rt_completed_warps[m_sid]++;
     
     // Ignore warps generated inside RT core
@@ -3382,7 +3343,6 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
 }
 
 
-// RT-CORE NOTE: Not sure if this is necessary (in ldst_unit, this is where the completed mf is cleared from the mshr)
 void rt_unit::writeback() {
   while (m_L0_complet->access_ready()) {
     mem_fetch *mf = m_L0_complet->next_access();
@@ -3409,7 +3369,6 @@ void rt_unit::coalesce_warp_requests(mem_access_t access) {
   }
 }
 
-// RT-CORE NOTE: Add version that re-orders next accesses in a warp depending on whether of not they're in other warps
 
 void rt_unit::track_warp_mem_accesses(warp_inst_t &inst) {
   bool mem_inserted = false;
@@ -3563,7 +3522,6 @@ new_addr_type rt_unit::get_next_rt_mem_access(warp_inst_t &inst) {
     } while (m_warppool_awaiting_response.find(next_addr) != m_warppool_awaiting_response.end());
     
     if (greedy) m_stats->rt_warppool_greedy_ratio++;
-    // assert(m_warppool_awaiting_response.find(next_addr) == m_warppool_awaiting_response.end());
   }
   
   else {
@@ -3619,7 +3577,6 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     m_warppool_access_stats[access.get_addr()] = m_core->get_gpu()->gpu_sim_cycle + m_core->get_gpu()->gpu_tot_sim_cycle;
 
     // Attempt to coalesce memory accesses between multiple warps
-    // if (m_config->m_rt_coalesce_warps && m_config->m_rt_lock_threads) {
     if (m_config->m_rt_coalesce_warps) {
       coalesce_warp_requests(access);
     }
@@ -3659,8 +3616,6 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     m_stats->rt_counter_cache_access_cycles[m_sid]++;
   }
   
-  // fprintf(m_cache_reuse_log_file, "%d: 0x%x\n", m_sid, mf->get_addr());
-  
   // Stalled
   if (status == RESERVATION_FAIL || result == ICNT_RC_FAIL) {
     
@@ -3699,8 +3654,6 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
         // Remove from m_mf_awaiting_response 
         inst.undo_rt_access(mf->get_addr());
         m_stats->rt_counter_undo_requests[m_sid]++;
-        // Remove the unnecessary list of next_rt_accesses (not the set)
-        // if (m_config->m_rt_lock_threads) 
       }
     }
   }
@@ -3744,7 +3697,7 @@ mem_stage_stall_type rt_unit::process_cache_access(
       
     mem_stage_stall_type result = NO_RC_FAIL;
     
-    // RT-CORE NOTE Assume no writes sent?
+    // Assume no writes sent
     
     if (status == HIT) {
       m_cache_hit_counter++;
@@ -4083,7 +4036,7 @@ void ldst_unit::cycle() {
             m_next_global = mf;
           }
         } else {
-          // RT-CORE NOTE: Do not pop ray trace mf from response fifo?
+          // Do not pop ray trace mf from response fifo
           if (!(mf->israytrace()) && m_L1D->fill_port_free()) {
             m_L1D->fill(mf, m_core->get_gpu()->gpu_sim_cycle +
                                 m_core->get_gpu()->gpu_tot_sim_cycle);
@@ -4151,10 +4104,8 @@ void ldst_unit::cycle() {
         }
         if (!pending_requests) {
           m_core->warp_inst_complete(*m_dispatch_reg);
-        // RT-CORE NOTE check if this is still needed
           m_scoreboard->releaseRegisters(m_dispatch_reg);
         }
-        // QUESTION: What does this do?
         m_core->dec_inst_in_pipeline(warp_id);
         m_dispatch_reg->clear();
       }

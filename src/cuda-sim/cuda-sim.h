@@ -130,6 +130,8 @@ class cuda_sim {
     g_total_raytrace_perfect_verified_triangle_accesses = 0;
     g_total_raytrace_verified_rays = 0;
     g_total_miss_node_removed_predictions = 0;
+    g_unique_node_accesses = 0;
+    g_unique_triangle_accesses = 0;
     g_ptx_kernel_count =
         -1;  // used for classification stat collection purposes
     gpgpu_param_num_shaders = 0;
@@ -172,6 +174,10 @@ class cuda_sim {
   unsigned g_total_raytrace_perfect_verified_triangle_accesses;
   unsigned g_total_raytrace_verified_rays;
   unsigned g_total_miss_node_removed_predictions;
+  std::set<new_addr_type> g_raytrace_addresses;
+  std::map<unsigned, unsigned> g_max_tree_depth;
+  unsigned g_unique_triangle_accesses;
+  unsigned g_unique_node_accesses;
   char *cdp_latency_str;
   int g_ptx_kernel_count;  // used for classification stat collection purposes
   std::map<const void *, std::string>

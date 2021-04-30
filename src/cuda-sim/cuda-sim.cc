@@ -786,7 +786,6 @@ void ptx_instruction::set_opcode_and_latency() {
       if (m_is_printf || m_is_cdp) {
         op = ALU_OP;
       } else if (m_is_raytrace) {
-        // RT-CORE NOTE: Add latency 
         op = RT_CORE_OP;
       } else
         op = CALL_OPS;
@@ -1860,7 +1859,6 @@ void ptx_thread_info::ptx_exec_inst(warp_inst_t &inst, unsigned lane_id) {
     }
 
     if (pI->m_is_raytrace) {
-      // RT-CORE NOTE
       inst.set_rt_mem_accesses(lane_id, m_raytrace_mem_accesses);
       inst.set_rt_ray_properties(lane_id, m_ray, m_ray_hashes, m_raytrace_prediction, m_raytrace_intersect,
                                  m_num_nodes_accessed, m_num_triangles_accessed);

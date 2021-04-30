@@ -852,6 +852,7 @@ unsigned warp_inst_t::clear_rt_awaiting_threads(new_addr_type addr, char cat) {
           #ifdef INCLUDE_RAY_ID
           unsigned ray_id = m_per_scalar_thread[i].ray_properties.id;
           
+          // Track category
           if (m_config->m_rt_print_threads) {
             if (thread_found == 0) {
               GPGPU_Context()->the_gpgpusim->g_the_gpu->g_rt_memory_accesses[ray_id].push_back(cat);
@@ -928,6 +929,7 @@ bool warp_inst_t::mem_fetch_wait(bool locked) {
       for (unsigned i=0; i<m_config->warp_size; i++) {
         if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty() && m_per_scalar_thread[i].intersection_delay == 0) {
           new_addr_type addr = m_per_scalar_thread[i].raytrace_mem_accesses.front();
+          // RT-CORE NOTE: Temporarily hard coded to 32, to be updated
           new_addr_type block_addr = line_size_based_tag_func(addr, 32);
           // Check if it's already waiting for a response or waiting to be sent
           if (m_mf_awaiting_response.find(block_addr) == m_mf_awaiting_response.end()
@@ -969,10 +971,6 @@ void warp_inst_t::fill_next_rt_mem_access(bool locked) {
   if (locked) {
     // Get current round of requests
     if (m_next_rt_accesses_set.empty()) {
-      // RT-CORE NOTE: Assertions only valid when not pooling warp accesses... TODO:
-      // assert(!mem_fetch_wait(locked));
-      // assert(m_next_rt_accesses_set.empty());
-      // printf("Getting next set of rt mem accesses...\n");
       for (unsigned i=0; i<m_config->warp_size; i++) {
         if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty()) {
           if (m_next_rt_accesses_set.find(m_per_scalar_thread[i].raytrace_mem_accesses.front()) == m_next_rt_accesses_set.end()) {
@@ -993,7 +991,7 @@ void warp_inst_t::fill_next_rt_mem_access(bool locked) {
       if (!m_per_scalar_thread[i].raytrace_mem_accesses.empty() && m_per_scalar_thread[i].intersection_delay == 0) {
         new_addr_type addr = m_per_scalar_thread[i].raytrace_mem_accesses.front();
         
-        // RT-CORE NOTE: Fix 32
+        // RT-CORE NOTE: Temporarily hard coded to 32, to be updated
         new_addr_type block_addr = line_size_based_tag_func(addr, 32);
         // Check if it's already waiting for a response or waiting to be sent
         if (m_mf_awaiting_response.find(block_addr) == m_mf_awaiting_response.end()
@@ -1008,7 +1006,7 @@ void warp_inst_t::fill_next_rt_mem_access(bool locked) {
         // Count "MSHR" merges
         else if (m_prev_mem_access[i] != addr && m_mf_awaiting_response.find(block_addr) != m_mf_awaiting_response.end()) {
           // Accesses should either by in mf awaiting response OR next rt access, not both
-          assert (m_next_rt_accesses_set.find(addr) == m_next_rt_accesses_set.end());
+          assert(m_next_rt_accesses_set.find(addr) == m_next_rt_accesses_set.end());
           m_mshr_merged_count++;
         }
         
@@ -1025,7 +1023,6 @@ mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
   if (!locked) assert(!m_next_rt_accesses.empty());
   assert(!m_next_rt_accesses_set.empty());
   
-  // RT-CORE NOTE: first version (round robin?) this section tbd
   new_addr_type next_addr;
   
   if (locked) {
@@ -1045,9 +1042,7 @@ mem_access_t warp_inst_t::get_next_rt_mem_access(bool locked) {
   }
 
   // Generate mem_access_t
-  // RT-CORE NOTE: Coalesce requests?
   mem_access_t next_access = memory_coalescing_arch_rt(next_addr);
-  // printf("\nAdd Warp %d: 0x%x\t", m_warp_id, next_access.get_addr());
   m_mf_awaiting_response.insert(next_access.get_addr());
   m_current_rt_access = next_addr;
   

@@ -1259,7 +1259,6 @@ class cache_t;
 
 class rt_unit : public pipelined_simd_unit {
     public:
-        // RT-CORE NOTE: Determine inputs
         rt_unit(mem_fetch_interface *icnt,
                 shader_core_mem_fetch_allocator *mf_allocator,
                 shader_core_ctx *core,
@@ -1570,9 +1569,7 @@ class shader_core_config : public core_config {
     m_L1I_config.init(m_L1I_config.m_config_string, FuncCachePreferNone);
     m_L1T_config.init(m_L1T_config.m_config_string, FuncCachePreferNone);
     m_L1C_config.init(m_L1C_config.m_config_string, FuncCachePreferNone);
-    // RT-CORE NOTE: To be fixed
     m_L0C_config.init(m_L0C_config.m_config_string, FuncCachePreferNone);
-    m_L0T_config.init(m_L0C_config.m_config_string, FuncCachePreferNone);
     m_L1D_config.init(m_L1D_config.m_config_string, FuncCachePreferNone);
     gpgpu_cache_texl1_linesize = m_L1T_config.get_line_sz();
     gpgpu_cache_constl1_linesize = m_L1C_config.get_line_sz();
@@ -1779,7 +1776,6 @@ class shader_core_config : public core_config {
   bool m_rt_warppool_fifo;
   bool m_rt_warppool_tree;
   bool m_rt_warppool_greedy;
-  bool m_rt_accumulate_stats;
   struct ray_predictor_config m_rt_predictor_config;
   char * m_rt_predictor_config_string;
 };

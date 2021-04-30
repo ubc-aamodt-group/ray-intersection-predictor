@@ -70,7 +70,7 @@ enum dram_ctrl_t { DRAM_FIFO = 0, DRAM_FRFCFS = 1 };
 
 struct power_config {
   power_config() { m_valid = true; }
-  void init() {
+  void init(char *g_power_output_filename) {
     // initialize file name if it is not set
     time_t curr_time;
     time(&curr_time);
@@ -81,19 +81,39 @@ struct power_config {
       if (*s == '\n' || *s == '\r') *s = 0;
       s++;
     }
-    char buf1[1024];
-    snprintf(buf1, 1024, "gpgpusim_power_report__%s.log", date);
-    g_power_filename = strdup(buf1);
-    char buf2[1024];
-    snprintf(buf2, 1024, "gpgpusim_power_trace_report__%s.log.gz", date);
-    g_power_trace_filename = strdup(buf2);
-    char buf3[1024];
-    snprintf(buf3, 1024, "gpgpusim_metric_trace_report__%s.log.gz", date);
-    g_metric_trace_filename = strdup(buf3);
-    char buf4[1024];
-    snprintf(buf4, 1024, "gpgpusim_steady_state_tracking_report__%s.log.gz",
-             date);
-    g_steady_state_tracking_filename = strdup(buf4);
+    
+    if (g_power_output_filename == 0x0) {
+      char buf1[1024];
+      snprintf(buf1, 1024, "gpgpusim_power_report__%s.log", date);
+      g_power_filename = strdup(buf1);
+      char buf2[1024];
+      snprintf(buf2, 1024, "gpgpusim_power_trace_report__%s.log.gz", date);
+      g_power_trace_filename = strdup(buf2);
+      char buf3[1024];
+      snprintf(buf3, 1024, "gpgpusim_metric_trace_report__%s.log.gz", date);
+      g_metric_trace_filename = strdup(buf3);
+      char buf4[1024];
+      snprintf(buf4, 1024, "gpgpusim_steady_state_tracking_report__%s.log.gz",
+               date);
+      g_steady_state_tracking_filename = strdup(buf4);
+      
+    
+    } else {
+      char buf1[1024];
+      snprintf(buf1, 1024, "gpgpusim_power_report__%s__%s.log", g_power_output_filename, date);
+      g_power_filename = strdup(buf1);
+      char buf2[1024];
+      snprintf(buf2, 1024, "gpgpusim_power_trace_report__%s__%s.log.gz", g_power_output_filename, date);
+      g_power_trace_filename = strdup(buf2);
+      char buf3[1024];
+      snprintf(buf3, 1024, "gpgpusim_metric_trace_report__%s__%s.log.gz", g_power_output_filename, date);
+      g_metric_trace_filename = strdup(buf3);
+      char buf4[1024];
+      snprintf(buf4, 1024, "gpgpusim_steady_state_tracking_report__%s__%s.log.gz",
+               g_power_output_filename, date);
+      g_steady_state_tracking_filename = strdup(buf4);
+      
+    }
 
     if (g_steady_power_levels_enabled) {
       sscanf(gpu_steady_state_definition, "%lf:%lf",
@@ -339,7 +359,8 @@ class gpgpu_sim_config : public power_config,
     ptx_set_predictor_config(m_shader_config.m_rt_predictor_config);
     m_memory_config.init();
     init_clock_domains();
-    power_config::init();
+    
+    power_config::init(g_power_output_filename);
     Trace::init();
 
     // initialize file name if it is not set
@@ -412,6 +433,7 @@ class gpgpu_sim_config : public power_config,
   // visualizer
   bool g_visualizer_enabled;
   char *g_visualizer_filename;
+  char *g_power_output_filename;
   int g_visualizer_zlevel;
 
   // statistics collection

@@ -11,262 +11,6 @@ void print_float4(float4 printVal) {
 	printf("%f, %f, %f, %f\n", printVal.x, printVal.y, printVal.z, printVal.w);
 }
 
-void trace_cwbvh(const class ptx_instruction * pI, class ptx_thread_info * thread, const class function_info * target_func, std::list<addr_t> & memory_accesses)
-{
-    unsigned n_return = target_func->has_return();
-    assert(n_return == 0);
-    unsigned n_args = target_func->num_args();
-    printf("Function has %d args.\n", n_args);
-    assert(n_args == 4);
-        
-    int arg = 0;
-    // First argument: Ray Properties
-    const operand_info &actual_param_op1 = pI->operand_lookup(arg + 1);    
-    const symbol *formal_param1 = target_func->get_arg(arg);
-    addr_t from_addr = actual_param_op1.get_symbol()->get_address();
-    unsigned size=formal_param1->get_size_in_bytes();
-    assert(size == 32);
-    
-    // Ray
-    Ray ray_properties;
-    thread->m_local_mem->read(from_addr, size, &ray_properties);
-    printf("Origin: (%f, %f, %f), Direction: (%f, %f, %f), tmin: %f, tmax: %f\n", 
-      ray_properties.origin_tmin.x, ray_properties.origin_tmin.y, ray_properties.origin_tmin.z,
-      ray_properties.dir_tmax.x, ray_properties.dir_tmax.y, ray_properties.dir_tmax.z,
-      ray_properties.origin_tmin.w, ray_properties.dir_tmax.w);
-
-    arg++;
-    // Second argument: Ray Payload
-    const operand_info &actual_param_op2 = pI->operand_lookup(arg + 1);    
-    const symbol *formal_param2 = target_func->get_arg(arg);
-    from_addr = actual_param_op2.get_symbol()->get_address();
-    size=formal_param2->get_size_in_bytes();  
-    assert(size == 8);
-    
-    // Payload
-    Hit ray_payload;
-    addr_t ray_payload_addr;
-    thread->m_local_mem->read(from_addr, size, &ray_payload_addr);
-    printf("Ray payload address: 0x%x\n", ray_payload_addr);
-    
-    arg++;
-    // Third argument: Top of BVH Tree
-    const operand_info &actual_param_op = pI->operand_lookup(arg + 1);    
-    const symbol *formal_param = target_func->get_arg(arg);
-    from_addr = actual_param_op.get_symbol()->get_address();
-    size=formal_param->get_size_in_bytes();
-    assert(size == 8);
-    
-    // Top node
-    addr_t node_start;
-    thread->m_local_mem->read(from_addr, size, &node_start);
-    printf("Node address: 0x%8x\n", node_start);
-    
-    arg++;
-    // Fourth argument: Start of Primitives Array
-    const operand_info &actual_param_op3 = pI->operand_lookup(arg + 1);    
-    const symbol *formal_param3 = target_func->get_arg(arg);
-    from_addr = actual_param_op3.get_symbol()->get_address();
-    size=formal_param3->get_size_in_bytes();
-    assert(size == 8);
-    
-    // Triangle address
-    addr_t tri_start;
-    thread->m_local_mem->read(from_addr, size, &tri_start);
-    printf("Triangle address: 0x%8x\n", tri_start);
-    
-    // Global memory
-    memory_space *mem=NULL;
-    mem = thread->get_global_memory();
-    
-    std::list<uint2> traversal_stack;
-    uint2 nodeGroup, triangleGroup;
-    nodeGroup.x = 0;
-    nodeGroup.y = 0x80000000;
-    triangleGroup.x = 0;
-    triangleGroup.y = 0;
-    
-    float thit = ray_properties.dir_tmax.w;
-    
-	do
-	{
-        // Inner node
-		if (nodeGroup.y > 0x00FFFFFF)
-		{
-			const unsigned int hits = nodeGroup.y;
-			const unsigned int imask = nodeGroup.y;
-			const unsigned int child_bit_index = bfind(hits);
-			const unsigned int child_node_base_index = nodeGroup.x;
-
-            // Clear current child from node group
-			nodeGroup.y &= ~(1 << child_bit_index);
-
-			if (nodeGroup.y > 0x00FFFFFF)
-			{
-				traversal_stack.push_back(nodeGroup);
-                #ifdef DEBUG_PRINT
-                printf("Pushing to stack (%d)\n", traversal_stack.size());
-                #endif
-			}
-
-		
-			// const unsigned int slot_index = (child_bit_index - 24) ^ octinv;
-			// const unsigned int octinv4 = octinv * 0x01010101u;
-			const unsigned int slot_index = (child_bit_index - 24);
-			const unsigned int relative_index = popc(imask & ~(0xFFFFFFFF << slot_index));
-			const unsigned int child_node_index = child_node_base_index + relative_index;
-
-            CWBVHNode current_node;
-            mem->read(node_start + child_node_index*sizeof(CWBVHNode), sizeof(CWBVHNode), &current_node);
-            thread->add_raytrace_mem_access(node_start + child_node_index*sizeof(CWBVHNode));
-            memory_accesses.push_back(node_start + child_node_index*sizeof(CWBVHNode));
-                
-			float3 p = current_node.pOrigin;
-			int3 e;
-			e.x = current_node.e.x;
-			e.y = current_node.e.y;
-			e.z = current_node.e.z;
-			
-            #ifdef DEBUG_PRINT
-			printf("P: %f, %f, %f\n", p.x, p.y, p.z);
-			printf("e: %i, %i, %i\n", e.x, e.y, e.z);
-            #endif
-
-			nodeGroup.x = current_node.nodeBaseIndex;
-			triangleGroup.x = current_node.triBaseIndex;
-			triangleGroup.y = 0;
-			unsigned int hitmask = 0;
-			
-            #ifdef DEBUG_PRINT
-			printf("Node Base: 0x%x \tTri Base: 0x%x\n", nodeGroup.x, triangleGroup.x);
-            #endif
-
-            float3 idir, adjusted_idir, adjusted_orig;
-            // TODO: This should be idir not dir
-            idir = calculate_idir(ray_properties.get_direction());
-			adjusted_idir.x = uint_as_float((e.x + 127) << 23) * idir.x;
-			adjusted_idir.y = uint_as_float((e.y + 127) << 23) * idir.y;
-			adjusted_idir.z = uint_as_float((e.z + 127) << 23) * idir.z;
-			adjusted_orig.x = ray_properties.get_origin().x - p.x;
-			adjusted_orig.y = ray_properties.get_origin().y - p.y;
-			adjusted_orig.z = ray_properties.get_origin().z - p.z;
-            
-            #ifdef DEBUG_PRINT
-            printf("Origin: (%f, %f, %f)\tInv Dir: (%f, %f, %f)\n", adjusted_orig.x, adjusted_orig.y, adjusted_orig.z, idir.x, idir.y, idir.z);
-            #endif
-			
-            adjusted_orig.x = -1 * adjusted_orig.x * idir.x;
-            adjusted_orig.y = -1 * adjusted_orig.y * idir.y;
-            adjusted_orig.z = -1 * adjusted_orig.z * idir.z;
-            #ifdef DEBUG_PRINT
-            printf("ADJUSTED Origin: (%f, %f, %f)\tInv Dir: (%f, %f, %f)\n", adjusted_orig.x, adjusted_orig.y, adjusted_orig.z, adjusted_idir.x, adjusted_idir.y, adjusted_idir.z);
-            #endif
-            
-            // For each of the 8 children nodes
-            for (int i=0; i<8; i++) {
-                // Swizzle
-                
-                float3 swizzledLo;
-                swizzledLo.x = (adjusted_idir.x < 0) ? (float)current_node.qhi[i].x : (float)current_node.qlo[i].x;
-                swizzledLo.y = (adjusted_idir.y < 0) ? (float)current_node.qhi[i].y : (float)current_node.qlo[i].y;
-                swizzledLo.z = (adjusted_idir.z < 0) ? (float)current_node.qhi[i].z : (float)current_node.qlo[i].z;
-                
-                float3 swizzledHi;
-                swizzledHi.x = (adjusted_idir.x < 0) ? (float)current_node.qlo[i].x : (float)current_node.qhi[i].x;
-                swizzledHi.y = (adjusted_idir.y < 0) ? (float)current_node.qlo[i].y : (float)current_node.qhi[i].y;
-                swizzledHi.z = (adjusted_idir.z < 0) ? (float)current_node.qlo[i].z : (float)current_node.qhi[i].z;
-                
-                float thit0;
-                bool intersected = ray_box_test_cwbvh(swizzledLo, swizzledHi, adjusted_idir, adjusted_orig, ray_properties.get_tmin(), ray_properties.get_tmax(), thit0);
-                
-                // printf("Bounding box (%d): LO (%f, %f, %f) HI (%f, %f, %f)\n", i, swizzledLo.x, swizzledLo.y, swizzledLo.z, swizzledHi.x, swizzledHi.y, swizzledHi.z);
-                
-                if (intersected) {
-                    #ifdef DEBUG_PRINT
-                    printf("HIT. ChildIndex %d\n", i);
-                    #endif
-                    const unsigned int child_bits = (unsigned int)current_node.childMetaData[i].upper;
-                    const unsigned int bit_index = (unsigned int)current_node.childMetaData[i].lower;
-                    hitmask |= child_bits << bit_index;
-                }
-            }
-
-			nodeGroup.y = (hitmask & 0xFF000000) | current_node.imask;
-			triangleGroup.y = hitmask & 0x00FFFFFF;
-            #ifdef DEBUG_PRINT
-			printf("imask: 0x%x\n", current_node.imask);
-			printf("Hit Mask: 0x%x \tnodeGroup.y: 0x%x\n", hitmask, nodeGroup.y);
-            #endif
-		
-		}
-        
-        // Triangle node
-		else
-		{
-            // Move node group to triangle group
-			triangleGroup = nodeGroup;
-			nodeGroup.x = 0;
-			nodeGroup.y = 0;
-		}
-
-		while (triangleGroup.y != 0)
-		{
-            int triangleIndex = bfind(triangleGroup.y);
-
-			int tri_addr = triangleGroup.x * 3 + triangleIndex * 3;
-            
-            float4 v00, v11, v22;
-            mem->read(tri_start + tri_addr*sizeof(float4), sizeof(float4), &v00);
-            mem->read(tri_start + tri_addr*sizeof(float4) + sizeof(float4), sizeof(float4), &v11);
-            mem->read(tri_start + tri_addr*sizeof(float4) + 2*sizeof(float4), sizeof(float4), &v22);
-
-            thread->add_raytrace_mem_access(tri_start + tri_addr*sizeof(float4));
-            memory_accesses.push_back(tri_start + tri_addr*sizeof(float4));
-                    
-            #ifdef DEBUG_PRINT
-            printf("Triangle: \n");
-            print_float4(v00);
-            print_float4(v11);
-            print_float4(v22);
-            #endif
-            
-			bool hit = rtao_ray_triangle_test(v00, v11, v22, ray_properties, &thit, ray_payload);
-            if (hit) {
-                printf("HIT\tt: %f\n", thit);
-                ray_payload.t_triId_u_v.y = tri_addr;
-            }
-
-            // Clear bit at triangle index to mark as done
-			triangleGroup.y &= ~(1 << triangleIndex);
-		}
-
-		if (nodeGroup.y <= 0x00FFFFFF)
-		{
-			if (!traversal_stack.empty())
-			{
-				nodeGroup = traversal_stack.back();
-                traversal_stack.pop_back();
-                #ifdef DEBUG_PRINT
-                printf("Popping from stack (%d)\n", traversal_stack.size());
-                #endif
-			}
-			else
-			{
-				break;
-			}
-		}
-	
-	} while (true);
-    
-    if (thit != ray_properties.get_tmax()) {
-        printf("\nResult: (t, addr, u, v)\n");
-        printf("t: %f, u: %f, v: %f, triangle offset: 0x%x\n", ray_payload.t_triId_u_v.x, ray_payload.t_triId_u_v.z, ray_payload.t_triId_u_v.w, (addr_t)ray_payload.t_triId_u_v.y);
-        
-        mem->write(ray_payload_addr, sizeof(Hit), &ray_payload, NULL, NULL);
-        thread->add_raytrace_mem_access(ray_payload_addr);
-    }
-}
-
 void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread, const class function_info * target_func)
 {    
     unsigned n_return = target_func->has_return();
@@ -365,12 +109,6 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     thread->add_ray_hashes(ray_hashes);
     thread->add_ray_properties(ray_properties);
     
-    // Traversal stack
-    // const int STACK_SIZE = 32;
-    // addr_t traversal_stack[STACK_SIZE];
-    // traversal_stack[0] = EMPTY_STACK;
-    // addr_t* stack_ptr = &traversal_stack[0];
-    
     std::list<addr_t> traversal_stack;
     std::vector<addr_t> nodes_stack;
     
@@ -394,6 +132,8 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
 
     std::map<unsigned long long, int> tree_depth_map;
     tree_depth_map[0] = 0;
+    
+    unsigned max_tree_depth = 0;
 
     int num_nodes_accessed = 0;
     int num_triangles_accessed = 0;
@@ -418,10 +158,18 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
             unsigned current_tree_level = tree_level_map[node_start + next_node];
             assert(current_tree_level > 0);
             
-            // TODO: Figure out if node_start + next_node + 2 also should be recorded
+            if (current_tree_level > max_tree_depth) {
+                max_tree_depth = current_tree_level;
+            }
+            
             thread->add_raytrace_mem_access(node_start + next_node);
             GPGPU_Context()->func_sim->g_total_raytrace_node_accesses++;
             num_nodes_accessed++;
+            
+            if (GPGPU_Context()->func_sim->g_raytrace_addresses.find(node_start + next_node) == GPGPU_Context()->func_sim->g_raytrace_addresses.end()) {
+                GPGPU_Context()->func_sim->g_unique_node_accesses++;
+            }
+            GPGPU_Context()->func_sim->g_raytrace_addresses.insert(node_start + next_node);
             
             #ifdef DEBUG_PRINT
             printf("Node data: \n");
@@ -557,7 +305,11 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
                 GPGPU_Context()->func_sim->g_total_raytrace_triangle_accesses++;
                 num_triangles_accessed++;
                 
-                // RT-CORE NOTE: Fix for triangles
+                if (GPGPU_Context()->func_sim->g_raytrace_addresses.find(tri_start + tri_addr) == GPGPU_Context()->func_sim->g_raytrace_addresses.end()) {
+                    GPGPU_Context()->func_sim->g_unique_triangle_accesses++;
+                }
+                GPGPU_Context()->func_sim->g_raytrace_addresses.insert(tri_start + tri_addr);
+                
                 tree_level_map[tri_start + tri_addr] = 0xff;
                 
                 hit = rtao_ray_triangle_test(p0, p1, p2, ray_properties, &thit, ray_payload);
@@ -622,9 +374,6 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
         
         thread->add_ray_intersect();
         thread->add_ray_prediction(predict_node);
-        
-        // TODO: Keep this separate from read accesses
-        // thread->add_raytrace_mem_access(ray_payload_addr);
     } else{
         *(int*) &ray_payload.t_triId_u_v.y = (int)-1;
         mem->write(ray_payload_addr, sizeof(Hit), &ray_payload, NULL, NULL);
@@ -633,26 +382,11 @@ void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread,
     thread->set_tree_level_map(tree_level_map);
     thread->set_num_nodes_accessed(num_nodes_accessed);
     thread->set_num_triangles_accessed(num_triangles_accessed);
-}
-
-bool ray_box_test_cwbvh(float3 low, float3 high, float3 idir, float3 origin, float tmin, float tmax, float& thit) 
-{
-    float3 lo, hi;
-    lo.x = low.x * idir.x + origin.x;
-    lo.y = low.y * idir.y + origin.y;
-    lo.z = low.z * idir.z + origin.z;
-    hi.x = high.x * idir.x + origin.x;
-    hi.y = high.y * idir.y + origin.y;
-    hi.z = high.z * idir.z + origin.z;
-        
-    float min = magic_max7(lo.x, hi.x, lo.y, hi.y, lo.z, hi.z, tmin);
-    float max = magic_min7(lo.x, hi.x, lo.y, hi.y, lo.z, hi.z, tmax);
-    	
-    // OutIntersectionDist = slabMin;
-    thit = min;
-
-	// return slabMin <= slabMax;
-    return (min <= max);
+    
+    if (GPGPU_Context()->func_sim->g_max_tree_depth.find(max_tree_depth) == GPGPU_Context()->func_sim->g_max_tree_depth.end()) {
+        GPGPU_Context()->func_sim->g_max_tree_depth[max_tree_depth] = 0;
+    }
+    GPGPU_Context()->func_sim->g_max_tree_depth[max_tree_depth]++;
 }
 
 bool ray_box_test(float3 low, float3 high, float3 idirection, float3 origin, float tmin, float tmax, float& thit)
@@ -661,9 +395,6 @@ bool ray_box_test(float3 low, float3 high, float3 idirection, float3 origin, flo
 	// const float3 hi = High * InvDir - Ood;
     float3 lo = get_t_bound(low, origin, idirection);
     float3 hi = get_t_bound(high, origin, idirection);
-    
-    // QUESTION: max value does not match rtao benchmark, rtao benchmark converts float to int with __float_as_int
-    // i.e. __float_as_int: -110.704826 => -1025677090, -24.690834 => -1044019502
     
 	// const float slabMin = tMinFermi(lo.x, hi.x, lo.y, hi.y, lo.z, hi.z, TMin);
 	// const float slabMax = tMaxFermi(lo.x, hi.x, lo.y, hi.y, lo.z, hi.z, TMax);

@@ -1079,6 +1079,7 @@ class warp_inst_t : public inst_t {
     m_uid = 0;
     m_empty = true;
     m_config = NULL;
+    m_is_raytrace = false;
   }
   warp_inst_t(const core_config *config) {
     m_uid = 0;
@@ -1275,7 +1276,6 @@ class warp_inst_t : public inst_t {
   
   unsigned check_thread_divergence();
   
-  // RT-CORE NOTE: May need to update this logic for special node fetching? (i.e. vote on next mem access)
   mem_access_t get_next_rt_mem_access(bool locked);
   void fill_next_rt_mem_access(bool locked);
   mem_access_t memory_coalescing_arch_rt(new_addr_type addr);

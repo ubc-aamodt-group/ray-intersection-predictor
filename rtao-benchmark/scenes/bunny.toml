@@ -1,0 +1,20 @@
+[options]
+cwbvh = false
+max_depth = 5
+spp = 10
+shading = "diffuse" # Diffuse shading
+sort = false # Sort rays
+
+#---------------------------------------------------------------------------------------------------
+# Bunny
+#---------------------------------------------------------------------------------------------------
+[model]
+name = "bunny"
+output = "bunny.jpg"
+
+[camera]
+resolution = [1280, 720]
+position = [0.0, 0.7, 2.5]
+target = [0.0, 0.7, 0.0]
+up = [0.0, 1.0, 0.0]
+fovy = 45.0

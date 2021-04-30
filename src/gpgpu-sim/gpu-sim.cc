@@ -237,7 +237,6 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       " {<nsets>:<bsize>:<assoc>,<rep>:<wr>:<alloc>:<wr_alloc>,<mshr>:<N>:<"
       "merge>,<mq>} ",
       "64:64:2,L:R:f:N,A:2:32,4");
-  // RT-CORE NOTE: Temporary (this section to be fixed..)
   option_parser_register(
       opp, "-gpgpu_rt_cache:l1", OPT_CSTR, &m_L0C_config.m_config_string,
       "per-shader L1 constant memory cache  (READ-ONLY) config "
@@ -247,7 +246,7 @@ void shader_core_config::reg_options(class OptionParser *opp) {
   m_L0T_config = m_L0C_config;
   option_parser_register(
       opp, "-gpgpu_rt_disable_rt_cache", OPT_BOOL, &bypassL0Complet,
-      "manage memory of all warps in rt core as one set ",
+      "bypass RT cache and connect RT unit directly to interconnect ",
       "0");
   option_parser_register(
       opp, "-gpgpu_rt_print_threads", OPT_BOOL, &m_rt_print_threads,
@@ -275,7 +274,7 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "0");
   option_parser_register(
       opp, "-gpgpu_rt_warppool", OPT_BOOL, &m_rt_warppool,
-      "manage memory of all warps in rt core as one set ",
+      "manage memory requests of all warps in rt core as one set (pool memory requests within and between warps) ",
       "0");
   option_parser_register(
       opp, "-gpgpu_rt_threadcompaction", OPT_BOOL, &m_rt_threadcompaction,
@@ -327,7 +326,7 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "0");
   option_parser_register(
       opp, "-gpgpu_rt_predictor_repack_unpredicted_warps", OPT_BOOL, &m_rt_predictor_config.repack_unpredicted_warps,
-      "include unpredicted warps when repacking warps in predictor ",
+      "include unpredicted threads when repacking warps in predictor ",
       "0");
   option_parser_register(
       opp, "-gpgpu_rt_predictor_oracle_update", OPT_BOOL, &m_rt_predictor_config.oracle_update,
@@ -341,14 +340,6 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       opp, "-gpgpu_rt_warppool_order", OPT_CSTR, &m_rt_warppool_order,
       "defines order of memory accesses from the warp pool ",
       "s");
-  option_parser_register(
-      opp, "-gpgpu_rt_accumulate_stats", OPT_CSTR, &m_rt_accumulate_stats,
-      "accumulate stats between shaders ",
-      "s");
-  // option_parser_register(
-  //     opp, "-gpgpu_rt_warp_cycle", OPT_UINT32, &m_rt_warp_cycle,
-  //     "number of memory requests before switching warps ",
-  //     "4");
   option_parser_register(opp, "-gpgpu_cache:il1", OPT_CSTR,
                          &m_L1I_config.m_config_string,
                          "shader L1 instruction cache config "
@@ -732,6 +723,9 @@ void gpgpu_sim_config::reg_options(option_parser_t opp) {
   option_parser_register(opp, "-visualizer_outputfile", OPT_CSTR,
                          &g_visualizer_filename,
                          "Specifies the output log file for visualizer", NULL);
+  option_parser_register(opp, "-power_outputfile", OPT_CSTR,
+                         &g_power_output_filename,
+                         "Specifies the name of the output power file", NULL);
   option_parser_register(
       opp, "-visualizer_zlevel", OPT_INT32, &g_visualizer_zlevel,
       "Compression level of the visualizer output log (0=no comp, 9=highest)",
@@ -1188,6 +1182,8 @@ void gpgpu_sim::update_stats() {
   gpgpu_ctx->func_sim->g_total_raytrace_triangle_accesses = 0;
   gpgpu_ctx->func_sim->g_actual_raytrace_node_accesses = 0;
   gpgpu_ctx->func_sim->g_actual_raytrace_triangle_accesses = 0;
+  gpgpu_ctx->func_sim->g_unique_triangle_accesses = 0;
+  gpgpu_ctx->func_sim->g_unique_node_accesses = 0;
   gpgpu_ctx->func_sim->g_total_raytrace_perfect_verified_node_accesses = 0;
   gpgpu_ctx->func_sim->g_total_raytrace_perfect_verified_triangle_accesses = 0;
   gpgpu_ctx->func_sim->g_total_raytrace_verified_rays = 0;
@@ -1463,6 +1459,18 @@ void gpgpu_sim::gpu_print_stat() {
          gpgpu_ctx->func_sim->g_total_raytrace_verified_rays);
   printf("\nrt_total_miss_node_removed_predictions = %d\n",
          gpgpu_ctx->func_sim->g_total_miss_node_removed_predictions);
+ printf("rt_unique_triangle_accesses = %d\n", gpgpu_ctx->func_sim->g_unique_triangle_accesses);
+ printf("rt_unique_node_accesses = %d\n", gpgpu_ctx->func_sim->g_unique_node_accesses);
+ 
+ printf("rt_tree_depth_distribution = ");
+ unsigned max_tree_depth = 0;
+ for (auto it= gpgpu_ctx->func_sim->g_max_tree_depth.begin(); it!= gpgpu_ctx->func_sim->g_max_tree_depth.end(); it++) {
+   printf("%d: %d\t", it->first, it->second);
+   if (it->first > max_tree_depth) {
+     max_tree_depth = it->first;
+   }
+ }
+ printf("\nrt_max_tree_depth = %d\n", max_tree_depth);
   
   // Print threads if any accesses were saved
   for (auto it=g_rt_memory_accesses.begin(); it!=g_rt_memory_accesses.end(); it++) {

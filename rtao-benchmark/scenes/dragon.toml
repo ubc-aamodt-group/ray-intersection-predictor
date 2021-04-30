@@ -1,0 +1,20 @@
+[options]
+cwbvh = false
+max_depth = 5
+spp = 10
+shading = "diffuse" # Diffuse shading
+sort = false # Sort rays
+
+#---------------------------------------------------------------------------------------------------
+# Dragon
+#---------------------------------------------------------------------------------------------------
+[model]
+name = "dragon"
+output = "dragon.jpg"
+
+[camera]
+resolution = [1280, 720]
+position = [-0.8, 0.1, -0.8]
+target = [0.0, 0.0, 0.0]
+up = [0.0, 1.0, 0.0]
+fovy = 45.0

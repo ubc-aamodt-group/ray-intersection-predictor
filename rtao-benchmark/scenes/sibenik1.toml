@@ -1,0 +1,20 @@
+[options]
+cwbvh = false
+max_depth = 5
+spp = 10
+shading = "diffuse" # Diffuse shading
+sort = false # Sort rays
+
+#---------------------------------------------------------------------------------------------------
+# Sibenik
+#---------------------------------------------------------------------------------------------------
+[model]
+name = "sibenik"
+output = "sibenik1.jpg"
+
+[camera]
+resolution = [1280, 720]
+position = [-5.0, -12.0, 0.0]
+target = [0.0, -12.0, 0.0]
+up = [0.0, 1.0, 0.0]
+fovy = 45.0

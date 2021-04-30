@@ -18,7 +18,6 @@ void print_stack(std::list<addr_t> &traversal_stack);
 
 // Trace Ray
 void trace_ray(const class ptx_instruction * pI, class ptx_thread_info * thread, const class function_info * target_func);
-void trace_cwbvh(const class ptx_instruction * pI, class ptx_thread_info * thread, const class function_info * target_func, std::list<addr_t> & memory_accesses);
 float magic_max7(float a0, float a1, float b0, float b1, float c0, float c1, float d);
 float magic_min7(float a0, float a1, float b0, float b1, float c0, float c1, float d);
 float3 get_t_bound(float3 box, float3 origin, float3 idirection);
@@ -41,21 +40,7 @@ struct meta
 	unsigned char upper : 3, lower : 5;
 };
 
-struct CWBVHNode
-{
-	float3 pOrigin;
-	char3 e;
-	unsigned char imask;
-	unsigned int nodeBaseIndex, triBaseIndex;
-	uchar3 qlo[8];	
-	uchar3 qhi[8];	
-	meta childMetaData[8];
-
-};
-
-
 bool ray_box_test(float3 low, float3 high, float3 direction, float3 origin, float tmin, float tmax, float& thit);
-bool ray_box_test_cwbvh(float3 low, float3 high, float3 idir, float3 origin, float tmin, float tmax, float& thit);
 bool mt_ray_triangle_test(float3 p0, float3 p1, float3 p2, Ray ray_properties, float* thit);
 bool rtao_ray_triangle_test(float4 v00, float4 v11, float4 v22, Ray ray_properties, float* thit, Hit& ray_payload);
 bool rtao_ray_triangle_test(float4 v00, float4 v11, float4 v22, Ray ray_properties, float* thit);

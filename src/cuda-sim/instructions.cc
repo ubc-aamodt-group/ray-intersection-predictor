@@ -2176,13 +2176,6 @@ void call_impl(const ptx_instruction *pI, ptx_thread_info *thread) {
     // printf("Trace Complete.\n");
     return;
   }
-  else if (fname.find("cwbvh") != std::string::npos) {
-    // Track memory accesses for timing model
-    std::list<addr_t> mem_access_list;   
-    trace_cwbvh(pI, thread, target_func, mem_access_list);
-    printf("Trace Complete.\n");
-    return;
-  }
 
 #if (CUDART_VERSION >= 5000)
   // Jin: handle device runtime apis for CDP

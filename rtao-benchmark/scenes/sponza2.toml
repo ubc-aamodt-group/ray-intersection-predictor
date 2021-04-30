@@ -1,0 +1,20 @@
+[options]
+cwbvh = false
+max_depth = 5
+spp = 10
+shading = "diffuse" # Diffuse shading
+sort = false # Sort rays
+
+#---------------------------------------------------------------------------------------------------
+# CrySponza
+#---------------------------------------------------------------------------------------------------
+[model]
+name = "sponza"
+output = "sponza2.jpg"
+
+[camera]
+resolution = [1280, 720]
+position = [780.0, 270.0, 500.0]
+target = [-85.0, 120.0, 240.0]
+up = [0.0, 1.0, 0.0]
+fovy = 45.0
