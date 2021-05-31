@@ -1,3 +1,78 @@
+
+
+
+
+## Introduction
+
+This repository contains a modified version of GPGPU-Sim and a CUDA ray tracing sample (`/rtao-benchmark/`). 
+
+This version of GPGPU-Sim is augmented with a special `__traceRay()` intrinsic that triggers a functional execution of a trace ray command followed by a detailed timing simulation of appropriate memory accesses and intersection test delays. Follow the GPGPU-Sim instructions below to compile and use the simulator. 
+
+The `__traceRay()` intrinsic is included in the CUDA ray tracing sample. Follow the instructions in `/rtao-benchmark/README.md` to compile and run the sample code. 
+
+
+
+## Getting Started
+
+1. Prepare the CUDA ray tracing code.
+   * Install & update the paths to the dependencies in `rtao-benchmark/build_make/Makefile` including *tbb*, and *embree*. 
+   * Update the `base_path` in `rtao-benchmark/src/main.cpp`
+   * Add `.obj` models to `rtao-benchmark/models` folder, e.g. for model `teapot`, should be in `models/teapot/teapot.obj`
+   * Create a `rtao-benchmark/ply_files` folder to see results
+   * Create a `rtao-benchmark/images` folder to see rendered images
+2. Compile the CUDA code 
+   * `./magic_CWBVH` uses the magic intrinsic
+   * `./CWBVH` is a regular GPU implementation
+3. Prepare GPGPU-Sim (follow the GPGPU-Sim README below) and compile
+4. Set up the working directory. 
+   * Copy the sample config file at `configs/tested-cfgs/MOBILE/gpgpusim.config`
+5. Run the CUDA sample
+   * `./magic_CWBVH --anyhit`
+
+
+
+## Configurations
+
+#### GPGPU-Sim Configurations
+
+`-gpgpu_rt_max_warps`: Max number of warps in the RT unit at once
+
+`-gpgpu_rt_intersection_latency`: Number of cycles delay for intersection test
+
+`-gpgpu_rt_predictor_lookup_latency`: Number of cycles delay to look up a prediction
+
+`-gpgpu_rt_predictor_lookup_bandwidth`: Number of predictions that can be fulfilled per cycle
+
+`-gpgpu_rt_predictor_update_bandwidth`: Number of updates to the predictor table per cycle
+
+`-gpgpu_rt_predictor`: Use predictor
+
+`-gpgpu_rt_predictor_config`: Main predictor configurations
+
+* print config, latency, table size, use francois hash, use grid-spherical hash, use two-point hash, hash francois bits, hash grid bits, hash sphere bits, hash two-point estimated length ratio, go up level, nodes per entry, nodes replacement policy, replacement policy, placement policy, n_ways, virtual predictor, virtual latency, virtual table size, virtual nodes per entry, virtual placement policy
+
+`-gpgpu_rt_predictor_repack_warps`: Implement warp repacking
+
+`-gpgpu_rt_predictor_repacking_timer`: Warp repacking timeout
+
+`-gpgpu_rt_predictor_repack_max_warps`: Max number of additional repacked warps in the RT unit at once
+
+#### CUDA Command Line Arguments
+
+`--anyhit` : Run ambient occlusion
+
+`-m [model name]`: Specify the name of the model to render
+
+`-f [.ray_file]`: Read in rays from a ray file
+
+`-w [n rays]`: Dedicate a number of rays to warm up the predictor
+
+`--pathtrace`: Run global illumination (reads configurations from `scene.toml` by default)
+
+`-c [config.toml]`: Point to a different configuration file
+
+
+# GPGPU-Sim README
 Welcome to GPGPU-Sim, a cycle-level simulator modeling contemporary graphics
 processing units (GPUs) running GPU computing workloads written in CUDA or
 OpenCL. Also included in GPGPU-Sim is a performance visualization tool called
