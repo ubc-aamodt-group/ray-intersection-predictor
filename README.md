@@ -1,39 +1,85 @@
-
-
-
-
 ## Introduction
 
 This repository contains a modified version of GPGPU-Sim and a CUDA ray tracing sample (`/rtao-benchmark/`). 
 
 This version of GPGPU-Sim is augmented with a special `__traceRay()` intrinsic that triggers a functional execution of a trace ray command followed by a detailed timing simulation of appropriate memory accesses and intersection test delays. Follow the GPGPU-Sim instructions below to compile and use the simulator. 
 
-The `__traceRay()` intrinsic is included in the CUDA ray tracing sample. Follow the instructions in `/rtao-benchmark/README.md` to compile and run the sample code. 
+The `__traceRay()` intrinsic is included in the CUDA ray tracing sample. Additional information is included in `/rtao-benchmark/README.md`.
 
 
 
 ## Getting Started
 
 1. Prepare the CUDA ray tracing code.
-   * Install & update the paths to the dependencies in `rtao-benchmark/build_make/Makefile` including *tbb*, and *embree*. 
-   * Update the `base_path` in `rtao-benchmark/src/main.cpp`
-   * Add `.obj` models to `rtao-benchmark/models` folder, e.g. for model `teapot`, should be in `models/teapot/teapot.obj`
-   * Create a `rtao-benchmark/ply_files` folder to see results
-   * Create a `rtao-benchmark/images` folder to see rendered images
-2. Compile the CUDA code 
+
+   * Install & update the paths to the dependencies in `rtao-benchmark/build_make/Makefile` 
+
+     * tbb can be installed from https://software.intel.com/content/www/us/en/develop/tools/oneapi/base-toolkit/download.html?operatingsystem=linux&distributions=webdownload&options=offline
+
+     * Update tbb install directory in Makefile
+
+       ```
+       TBB_INCLUDE_DIR = <tbb install directory>/include
+       TBB_LIB = <tbb install directory>/lib/intel64/gcc4.8
+       ```
+
+     * embree can be installed from https://www.embree.org/downloads.html
+
+     * Update embree install directory in Makefile
+
+       ```
+       EMBREE_INCLUDE_DIR = <embree install directory>/include
+       EMBREE_LIB = <embree install directory>/lib
+       ```
+
+       
+
+   * Update the `base_path` in `rtao-benchmark/src/main.cpp` to be the path to the `rtao-benchmark` folder.
+
+     ```
+     const std::string base_path = "<path>/rtao-benchmark/";
+     ```
+
+   * Add each `.obj` models to render in the  `rtao-benchmark/models` folder under its own individual folder (e.g. for model `teapot`, the `.obj` file should be in `rtao-benchmark/models/teapot/teapot.obj`). Sample object files can be downloaded from https://casual-effects.com/g3d/data10/index.html
+
+   * Create the `rtao-benchmark/ply_files` folder to see results
+
+   * Create the `rtao-benchmark/images` folder to see rendered images
+
+2. Compile the CUDA code using the Makefile in `rtao-benchmark/build_make`
+
+   ```
+   cd rtao-benchmark/build_make
+   make
+   ```
+
+   Two executables are generated:
+
    * `./magic_CWBVH` uses the magic intrinsic
    * `./CWBVH` is a regular GPU implementation
-3. Prepare GPGPU-Sim (follow the GPGPU-Sim README below) and compile
-4. Set up the working directory. 
-   * Copy the sample config file at `configs/tested-cfgs/MOBILE/gpgpusim.config`
+
+3. Setup GPGPU-Sim (follow the [GPGPU-Sim README below](#gpgpu-sim-readme)) and compile
+
+4. Copy the sample config file from `configs/tested-cfgs/MOBILE/gpgpusim.config` to the working directory (`rtao-benchmark/build_make`)
+
+   ```
+   cp configs/tested-cfgs/MOBILE/gpgpusim.config rtao-benchmark/build_make/.
+   ```
+
 5. Run the CUDA sample
-   * `./magic_CWBVH --anyhit`
+
+   ````
+   cd rtao-benchmark/build_make
+   ./magic_CWBVH --anyhit
+   ````
 
 
 
 ## Configurations
 
 #### GPGPU-Sim Configurations
+
+These configurations control the behaviour of the RT unit and the predictor in gpgpu-sim. They can be adjusted from their default value in the `gpgpusim.config` file copied to the working directory (`rtao-benchmark/build_make`). 
 
 `-gpgpu_rt_max_warps`: Max number of warps in the RT unit at once
 
@@ -59,18 +105,20 @@ The `__traceRay()` intrinsic is included in the CUDA ray tracing sample. Follow 
 
 #### CUDA Command Line Arguments
 
-`--anyhit` : Run ambient occlusion
+These configurations control the behaviour of the CUDA ray tracing kernel and can be adjusted in the command line when running either the `magic_CWBVH` or `CWBVH` executables. All configurations are optional and the default values can be found in `rtao-benchmark/src/main.cpp`.
 
-`-m [model name]`: Specify the name of the model to render
+For ambient occlusion:
 
-`-f [.ray_file]`: Read in rays from a ray file
+* `[--anyhit]` : Run ambient occlusion
+* `[-m <model name>]`: Specify the name of the model to render
+* `[-f <.ray_file>]`: Read in rays from a ray file
+* `[-w <n rays>]`: Dedicate a number of rays to warm up the predictor
 
-`-w [n rays]`: Dedicate a number of rays to warm up the predictor
+For global illumination (not compatible with predictor):
 
-`--pathtrace`: Run global illumination (reads configurations from `scene.toml` by default)
+* `[--pathtrace]`: Run global illumination (reads configurations from `scene.toml` by default)
 
-`-c [config.toml]`: Point to a different configuration file
-
+* `[-c <config.toml>]`: Point to a different configuration file
 
 # GPGPU-Sim README
 Welcome to GPGPU-Sim, a cycle-level simulator modeling contemporary graphics
