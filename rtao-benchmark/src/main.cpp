@@ -12,7 +12,7 @@
 
 int main(int argc, char* argv[])
 {
-  const std::string base_path = "./";
+  const std::string base_path = "/home/lucy/sim/ray-intersection-predictor/rtao-benchmark/";
   
   const std::string model_base_path = base_path + "models/";
   const std::string ply_base_path = base_path + "ply_files/";

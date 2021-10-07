@@ -433,18 +433,18 @@ void shader_core_ctx::create_exec_pipeline() {
     }
   }
   
-  
-  m_rt_unit = new rt_unit(m_icnt, m_mem_fetch_allocator, this, m_config, m_stats, m_sid, m_tpc);
-  m_fu.push_back(m_rt_unit);
-  m_dispatch_port.push_back(ID_OC_RT);
-  m_issue_port.push_back(OC_EX_RT);
-  
   m_ldst_unit = new ldst_unit(m_icnt, m_mem_fetch_allocator, this,
                               &m_operand_collector, m_scoreboard, m_config,
                               m_memory_config, m_stats, m_sid, m_tpc);
   m_fu.push_back(m_ldst_unit);
   m_dispatch_port.push_back(ID_OC_MEM);
   m_issue_port.push_back(OC_EX_MEM);
+  
+  m_rt_unit = new rt_unit(m_icnt, m_mem_fetch_allocator, this, m_config, m_stats, m_sid, m_tpc);
+  m_fu.push_back(m_rt_unit);
+  m_dispatch_port.push_back(ID_OC_RT);
+  m_issue_port.push_back(OC_EX_RT);
+  
 
   assert(m_num_function_units == m_fu.size() and
          m_fu.size() == m_dispatch_port.size() and
@@ -2749,6 +2749,10 @@ rt_unit::rt_unit(mem_fetch_interface *icnt,
   m_L0_complet = new read_only_cache( "L0Complet", m_config->m_L0C_config, m_sid,
                                       get_shader_constant_cache_id(), icnt, 
                                       IN_L1C_MISS_QUEUE);
+   
+  
+  L1C = m_core->get_l1c();
+  L1D = m_core->get_l1d();
                                 
   m_ray_predictor = new ray_predictor(m_sid, m_config->m_rt_predictor_config, m_core);
 
@@ -2876,7 +2880,15 @@ void rt_unit::cycle() {
                    m_core->get_gpu()->gpu_tot_sim_cycle);
                 
     // Update cache
-    if (!m_config->bypassL0Complet) {
+    if (m_config->m_rt_use_l1c) {
+      L1C->fill( mf, m_core->get_gpu()->gpu_sim_cycle +
+                        m_core->get_gpu()->gpu_tot_sim_cycle);
+    }
+    else if (m_config->m_rt_use_l1d) {
+      L1D->fill( mf, m_core->get_gpu()->gpu_sim_cycle +
+                        m_core->get_gpu()->gpu_tot_sim_cycle);
+    }
+    else if (!m_config->bypassL0Complet) {
       m_L0_complet->fill( mf, m_core->get_gpu()->gpu_sim_cycle +
                         m_core->get_gpu()->gpu_tot_sim_cycle);
     }
@@ -2916,7 +2928,16 @@ void rt_unit::cycle() {
       
       else if (!m_config->bypassL0Complet){
         // Check MSHR for all accessed to this address
-        std::list<mem_fetch *> response_mf = m_L0_complet->probe_mshr(mf->get_addr());
+        std::list<mem_fetch *> response_mf;
+        if (m_config->m_rt_use_l1d) {
+          response_mf = L1D->probe_mshr(mf->get_addr());
+        }
+        else if (m_config->m_rt_use_l1c) {
+          response_mf = L1C->probe_mshr(mf->get_addr());
+        }
+        else {
+          response_mf = m_L0_complet->probe_mshr(mf->get_addr());
+        }
         
         unsigned requester_thread_found = 0;
         for (auto it=response_mf.begin(); it!=response_mf.end(); ++it) {
@@ -3325,7 +3346,15 @@ bool rt_unit::memory_cycle(warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem
   if (m_config->m_rt_max_warps > 0 && m_L0_complet->num_mshr_entries() > m_config->m_rt_max_mshr_entries) return inst.rt_mem_accesses_empty();
   
   mem_stage_stall_type fail;
-  fail = process_memory_access_queue(m_L0_complet, inst);
+  if (m_config->m_rt_use_l1c) {
+    fail = process_memory_access_queue(L1C, inst);
+  }
+  else if (m_config->m_rt_use_l1d) {
+    fail = process_memory_access_queue(L1D, inst);
+  }
+  else {
+    fail = process_memory_access_queue(m_L0_complet, inst);
+  }
   
   // Stalled
   if (fail != NO_RC_FAIL) {
@@ -3535,7 +3564,7 @@ new_addr_type rt_unit::get_next_rt_mem_access(warp_inst_t &inst) {
   
 }
 
-mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_inst_t &inst) {
+mem_stage_stall_type rt_unit::process_memory_access_queue(baseline_cache *cache, warp_inst_t &inst) {
   m_stats->rt_mem_ready[m_sid] = 1;
   mem_stage_stall_type result = NO_RC_FAIL;
   if (inst.rt_mem_accesses_empty()) return result;
@@ -3630,8 +3659,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
     m_prev_reservation_fail = mf->get_uncoalesced_addr();
     
     // Address already in MSHR, but MSHR entry is full
-    if (!m_L0_complet->probe_mshr(mf->get_addr()).empty()) {
-      
+    if (!cache->probe_mshr(mf->get_addr()).empty()) {
       // If using warp coalescing, this is irrelevant
       if (m_config->m_rt_coalesce_warps) {
         printf("0x%x\n", mf->get_addr());
@@ -3643,7 +3671,7 @@ mem_stage_stall_type rt_unit::process_memory_access_queue(cache_t *cache, warp_i
         m_stats->rt_counter_undo_requests[m_sid]++;
       }
     }
-    else if (!m_L0_complet->get_bypass_rf_config()) {
+    else if (!cache->get_bypass_rf_config()) {
       if (m_config->m_rt_warppool) {
         m_warppool_awaiting_response.erase(mf->get_addr());
         if (m_config->m_rt_warppool && !m_config->bypassL0Complet) assert(m_warppool_awaiting_response.size() == m_L0_complet->num_mshr_entries());

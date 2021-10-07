@@ -249,6 +249,10 @@ void shader_core_config::reg_options(class OptionParser *opp) {
       "bypass RT cache and connect RT unit directly to interconnect ",
       "0");
   option_parser_register(
+    opp, "-gpgpu_rt_use_l1", OPT_CSTR, &m_rt_use_l1,
+    "use existing L1 cache instead of dedicated L0 cache ",
+    "0");
+  option_parser_register(
       opp, "-gpgpu_rt_print_threads", OPT_BOOL, &m_rt_print_threads,
       "print memory access list for every thread (for debugging) ",
       "0");

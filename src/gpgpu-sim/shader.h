@@ -1293,7 +1293,7 @@ class rt_unit : public pipelined_simd_unit {
             std::list<cache_event> &events, mem_fetch *mf,
             enum cache_request_status status);
             
-      mem_stage_stall_type process_memory_access_queue(cache_t *cache, warp_inst_t &inst);
+      mem_stage_stall_type process_memory_access_queue(baseline_cache *cache, warp_inst_t &inst);
       // mem_stage_stall_type process_memory_access_queue_l1cache(l1_cache *cache, warp_inst_t &inst);
       
       void coalesce_warp_requests(mem_access_t access);
@@ -1314,6 +1314,10 @@ class rt_unit : public pipelined_simd_unit {
       
       read_only_cache *m_L0_complet;
       read_only_cache *m_L0_tri;
+      
+      read_only_cache *L1C;
+      l1_cache *L1D;
+
       
       ray_predictor *m_ray_predictor;
       
@@ -1371,6 +1375,11 @@ class ldst_unit : public pipelined_simd_unit {
 
   // accessors
   virtual unsigned clock_multiplier() const;
+  
+  // Get caches
+  read_only_cache * get_l1c() { return m_L1C; }
+  l1_cache * get_l1d() { return m_L1D; }
+
 
   virtual bool can_issue(const warp_inst_t &inst) const {
     switch (inst.op) {
@@ -1531,6 +1540,10 @@ class shader_core_config : public core_config {
     m_rt_warppool_fifo = *m_rt_warppool_order == 'f';
     m_rt_warppool_tree = *m_rt_warppool_order == 't';
     m_rt_warppool_greedy = *m_rt_warppool_order == 'g';
+    
+    m_rt_use_l1c = *m_rt_use_l1 == 'c';
+    m_rt_use_l1d = *m_rt_use_l1 == 'd';
+
     
     char *toks = new char[100];
     char *tokd = toks;
@@ -1772,6 +1785,9 @@ class shader_core_config : public core_config {
   bool m_rt_warppool;
   bool m_rt_threadcompaction;
   bool bypassL0Complet;
+  char * m_rt_use_l1;
+  bool m_rt_use_l1c;
+  bool m_rt_use_l1d;
   char * m_rt_warppool_order;
   bool m_rt_warppool_fifo;
   bool m_rt_warppool_tree;
@@ -2280,6 +2296,9 @@ class shader_core_ctx : public core_t {
   void get_L1C_sub_stats(struct cache_sub_stats &css) const;
   void get_L1T_sub_stats(struct cache_sub_stats &css) const;
   void get_L0C_sub_stats(struct cache_sub_stats &css) const;
+
+  read_only_cache * get_l1c() { return m_ldst_unit->get_l1c(); }
+  l1_cache * get_l1d() { return m_ldst_unit->get_l1d(); }
 
   void get_icnt_power_stats(long &n_simt_to_mem, long &n_mem_to_simt) const;
 
